@@ -3,6 +3,8 @@ package com.northstar.money.data.backup
 import com.northstar.money.core.database.AccountEntity
 import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.DatabaseSnapshot
+import com.northstar.money.core.database.GoalContributionEntity
+import com.northstar.money.core.database.GoalEntity
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import org.junit.Assert.assertThrows
@@ -82,6 +84,35 @@ class DatabaseSnapshotValidatorTest {
                     "MONTHLY", 1, "2026-09-01", true, 1, deletedAt = -1,
                 ),
             ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
+    }
+
+    @Test
+    fun validate_rejectsContributionWithMissingGoalOrInvalidAmount() {
+        val base = validSnapshot().copy(
+            goals = listOf(GoalEntity("goal", "Reserve", 1_000, 0, "EUR", null, "ACTIVE", 1)),
+        )
+        val missingGoal = base.copy(
+            goalContributions = listOf(
+                GoalContributionEntity("contribution", "missing", 100, "2026-08-01", "", 1, 1),
+            ),
+        )
+        val invalidAmount = base.copy(
+            goalContributions = listOf(
+                GoalContributionEntity("contribution", "goal", 0, "2026-08-01", "", 1, 1),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(missingGoal) }
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(invalidAmount) }
+    }
+
+    @Test
+    fun validate_rejectsUnnormalizedGoalSavedAmount() {
+        val invalid = validSnapshot().copy(
+            goals = listOf(GoalEntity("goal", "Reserve", 1_000, 100, "EUR", null, "ACTIVE", 1)),
         )
 
         assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }

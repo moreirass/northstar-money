@@ -12,6 +12,7 @@ class DatabaseSnapshotValidator {
         requireUniqueIds("reconciliations", snapshot.reconciliations.map { it.id })
         requireUniqueIds("budget allocations", snapshot.budgetAllocations.map { it.id })
         requireUniqueIds("goals", snapshot.goals.map { it.id })
+        requireUniqueIds("goal contributions", snapshot.goalContributions.map { it.id })
         requireUniqueIds("recurring schedules", snapshot.recurringSchedules.map { it.id })
         requireUniqueIds("debt profiles", snapshot.debtProfiles.map { it.id })
 
@@ -20,6 +21,7 @@ class DatabaseSnapshotValidator {
         val categoryIds = snapshot.categories.mapTo(mutableSetOf()) { it.id }
         val categoriesById = snapshot.categories.associateBy { it.id }
         val transactionIds = snapshot.transactions.mapTo(mutableSetOf()) { it.id }
+        val goalsById = snapshot.goals.associateBy { it.id }
 
         require(snapshot.categories.distinctBy { it.kind to it.name }.size == snapshot.categories.size) {
             "Backup contains duplicate category names for the same type"
@@ -97,12 +99,19 @@ class DatabaseSnapshotValidator {
         }
         snapshot.goals.forEach {
             require(
-                it.name.isNotBlank() && it.targetMinor > 0 && it.savedMinor >= 0 &&
+                it.name.isNotBlank() && it.targetMinor > 0 && it.savedMinor == 0L &&
                     it.currencyCode.isCurrencyCode() && it.status in GOAL_STATUSES,
             ) {
                 "Backup contains an invalid goal"
             }
             it.targetLocalDate?.let { date -> requireDate(date, "goal") }
+        }
+        snapshot.goalContributions.forEach {
+            require(
+                it.goalId in goalsById && it.amountMinor > 0 &&
+                    it.note.length <= 500 && (it.deletedAt == null || it.deletedAt >= 0),
+            ) { "Backup contains an invalid goal contribution" }
+            requireDate(it.localDate, "goal contribution")
         }
         snapshot.recurringSchedules.forEach {
             require(

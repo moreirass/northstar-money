@@ -6,6 +6,7 @@ import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.DebtProfileEntity
 import com.northstar.money.core.database.GoalEntity
+import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.ReconciliationEntity
 import com.northstar.money.core.database.RecurringScheduleEntity
 import com.northstar.money.core.database.TransactionEntity
@@ -42,15 +43,21 @@ class FullBackupJsonCodecTest {
 
     @Test
     fun decode_acceptsBackupCreatedBeforeCategoryMerges() {
-        val legacy = codec.encode(completeSnapshot(), databaseVersion = 5, createdAtEpochMillis = 1234)
+        val legacy = codec.encode(
+            completeSnapshot().copy(goalContributions = emptyList()),
+            databaseVersion = 5,
+            createdAtEpochMillis = 1234,
+        )
             .replace(",\"mergedIntoCategoryId\":\"target\"", "")
             .replace(",\"mergedIntoCategoryId\":null", "")
             .replace(",\"deletedAt\":null", "")
+            .replace(",\"goalContributions\":[]", "")
 
         val decoded = codec.decode(legacy)
 
         assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
         assertTrue(decoded.recurringSchedules.all { it.deletedAt == null })
+        assertTrue(decoded.goalContributions.isEmpty())
     }
 
     private fun completeSnapshot() = DatabaseSnapshot(
@@ -67,7 +74,10 @@ class FullBackupJsonCodecTest {
             ReconciliationEntity("reconciliation", "account", "2026-08-01", 75, 75, 0, null, 5),
         ),
         budgetAllocations = listOf(BudgetAllocationEntity("budget", "2026-08-01", "category", 200)),
-        goals = listOf(GoalEntity("goal", "Reserve", 1000, 100, "EUR", null, "PAUSED", 6)),
+        goals = listOf(GoalEntity("goal", "Reserve", 1000, 0, "EUR", null, "PAUSED", 6)),
+        goalContributions = listOf(
+            GoalContributionEntity("contribution", "goal", 100, "2026-08-01", "Opening", 6, 7, 9),
+        ),
         recurringSchedules = listOf(
             RecurringScheduleEntity(
                 "recurring", "Rent", "EXPENSE", 500, "EUR", "account", "category",

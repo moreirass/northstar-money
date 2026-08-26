@@ -102,6 +102,24 @@ data class SavingsGoal(
     val target: Money,
     val saved: Money,
     val targetLocalDate: String?,
+    val status: String = "ACTIVE",
+)
+
+data class EditableGoal(
+    val id: String,
+    val name: String,
+    val target: Money,
+    val targetLocalDate: String?,
+    val status: String,
+)
+
+data class GoalContribution(
+    val id: String,
+    val goalId: String,
+    val goalName: String,
+    val amount: Money,
+    val localDate: String,
+    val note: String,
 )
 
 data class RecurringItem(

@@ -297,6 +297,61 @@ class NorthstarDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate7To8_preservesSavedGoalAsAuditableContribution() {
+        helper.createDatabase(DB_7_8, 7).apply {
+            insertBaseData()
+            execSQL(
+                """
+                INSERT INTO goals (
+                    id, name, targetMinor, savedMinor, currencyCode, targetLocalDate, status, createdAt
+                ) VALUES ('goal-1', 'Emergency fund', 100000, 20000, 'EUR', NULL, 'ACTIVE', 1000)
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DB_7_8, 8, true, MIGRATION_7_8).apply {
+            assertBaseDataPreserved()
+            query("SELECT savedMinor FROM goals WHERE id = 'goal-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(0L, cursor.getLong(0))
+            }
+            query("SELECT goalId, amountMinor, deletedAt FROM goal_contributions").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("goal-1", cursor.getString(0))
+                assertEquals(20000L, cursor.getLong(1))
+                assertEquals(true, cursor.isNull(2))
+            }
+            close()
+        }
+    }
+
+    @Test
+    fun migrate1To8_runsCompleteMigrationChainWithoutDataLoss() {
+        helper.createDatabase(DB_1_8, 1).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DB_1_8,
+            8,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+        ).apply {
+            assertBaseDataPreserved()
+            assertRowCount("goal_contributions", 0)
+            close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertBaseData() {
         execSQL(
             """
@@ -355,5 +410,7 @@ class NorthstarDatabaseMigrationTest {
         private const val DB_1_6 = "migration-1-6"
         private const val DB_6_7 = "migration-6-7"
         private const val DB_1_7 = "migration-1-7"
+        private const val DB_7_8 = "migration-7-8"
+        private const val DB_1_8 = "migration-1-8"
     }
 }

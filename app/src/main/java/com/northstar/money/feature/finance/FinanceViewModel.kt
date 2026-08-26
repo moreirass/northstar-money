@@ -22,6 +22,8 @@ import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
+import com.northstar.money.domain.model.EditableGoal
+import com.northstar.money.domain.model.GoalContribution
 import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +45,8 @@ data class FinanceUiState(
     val deletedTransactions: List<TransactionItem> = emptyList(),
     val budgets: List<BudgetProgress> = emptyList(),
     val goals: List<SavingsGoal> = emptyList(),
+    val goalContributions: List<GoalContribution> = emptyList(),
+    val deletedGoalContributions: List<GoalContribution> = emptyList(),
     val recurring: List<RecurringItem> = emptyList(),
     val pausedRecurring: List<RecurringItem> = emptyList(),
     val deletedRecurring: List<RecurringItem> = emptyList(),
@@ -58,6 +62,12 @@ private data class RecurringUiState(
     val active: List<RecurringItem>,
     val paused: List<RecurringItem>,
     val deleted: List<RecurringItem>,
+)
+
+private data class GoalUiState(
+    val goals: List<SavingsGoal>,
+    val contributions: List<GoalContribution>,
+    val deletedContributions: List<GoalContribution>,
 )
 
 class FinanceViewModel(
@@ -83,16 +93,24 @@ class FinanceViewModel(
         )
     }
 
+    private val goalState = combine(
+        repository.observeGoals(),
+        repository.observeGoalContributions(),
+        repository.observeDeletedGoalContributions(),
+    ) { goals, contributions, deleted -> GoalUiState(goals, contributions, deleted) }
+
     private val planningState = combine(
         coreState,
         repository.observeBudgets(),
-        repository.observeGoals(),
+        goalState,
         repository.observeDeletedTransactions(),
         repository.observeArchivedCategories(),
-    ) { core, budgets, goals, deletedTransactions, archivedCategories ->
+    ) { core, budgets, goalState, deletedTransactions, archivedCategories ->
         core.copy(
             budgets = budgets,
-            goals = goals,
+            goals = goalState.goals,
+            goalContributions = goalState.contributions,
+            deletedGoalContributions = goalState.deletedContributions,
             deletedTransactions = deletedTransactions,
             archivedCategories = archivedCategories,
         )
@@ -194,6 +212,34 @@ class FinanceViewModel(
         launchOperation("create the goal") {
             repository.createGoal(name, Money.parseMajor(target), Money.parseMajor(saved.ifBlank { "0" }), targetDate)
         }
+    }
+
+    suspend fun getGoalForEdit(id: String): EditableGoal = repository.getGoalForEdit(id)
+
+    fun updateGoal(goal: EditableGoal) {
+        launchOperation("update the savings goal") { repository.updateGoal(goal) }
+    }
+
+    fun addGoalContribution(goalId: String, amount: String, localDate: String, note: String) {
+        launchOperation("add the goal contribution") {
+            val currency = uiState.value.goals.firstOrNull { it.id == goalId }?.target?.currencyCode ?: "EUR"
+            repository.addGoalContribution(goalId, Money.parseMajor(amount, currency), localDate, note)
+        }
+    }
+
+    suspend fun getGoalContributionForEdit(id: String): GoalContribution =
+        repository.getGoalContributionForEdit(id)
+
+    fun updateGoalContribution(contribution: GoalContribution) {
+        launchOperation("update the goal contribution") { repository.updateGoalContribution(contribution) }
+    }
+
+    fun deleteGoalContribution(id: String) {
+        launchOperation("delete the goal contribution") { repository.deleteGoalContribution(id) }
+    }
+
+    fun restoreGoalContribution(id: String) {
+        launchOperation("restore the goal contribution") { repository.restoreGoalContribution(id) }
     }
 
     fun createRecurring(

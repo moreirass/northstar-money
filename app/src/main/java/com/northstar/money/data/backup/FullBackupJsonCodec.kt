@@ -6,6 +6,7 @@ import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.DebtProfileEntity
 import com.northstar.money.core.database.GoalEntity
+import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.ReconciliationEntity
 import com.northstar.money.core.database.RecurringScheduleEntity
 import com.northstar.money.core.database.TransactionEntity
@@ -26,6 +27,7 @@ data class FullBackupDocument(
     val reconciliations: List<ReconciliationEntity>,
     val budgetAllocations: List<BudgetAllocationEntity>,
     val goals: List<GoalEntity>,
+    val goalContributions: List<GoalContributionEntity> = emptyList(),
     val recurringSchedules: List<RecurringScheduleEntity>,
     val debtProfiles: List<DebtProfileEntity>,
 ) {
@@ -37,6 +39,7 @@ data class FullBackupDocument(
         reconciliations = reconciliations,
         budgetAllocations = budgetAllocations,
         goals = goals,
+        goalContributions = goalContributions,
         recurringSchedules = recurringSchedules,
         debtProfiles = debtProfiles,
     )
@@ -65,6 +68,7 @@ class FullBackupJsonCodec {
             reconciliations = snapshot.reconciliations,
             budgetAllocations = snapshot.budgetAllocations,
             goals = snapshot.goals,
+            goalContributions = snapshot.goalContributions,
             recurringSchedules = snapshot.recurringSchedules,
             debtProfiles = snapshot.debtProfiles,
         ),

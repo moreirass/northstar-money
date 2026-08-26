@@ -12,6 +12,7 @@ import androidx.room.RoomDatabase
         ReconciliationEntity::class,
         BudgetAllocationEntity::class,
         GoalEntity::class,
+        GoalContributionEntity::class,
         RecurringScheduleEntity::class,
         DebtProfileEntity::class,
     ],
@@ -22,7 +23,7 @@ abstract class NorthstarDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
 
     companion object {
-        const val VERSION = 7
+        const val VERSION = 8
     }
 }
 
@@ -138,5 +139,40 @@ val MIGRATION_6_7 = object : androidx.room.migration.Migration(6, 7) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE recurring_schedules ADD COLUMN deletedAt INTEGER")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_recurring_schedules_deletedAt ON recurring_schedules(deletedAt)")
+    }
+}
+
+val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS goal_contributions (
+                id TEXT NOT NULL PRIMARY KEY,
+                goalId TEXT NOT NULL,
+                amountMinor INTEGER NOT NULL,
+                localDate TEXT NOT NULL,
+                note TEXT NOT NULL,
+                createdAt INTEGER NOT NULL,
+                updatedAt INTEGER NOT NULL,
+                deletedAt INTEGER,
+                FOREIGN KEY(goalId) REFERENCES goals(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_goal_contributions_goalId ON goal_contributions(goalId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_goal_contributions_localDate ON goal_contributions(localDate)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_goal_contributions_deletedAt ON goal_contributions(deletedAt)")
+        db.execSQL(
+            """
+            INSERT INTO goal_contributions (
+                id, goalId, amountMinor, localDate, note, createdAt, updatedAt, deletedAt
+            )
+            SELECT 'legacy-' || id, id, savedMinor,
+                   date(createdAt / 1000, 'unixepoch'), 'Opening saved amount', createdAt, createdAt, NULL
+            FROM goals
+            WHERE savedMinor > 0
+            """.trimIndent(),
+        )
+        db.execSQL("UPDATE goals SET savedMinor = 0 WHERE savedMinor > 0")
     }
 }

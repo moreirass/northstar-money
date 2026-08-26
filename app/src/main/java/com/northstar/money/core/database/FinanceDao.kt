@@ -123,8 +123,44 @@ abstract class FinanceDao {
     )
     abstract fun observeBudgets(monthStart: String, baseCurrencyCode: String): Flow<List<BudgetRow>>
 
-    @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt")
+    @Query(
+        """
+        SELECT g.id, g.name, g.targetMinor,
+               g.savedMinor + COALESCE(SUM(CASE WHEN contribution.deletedAt IS NULL THEN contribution.amountMinor ELSE 0 END), 0) AS savedMinor,
+               g.currencyCode, g.targetLocalDate, g.status, g.createdAt
+        FROM goals g
+        LEFT JOIN goal_contributions contribution ON contribution.goalId = g.id
+        GROUP BY g.id
+        ORDER BY g.createdAt
+        """,
+    )
     abstract fun observeGoals(): Flow<List<GoalEntity>>
+
+    @Query(
+        """
+        SELECT contribution.id, contribution.goalId, goal.name AS goalName,
+               contribution.amountMinor, goal.currencyCode,
+               contribution.localDate, contribution.note
+        FROM goal_contributions contribution
+        JOIN goals goal ON goal.id = contribution.goalId
+        WHERE contribution.deletedAt IS NULL
+        ORDER BY contribution.localDate DESC, contribution.createdAt DESC
+        """,
+    )
+    abstract fun observeGoalContributions(): Flow<List<GoalContributionRow>>
+
+    @Query(
+        """
+        SELECT contribution.id, contribution.goalId, goal.name AS goalName,
+               contribution.amountMinor, goal.currencyCode,
+               contribution.localDate, contribution.note
+        FROM goal_contributions contribution
+        JOIN goals goal ON goal.id = contribution.goalId
+        WHERE contribution.deletedAt IS NOT NULL
+        ORDER BY contribution.deletedAt DESC
+        """,
+    )
+    abstract fun observeDeletedGoalContributions(): Flow<List<GoalContributionRow>>
 
     @Query(
         """
@@ -159,6 +195,62 @@ abstract class FinanceDao {
 
     @Insert
     abstract suspend fun insertGoal(item: GoalEntity)
+
+    @Insert
+    protected abstract suspend fun insertGoalContributionEntity(item: GoalContributionEntity)
+
+    @Transaction
+    open suspend fun insertGoalWithInitialContribution(
+        goal: GoalEntity,
+        initialContribution: GoalContributionEntity?,
+    ) {
+        insertGoal(goal)
+        initialContribution?.let { insertGoalContributionEntity(it) }
+    }
+
+    @Query("SELECT * FROM goals WHERE id = :id")
+    abstract suspend fun getGoal(id: String): GoalEntity?
+
+    @Update
+    protected abstract suspend fun updateGoalEntity(goal: GoalEntity): Int
+
+    @Query("SELECT * FROM goal_contributions WHERE id = :id AND deletedAt IS NULL")
+    abstract suspend fun getGoalContributionForEdit(id: String): GoalContributionEntity?
+
+    @Update
+    protected abstract suspend fun updateGoalContributionEntity(contribution: GoalContributionEntity): Int
+
+    @Query("UPDATE goal_contributions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
+    protected abstract suspend fun softDeleteGoalContribution(id: String, deletedAt: Long): Int
+
+    @Query("UPDATE goal_contributions SET deletedAt = NULL, updatedAt = :restoredAt WHERE id = :id AND deletedAt IS NOT NULL")
+    protected abstract suspend fun restoreDeletedGoalContribution(id: String, restoredAt: Long): Int
+
+    @Transaction
+    open suspend fun updateGoal(goal: GoalEntity) {
+        require(updateGoalEntity(goal) == 1) { "Savings goal could not be updated" }
+    }
+
+    @Transaction
+    open suspend fun insertGoalContribution(contribution: GoalContributionEntity) {
+        require(getGoal(contribution.goalId) != null) { "Savings goal is missing" }
+        insertGoalContributionEntity(contribution)
+    }
+
+    @Transaction
+    open suspend fun updateGoalContribution(contribution: GoalContributionEntity) {
+        require(updateGoalContributionEntity(contribution) == 1) { "Contribution could not be updated" }
+    }
+
+    @Transaction
+    open suspend fun deleteGoalContribution(id: String, deletedAt: Long) {
+        require(softDeleteGoalContribution(id, deletedAt) == 1) { "Contribution is missing or deleted" }
+    }
+
+    @Transaction
+    open suspend fun restoreGoalContribution(id: String, restoredAt: Long) {
+        require(restoreDeletedGoalContribution(id, restoredAt) == 1) { "Contribution is not available for recovery" }
+    }
 
     @Insert
     abstract suspend fun insertRecurring(item: RecurringScheduleEntity)
@@ -510,6 +602,9 @@ abstract class FinanceDao {
     @Query("SELECT * FROM goals ORDER BY id")
     protected abstract suspend fun getAllGoalsForBackup(): List<GoalEntity>
 
+    @Query("SELECT * FROM goal_contributions ORDER BY id")
+    protected abstract suspend fun getAllGoalContributionsForBackup(): List<GoalContributionEntity>
+
     @Query("SELECT * FROM recurring_schedules ORDER BY id")
     protected abstract suspend fun getAllRecurringSchedulesForBackup(): List<RecurringScheduleEntity>
 
@@ -536,6 +631,9 @@ abstract class FinanceDao {
 
     @Query("DELETE FROM goals")
     protected abstract suspend fun deleteAllGoals()
+
+    @Query("DELETE FROM goal_contributions")
+    protected abstract suspend fun deleteAllGoalContributions()
 
     @Query("DELETE FROM categories")
     protected abstract suspend fun deleteAllCategories()
@@ -565,6 +663,9 @@ abstract class FinanceDao {
     protected abstract suspend fun restoreGoals(items: List<GoalEntity>)
 
     @Insert
+    protected abstract suspend fun restoreGoalContributions(items: List<GoalContributionEntity>)
+
+    @Insert
     protected abstract suspend fun restoreRecurringSchedules(items: List<RecurringScheduleEntity>)
 
     @Insert
@@ -579,6 +680,7 @@ abstract class FinanceDao {
         reconciliations = getAllReconciliationsForBackup(),
         budgetAllocations = getAllBudgetAllocationsForBackup(),
         goals = getAllGoalsForBackup(),
+        goalContributions = getAllGoalContributionsForBackup(),
         recurringSchedules = getAllRecurringSchedulesForBackup(),
         debtProfiles = getAllDebtProfilesForBackup(),
     )
@@ -591,6 +693,7 @@ abstract class FinanceDao {
         deleteAllDebtProfiles()
         deleteAllTransactionEntries()
         deleteAllTransactions()
+        deleteAllGoalContributions()
         deleteAllGoals()
         deleteAllCategories()
         deleteAllAccounts()
@@ -602,6 +705,7 @@ abstract class FinanceDao {
         restoreReconciliations(snapshot.reconciliations)
         restoreBudgetAllocations(snapshot.budgetAllocations)
         restoreGoals(snapshot.goals)
+        restoreGoalContributions(snapshot.goalContributions)
         restoreRecurringSchedules(snapshot.recurringSchedules)
         restoreDebtProfiles(snapshot.debtProfiles)
     }

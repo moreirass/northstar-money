@@ -9,6 +9,7 @@ import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.DebtProfileEntity
 import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.GoalEntity
+import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.core.database.ReconciliationEntity
 import com.northstar.money.core.database.RecurringScheduleEntity
@@ -55,7 +56,10 @@ class FullBackupRepositoryTest {
             entry = null,
         )
         dao.upsertBudget(BudgetAllocationEntity("budget", "2026-08-01", "category", 200))
-        dao.insertGoal(GoalEntity("goal", "Reserve", 1000, 100, "EUR", null, "PAUSED", 6))
+        dao.insertGoal(GoalEntity("goal", "Reserve", 1000, 0, "EUR", null, "PAUSED", 6))
+        dao.insertGoalContribution(
+            GoalContributionEntity("contribution", "goal", 100, "2026-08-01", "Opening", 6, 7, 97),
+        )
         dao.insertRecurring(
             RecurringScheduleEntity(
                 "recurring", "Rent", "EXPENSE", 500, "EUR", "account", "category",
@@ -74,12 +78,14 @@ class FullBackupRepositoryTest {
         assertEquals(listOf("reconciliation"), snapshot.reconciliations.map { it.id })
         assertEquals(listOf("budget"), snapshot.budgetAllocations.map { it.id })
         assertEquals(listOf("goal"), snapshot.goals.map { it.id })
+        assertEquals(listOf("contribution"), snapshot.goalContributions.map { it.id })
         assertEquals(listOf("recurring"), snapshot.recurringSchedules.map { it.id })
         assertEquals(listOf("debt"), snapshot.debtProfiles.map { it.id })
         assertEquals(99L, snapshot.accounts.single().archivedAt)
         assertEquals(99L, snapshot.categories.single().archivedAt)
         assertEquals(false, snapshot.recurringSchedules.single().active)
         assertEquals(98L, snapshot.transactions.single().deletedAt)
+        assertEquals(97L, snapshot.goalContributions.single().deletedAt)
     }
 
     @Test
@@ -169,6 +175,34 @@ class FullBackupRepositoryTest {
         }
     }
 
+    @Test
+    fun restoreLegacyBackup_normalizesSavedGoalAmountAsContribution() = runBlocking {
+        val dao = database.financeDao()
+        val recoveryStore = MemoryRestoreRecoveryStore()
+        val repository = OfflineFinanceRepository(dao, restoreRecoveryStore = recoveryStore)
+        val legacy = completeRestoreSnapshot().copy(
+            goals = listOf(
+                GoalEntity("restored-goal", "Reserve", 1000, 100, "EUR", null, "ACTIVE", 15),
+            ),
+            goalContributions = emptyList(),
+        )
+        val password = "correct horse battery staple".toCharArray()
+        try {
+            repository.restoreFullBackup(
+                FullBackupJsonCodec().encode(legacy, databaseVersion = 7),
+                password,
+            )
+
+            val restored = dao.exportSnapshot()
+            assertEquals(0L, restored.goals.single().savedMinor)
+            assertEquals("restored-goal", restored.goalContributions.single().goalId)
+            assertEquals(100L, restored.goalContributions.single().amountMinor)
+            assertEquals("Opening saved amount", restored.goalContributions.single().note)
+        } finally {
+            password.fill('\u0000')
+        }
+    }
+
     private fun completeRestoreSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("restored-account", "Restored", "CHECKING", "EUR", 100, 99, 10, 11)),
         categories = listOf(CategoryEntity("restored-category", "Restored", "EXPENSE", 0, 99)),
@@ -182,7 +216,12 @@ class FullBackupRepositoryTest {
             ReconciliationEntity("restored-reconciliation", "restored-account", "2026-08-01", 75, 75, 0, null, 14),
         ),
         budgetAllocations = listOf(BudgetAllocationEntity("restored-budget", "2026-08-01", "restored-category", 200)),
-        goals = listOf(GoalEntity("restored-goal", "Reserve", 1000, 100, "EUR", null, "PAUSED", 15)),
+        goals = listOf(GoalEntity("restored-goal", "Reserve", 1000, 0, "EUR", null, "PAUSED", 15)),
+        goalContributions = listOf(
+            GoalContributionEntity(
+                "restored-contribution", "restored-goal", 100, "2026-08-01", "Opening", 15, 16,
+            ),
+        ),
         recurringSchedules = listOf(
             RecurringScheduleEntity(
                 "restored-recurring", "Rent", "EXPENSE", 500, "EUR", "restored-account", "restored-category",

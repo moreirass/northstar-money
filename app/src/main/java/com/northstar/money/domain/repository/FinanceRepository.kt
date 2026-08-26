@@ -10,6 +10,8 @@ import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
+import com.northstar.money.domain.model.EditableGoal
+import com.northstar.money.domain.model.GoalContribution
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
@@ -22,6 +24,8 @@ interface FinanceRepository {
     fun observeSummary(): Flow<FinanceSummary>
     fun observeBudgets(): Flow<List<com.northstar.money.domain.model.BudgetProgress>>
     fun observeGoals(): Flow<List<com.northstar.money.domain.model.SavingsGoal>>
+    fun observeGoalContributions(): Flow<List<GoalContribution>>
+    fun observeDeletedGoalContributions(): Flow<List<GoalContribution>>
     fun observeRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
     fun observePausedRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
     fun observeDeletedRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
@@ -43,6 +47,13 @@ interface FinanceRepository {
     suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean)
     suspend fun setBudget(categoryId: String, planned: Money)
     suspend fun createGoal(name: String, target: Money, saved: Money, targetDate: String?)
+    suspend fun getGoalForEdit(id: String): EditableGoal
+    suspend fun updateGoal(goal: EditableGoal)
+    suspend fun addGoalContribution(goalId: String, amount: Money, localDate: String, note: String)
+    suspend fun getGoalContributionForEdit(id: String): GoalContribution
+    suspend fun updateGoalContribution(contribution: GoalContribution)
+    suspend fun deleteGoalContribution(id: String)
+    suspend fun restoreGoalContribution(id: String)
     suspend fun createRecurring(
         name: String, kind: TransactionKind, amount: Money, accountId: String,
         categoryId: String?, frequency: String, nextDate: String,

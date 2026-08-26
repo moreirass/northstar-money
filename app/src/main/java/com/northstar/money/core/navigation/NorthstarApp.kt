@@ -79,6 +79,9 @@ import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
+import com.northstar.money.domain.model.EditableGoal
+import com.northstar.money.domain.model.GoalContribution
+import com.northstar.money.domain.model.SavingsGoal
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
@@ -105,6 +108,8 @@ fun NorthstarApp() {
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
     var editingRecurring by remember { mutableStateOf<EditableRecurring?>(null) }
+    var editingGoal by remember { mutableStateOf<EditableGoal?>(null) }
+    var editingGoalContribution by remember { mutableStateOf<GoalContribution?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -173,6 +178,23 @@ fun NorthstarApp() {
                 onRestoreAccount = financeViewModel::restoreAccount,
                 onReconcile = financeViewModel::reconcile,
                 onCreateGoal = financeViewModel::createGoal,
+                onEditGoal = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getGoalForEdit(id) }
+                            .onSuccess { editingGoal = it }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the savings goal.") }
+                    }
+                },
+                onAddGoalContribution = financeViewModel::addGoalContribution,
+                onEditGoalContribution = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getGoalContributionForEdit(id) }
+                            .onSuccess { editingGoalContribution = it }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the contribution.") }
+                    }
+                },
+                onDeleteGoalContribution = financeViewModel::deleteGoalContribution,
+                onRestoreGoalContribution = financeViewModel::restoreGoalContribution,
                 onCreateRecurring = financeViewModel::createRecurring,
                 onEditRecurring = { id ->
                     scope.launch {
@@ -283,6 +305,30 @@ fun NorthstarApp() {
             onSave = {
                 financeViewModel.updateRecurring(it)
                 editingRecurring = null
+            },
+        )
+    }
+
+    editingGoal?.let { goal ->
+        EditGoalDialog(
+            goal = goal,
+            onDismiss = { editingGoal = null },
+            onSave = {
+                financeViewModel.updateGoal(it)
+                editingGoal = null
+            },
+        )
+    }
+
+    editingGoalContribution?.let { contribution ->
+        GoalContributionDialog(
+            title = "Edit contribution",
+            contribution = contribution,
+            goals = state.goals,
+            onDismiss = { editingGoalContribution = null },
+            onSave = {
+                financeViewModel.updateGoalContribution(it)
+                editingGoalContribution = null
             },
         )
     }
@@ -454,6 +500,11 @@ private fun MoreScreen(
     onRestoreAccount: (String) -> Unit,
     onReconcile: (String, String, Boolean) -> Unit,
     onCreateGoal: (String, String, String, String?) -> Unit,
+    onEditGoal: (String) -> Unit,
+    onAddGoalContribution: (String, String, String, String) -> Unit,
+    onEditGoalContribution: (String) -> Unit,
+    onDeleteGoalContribution: (String) -> Unit,
+    onRestoreGoalContribution: (String) -> Unit,
     onCreateRecurring: (String, TransactionKind, String, String, String?, String, String) -> Unit,
     onEditRecurring: (String) -> Unit,
     onPauseRecurring: (String) -> Unit,
@@ -668,6 +719,8 @@ private fun MoreScreen(
     var mergeCategoryId by remember { mutableStateOf<String?>(null) }
     var archiveAccountId by remember { mutableStateOf<String?>(null) }
     var deleteRecurringId by remember { mutableStateOf<String?>(null) }
+    var contributionGoalId by remember { mutableStateOf<String?>(null) }
+    var deleteContributionId by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(20.dp),
@@ -941,9 +994,47 @@ private fun MoreScreen(
         if (state.goals.isEmpty()) item { Text("No savings goals yet.") }
         items(state.goals, key = { it.id }) { goal ->
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(goal.name, fontWeight = FontWeight.Medium)
                     Text("${goal.saved.formatted()} of ${goal.target.formatted()}")
+                    Text(goal.status.lowercase(), style = MaterialTheme.typography.bodySmall)
+                    Row {
+                        TextButton(onClick = { onEditGoal(goal.id) }) { Text("Edit") }
+                        TextButton(onClick = { contributionGoalId = goal.id }) { Text("Add contribution") }
+                    }
+                }
+            }
+        }
+        if (state.goalContributions.isNotEmpty()) {
+            item { Text("Goal contributions", style = MaterialTheme.typography.titleMedium) }
+            items(state.goalContributions, key = { "contribution-${it.id}" }) { contribution ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(contribution.goalName, fontWeight = FontWeight.Medium)
+                        Text("${contribution.amount.formatted()} • ${contribution.localDate}")
+                        if (contribution.note.isNotBlank()) Text(contribution.note, style = MaterialTheme.typography.bodySmall)
+                        Row {
+                            TextButton(onClick = { onEditGoalContribution(contribution.id) }) { Text("Edit") }
+                            TextButton(onClick = { deleteContributionId = contribution.id }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        }
+        if (state.deletedGoalContributions.isNotEmpty()) {
+            item { Text("Recently deleted contributions", style = MaterialTheme.typography.titleMedium) }
+            items(state.deletedGoalContributions, key = { "deleted-contribution-${it.id}" }) { contribution ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(contribution.goalName, fontWeight = FontWeight.Medium)
+                            Text("${contribution.amount.formatted()} • ${contribution.localDate}")
+                        }
+                        TextButton(onClick = { onRestoreGoalContribution(contribution.id) }) { Text("Restore") }
+                    }
                 }
             }
         }
@@ -1144,6 +1235,40 @@ private fun MoreScreen(
                     ) { Text("Delete") }
                 },
                 dismissButton = { TextButton(onClick = { deleteRecurringId = null }) { Text("Cancel") } },
+            )
+        }
+    }
+    contributionGoalId?.let { goalId ->
+        val goal = state.goals.firstOrNull { it.id == goalId }
+        if (goal != null) {
+            AddGoalContributionDialog(
+                goal = goal,
+                onDismiss = { contributionGoalId = null },
+                onSave = { amount, date, note ->
+                    onAddGoalContribution(goalId, amount, date, note)
+                    contributionGoalId = null
+                },
+            )
+        }
+    }
+    deleteContributionId?.let { id ->
+        val contribution = state.goalContributions.firstOrNull { it.id == id }
+        if (contribution != null) {
+            AlertDialog(
+                onDismissRequest = { deleteContributionId = null },
+                title = { Text("Delete contribution?") },
+                text = {
+                    Text("${contribution.amount.formatted()} will stop counting toward ${contribution.goalName}. You can restore it later.")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeleteGoalContribution(id)
+                            deleteContributionId = null
+                        },
+                    ) { Text("Delete") }
+                },
+                dismissButton = { TextButton(onClick = { deleteContributionId = null }) { Text("Cancel") } },
             )
         }
     }
@@ -1644,8 +1769,186 @@ private fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, S
                 onClick = { onSave(name, target, saved, date.ifBlank { null }) },
                 enabled = name.isNotBlank() &&
                     runCatching { Money.parseMajor(target).minor > 0 }.getOrDefault(false) &&
-                    runCatching { Money.parseMajor(saved).minor >= 0 }.getOrDefault(false),
+                    runCatching { Money.parseMajor(saved).minor >= 0 }.getOrDefault(false) &&
+                    (date.isBlank() || runCatching { java.time.LocalDate.parse(date) }.isSuccess),
             ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun EditGoalDialog(
+    goal: EditableGoal,
+    onDismiss: () -> Unit,
+    onSave: (EditableGoal) -> Unit,
+) {
+    val fractionDigits = java.util.Currency.getInstance(goal.target.currencyCode).defaultFractionDigits
+    var name by remember(goal.id) { mutableStateOf(goal.name) }
+    var target by remember(goal.id) {
+        mutableStateOf(goal.target.minor.toBigDecimal().movePointLeft(fractionDigits).toPlainString())
+    }
+    var date by remember(goal.id) { mutableStateOf(goal.targetLocalDate.orEmpty()) }
+    var status by remember(goal.id) { mutableStateOf(goal.status) }
+    val parsedTarget = runCatching { Money.parseMajor(target, goal.target.currencyCode) }.getOrNull()
+    val validDate = date.isBlank() || runCatching { java.time.LocalDate.parse(date) }.isSuccess
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit savings goal") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(name, { name = it }, label = { Text("Goal name") }, singleLine = true)
+                OutlinedTextField(
+                    target,
+                    { target = it },
+                    label = { Text("Target amount (${goal.target.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    date,
+                    { date = it },
+                    label = { Text("Target date (YYYY-MM-DD, optional)") },
+                    singleLine = true,
+                )
+                Text("Status", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    listOf("ACTIVE" to "Active", "PAUSED" to "Paused", "COMPLETED" to "Completed")
+                        .forEach { (value, label) ->
+                            FilterChip(status == value, { status = value }, { Text(label) })
+                        }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        goal.copy(
+                            name = name.trim(),
+                            target = requireNotNull(parsedTarget),
+                            targetLocalDate = date.trim().ifBlank { null },
+                            status = status,
+                        ),
+                    )
+                },
+                enabled = name.isNotBlank() && parsedTarget?.minor?.let { it > 0 } == true && validDate,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun AddGoalContributionDialog(
+    goal: SavingsGoal,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String) -> Unit,
+) {
+    var amount by remember(goal.id) { mutableStateOf("") }
+    var date by remember(goal.id) { mutableStateOf(java.time.LocalDate.now().toString()) }
+    var note by remember(goal.id) { mutableStateOf("") }
+    val parsedAmount = runCatching { Money.parseMajor(amount, goal.target.currencyCode) }.getOrNull()
+    val validDate = runCatching { java.time.LocalDate.parse(date) }.isSuccess
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add contribution") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(goal.name, fontWeight = FontWeight.Medium)
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (${goal.target.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") })
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(amount, date.trim(), note.trim()) },
+                enabled = parsedAmount?.minor?.let { it > 0 } == true && validDate && note.length <= 500,
+            ) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun GoalContributionDialog(
+    title: String,
+    contribution: GoalContribution,
+    goals: List<SavingsGoal>,
+    onDismiss: () -> Unit,
+    onSave: (GoalContribution) -> Unit,
+) {
+    val fractionDigits = java.util.Currency.getInstance(contribution.amount.currencyCode).defaultFractionDigits
+    val eligibleGoals = goals.filter { it.target.currencyCode == contribution.amount.currencyCode }
+    var goalId by remember(contribution.id) { mutableStateOf(contribution.goalId) }
+    var amount by remember(contribution.id) {
+        mutableStateOf(contribution.amount.minor.toBigDecimal().movePointLeft(fractionDigits).toPlainString())
+    }
+    var date by remember(contribution.id) { mutableStateOf(contribution.localDate) }
+    var note by remember(contribution.id) { mutableStateOf(contribution.note) }
+    val selectedGoal = eligibleGoals.firstOrNull { it.id == goalId }
+    val parsedAmount = runCatching { Money.parseMajor(amount, contribution.amount.currencyCode) }.getOrNull()
+    val validDate = runCatching { java.time.LocalDate.parse(date) }.isSuccess
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text("Goal", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    eligibleGoals.forEach { goal ->
+                        FilterChip(goalId == goal.id, { goalId = goal.id }, { Text(goal.name) })
+                    }
+                }
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (${contribution.amount.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") })
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        contribution.copy(
+                            goalId = requireNotNull(selectedGoal).id,
+                            goalName = selectedGoal.name,
+                            amount = requireNotNull(parsedAmount),
+                            localDate = date.trim(),
+                            note = note.trim(),
+                        ),
+                    )
+                },
+                enabled = selectedGoal != null && parsedAmount?.minor?.let { it > 0 } == true &&
+                    validDate && note.length <= 500,
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

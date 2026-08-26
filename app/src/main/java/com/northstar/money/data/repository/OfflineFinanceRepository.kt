@@ -2,6 +2,8 @@ package com.northstar.money.data.repository
 
 import com.northstar.money.core.database.AccountEntity
 import com.northstar.money.core.database.CategoryEntity
+import com.northstar.money.core.database.DatabaseSnapshot
+import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.FinanceDao
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
@@ -18,6 +20,8 @@ import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
+import com.northstar.money.domain.model.EditableGoal
+import com.northstar.money.domain.model.GoalContribution
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
@@ -26,6 +30,8 @@ import com.northstar.money.data.backup.PortableBackupCodec
 import com.northstar.money.data.backup.RestoreRecoveryStore
 import com.northstar.money.data.importing.TransactionCsvValidator
 import java.time.LocalDate
+import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -105,9 +111,17 @@ class OfflineFinanceRepository(
         rows.map {
             com.northstar.money.domain.model.SavingsGoal(
                 it.id, it.name, Money(it.targetMinor, it.currencyCode),
-                Money(it.savedMinor, it.currencyCode), it.targetLocalDate,
+                Money(it.savedMinor, it.currencyCode), it.targetLocalDate, it.status,
             )
         }
+    }
+
+    override fun observeGoalContributions() = dao.observeGoalContributions().map { rows ->
+        rows.map(::goalContributionToDomain)
+    }
+
+    override fun observeDeletedGoalContributions() = dao.observeDeletedGoalContributions().map { rows ->
+        rows.map(::goalContributionToDomain)
     }
 
     override fun observeRecurring() = dao.observeRecurring().map { rows ->
@@ -380,12 +394,104 @@ class OfflineFinanceRepository(
 
     override suspend fun createGoal(name: String, target: Money, saved: Money, targetDate: String?) {
         require(name.isNotBlank() && target.minor > 0 && saved.minor >= 0)
-        dao.insertGoal(
-            com.northstar.money.core.database.GoalEntity(
-                UUID.randomUUID().toString(), name.trim(), target.minor, saved.minor,
-                target.currencyCode, targetDate?.takeIf { it.isNotBlank() }, "ACTIVE", System.currentTimeMillis(),
-            )
+        require(target.currencyCode == saved.currencyCode) { "Goal and saved amount currencies must match" }
+        val normalizedTargetDate = targetDate?.takeIf { it.isNotBlank() }?.also { LocalDate.parse(it) }
+        val now = System.currentTimeMillis()
+        val goalId = UUID.randomUUID().toString()
+        dao.insertGoalWithInitialContribution(
+            goal = com.northstar.money.core.database.GoalEntity(
+                goalId, name.trim(), target.minor, 0,
+                target.currencyCode, normalizedTargetDate, "ACTIVE", now,
+            ),
+            initialContribution = saved.takeIf { it.minor > 0 }?.let {
+                GoalContributionEntity(
+                    UUID.randomUUID().toString(), goalId, it.minor, LocalDate.now().toString(),
+                    "Opening saved amount", now, now,
+                )
+            },
         )
+    }
+
+    override suspend fun getGoalForEdit(id: String): EditableGoal {
+        val goal = requireNotNull(dao.getGoal(id)) { "Savings goal is missing" }
+        return EditableGoal(
+            id = goal.id,
+            name = goal.name,
+            target = Money(goal.targetMinor, goal.currencyCode),
+            targetLocalDate = goal.targetLocalDate,
+            status = goal.status,
+        )
+    }
+
+    override suspend fun updateGoal(goal: EditableGoal) {
+        require(goal.name.isNotBlank() && goal.target.minor > 0) { "Name and positive target are required" }
+        require(goal.status in GOAL_STATUSES) { "Invalid goal status" }
+        val targetDate = goal.targetLocalDate?.takeIf { it.isNotBlank() }?.also { LocalDate.parse(it) }
+        val stored = requireNotNull(dao.getGoal(goal.id)) { "Savings goal is missing" }
+        require(goal.target.currencyCode == stored.currencyCode) { "Goal currency cannot be changed" }
+        dao.updateGoal(
+            stored.copy(
+                name = goal.name.trim(),
+                targetMinor = goal.target.minor,
+                targetLocalDate = targetDate,
+                status = goal.status,
+            ),
+        )
+    }
+
+    override suspend fun addGoalContribution(goalId: String, amount: Money, localDate: String, note: String) {
+        require(amount.minor > 0) { "Contribution must be positive" }
+        val goal = requireNotNull(dao.getGoal(goalId)) { "Savings goal is missing" }
+        require(amount.currencyCode == goal.currencyCode) { "Contribution currency must match the goal" }
+        val date = LocalDate.parse(localDate).toString()
+        require(note.length <= 500) { "Contribution note is too long" }
+        val now = System.currentTimeMillis()
+        dao.insertGoalContribution(
+            GoalContributionEntity(
+                UUID.randomUUID().toString(), goalId, amount.minor, date, note.trim(), now, now,
+            ),
+        )
+    }
+
+    override suspend fun getGoalContributionForEdit(id: String): GoalContribution {
+        val contribution = requireNotNull(dao.getGoalContributionForEdit(id)) { "Contribution is missing or deleted" }
+        val goal = requireNotNull(dao.getGoal(contribution.goalId)) { "Savings goal is missing" }
+        return GoalContribution(
+            contribution.id,
+            contribution.goalId,
+            goal.name,
+            Money(contribution.amountMinor, goal.currencyCode),
+            contribution.localDate,
+            contribution.note,
+        )
+    }
+
+    override suspend fun updateGoalContribution(contribution: GoalContribution) {
+        require(contribution.amount.minor > 0) { "Contribution must be positive" }
+        require(contribution.note.length <= 500) { "Contribution note is too long" }
+        val date = LocalDate.parse(contribution.localDate).toString()
+        val stored = requireNotNull(dao.getGoalContributionForEdit(contribution.id)) {
+            "Contribution is missing or deleted"
+        }
+        val goal = requireNotNull(dao.getGoal(contribution.goalId)) { "Savings goal is missing" }
+        require(contribution.amount.currencyCode == goal.currencyCode) { "Contribution currency must match the goal" }
+        dao.updateGoalContribution(
+            stored.copy(
+                goalId = contribution.goalId,
+                amountMinor = contribution.amount.minor,
+                localDate = date,
+                note = contribution.note.trim(),
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    override suspend fun deleteGoalContribution(id: String) {
+        dao.deleteGoalContribution(id, System.currentTimeMillis())
+    }
+
+    override suspend fun restoreGoalContribution(id: String) {
+        dao.restoreGoalContribution(id, System.currentTimeMillis())
     }
 
     override suspend fun createRecurring(
@@ -592,7 +698,7 @@ class OfflineFinanceRepository(
         require(document.databaseVersion <= NorthstarDatabase.VERSION) {
             "Backup requires a newer Northstar Money database version"
         }
-        val snapshot = document.toSnapshot()
+        val snapshot = normalizeLegacyGoalSavings(document.toSnapshot())
         snapshotValidator.validate(snapshot)
 
         val recoveryStore = requireNotNull(restoreRecoveryStore) { "Restore recovery storage is unavailable" }
@@ -602,6 +708,32 @@ class OfflineFinanceRepository(
         )
         recoveryStore.save(portableBackupCodec.encrypt(recoveryDocument, recoveryPassword))
         dao.replaceWithSnapshot(snapshot)
+    }
+
+    private fun normalizeLegacyGoalSavings(snapshot: DatabaseSnapshot): DatabaseSnapshot {
+        val goalsWithSavedAmount = snapshot.goals.filter { it.savedMinor > 0 }
+        if (goalsWithSavedAmount.isEmpty()) return snapshot
+
+        val contributionIds = snapshot.goalContributions.mapTo(mutableSetOf()) { it.id }
+        val migratedContributions = goalsWithSavedAmount.map { goal ->
+            val contributionId = "legacy-${goal.id}"
+            require(contributionIds.add(contributionId)) {
+                "Backup contains a conflicting legacy goal contribution"
+            }
+            GoalContributionEntity(
+                id = contributionId,
+                goalId = goal.id,
+                amountMinor = goal.savedMinor,
+                localDate = Instant.ofEpochMilli(goal.createdAt).atZone(ZoneOffset.UTC).toLocalDate().toString(),
+                note = "Opening saved amount",
+                createdAt = goal.createdAt,
+                updatedAt = goal.createdAt,
+            )
+        }
+        return snapshot.copy(
+            goals = snapshot.goals.map { it.copy(savedMinor = 0) },
+            goalContributions = snapshot.goalContributions + migratedContributions,
+        )
     }
 
     private fun transactionRowToDomain(row: com.northstar.money.core.database.TransactionRow) = TransactionItem(
@@ -625,6 +757,16 @@ class OfflineFinanceRepository(
             row.intervalCount,
         )
 
+    private fun goalContributionToDomain(row: com.northstar.money.core.database.GoalContributionRow) =
+        GoalContribution(
+            row.id,
+            row.goalId,
+            row.goalName,
+            Money(row.amountMinor, row.currencyCode),
+            row.localDate,
+            row.note,
+        )
+
     private suspend fun requireAccountCurrency(accountId: String, currencyCode: String) {
         val accountCurrency = requireNotNull(dao.getActiveAccountCurrency(accountId)) {
             "Account is missing or archived"
@@ -637,5 +779,6 @@ class OfflineFinanceRepository(
     companion object {
         private const val BASE_CURRENCY_CODE = "EUR"
         private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
+        private val GOAL_STATUSES = setOf("ACTIVE", "PAUSED", "COMPLETED")
     }
 }

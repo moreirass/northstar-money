@@ -8,6 +8,7 @@ data class DatabaseSnapshot(
     val reconciliations: List<ReconciliationEntity>,
     val budgetAllocations: List<BudgetAllocationEntity>,
     val goals: List<GoalEntity>,
+    val goalContributions: List<GoalContributionEntity> = emptyList(),
     val recurringSchedules: List<RecurringScheduleEntity>,
     val debtProfiles: List<DebtProfileEntity>,
 )

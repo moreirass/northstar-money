@@ -182,6 +182,38 @@ data class GoalEntity(
     val createdAt: Long,
 )
 
+@Serializable
+@Entity(
+    tableName = "goal_contributions",
+    foreignKeys = [ForeignKey(
+        entity = GoalEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["goalId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("goalId"), Index("localDate"), Index("deletedAt")],
+)
+data class GoalContributionEntity(
+    @PrimaryKey val id: String,
+    val goalId: String,
+    val amountMinor: Long,
+    val localDate: String,
+    val note: String,
+    val createdAt: Long,
+    val updatedAt: Long,
+    val deletedAt: Long? = null,
+)
+
+data class GoalContributionRow(
+    val id: String,
+    val goalId: String,
+    val goalName: String,
+    val amountMinor: Long,
+    val currencyCode: String,
+    val localDate: String,
+    val note: String,
+)
+
 data class BudgetRow(
     val categoryId: String,
     val categoryName: String,
