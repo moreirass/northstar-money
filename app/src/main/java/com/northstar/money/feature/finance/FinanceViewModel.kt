@@ -23,6 +23,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 
 data class FinanceUiState(
@@ -39,11 +43,15 @@ data class FinanceUiState(
     val settings: AppSettings = AppSettings(),
 )
 
+data class FinanceUiEvent(val message: String)
+
 class FinanceViewModel(
     private val repository: FinanceRepository,
     private val preferences: UserPreferences,
 ) : ViewModel() {
     private val importMessage = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val eventChannel = Channel<FinanceUiEvent>(Channel.BUFFERED)
+    val events: Flow<FinanceUiEvent> = eventChannel.receiveAsFlow()
     private val coreState = combine(
         repository.observeAccounts(),
         repository.observeCategories(),
@@ -78,7 +86,7 @@ class FinanceViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
     init {
-        viewModelScope.launch { repository.seedIfEmpty() }
+        launchOperation("prepare your financial data") { repository.seedIfEmpty() }
     }
 
     fun addTransaction(
@@ -88,7 +96,7 @@ class FinanceViewModel(
         categoryId: String,
         payee: String,
     ) {
-        viewModelScope.launch {
+        launchOperation("save the transaction") {
             repository.addTransaction(
                 kind = kind,
                 amount = Money.parseMajor(amountText),
@@ -100,33 +108,33 @@ class FinanceViewModel(
     }
 
     fun deleteTransaction(id: String) {
-        viewModelScope.launch { repository.deleteTransaction(id) }
+        launchOperation("delete the transaction") { repository.deleteTransaction(id) }
     }
 
     fun createAccount(name: String, type: AccountType, openingBalance: String) {
-        viewModelScope.launch {
+        launchOperation("create the account") {
             repository.createAccount(name, type, Money.parseMajor(openingBalance.ifBlank { "0" }))
         }
     }
 
     fun transfer(amount: String, sourceId: String, destinationId: String, note: String) {
-        viewModelScope.launch {
+        launchOperation("save the transfer") {
             repository.transfer(Money.parseMajor(amount), sourceId, destinationId, note)
         }
     }
 
     fun reconcile(accountId: String, statementBalance: String, createAdjustment: Boolean) {
-        viewModelScope.launch {
+        launchOperation("reconcile the account") {
             repository.reconcile(accountId, Money.parseMajor(statementBalance), createAdjustment)
         }
     }
 
     fun setBudget(categoryId: String, planned: String) {
-        viewModelScope.launch { repository.setBudget(categoryId, Money.parseMajor(planned)) }
+        launchOperation("save the budget") { repository.setBudget(categoryId, Money.parseMajor(planned)) }
     }
 
     fun createGoal(name: String, target: String, saved: String, targetDate: String?) {
-        viewModelScope.launch {
+        launchOperation("create the goal") {
             repository.createGoal(name, Money.parseMajor(target), Money.parseMajor(saved.ifBlank { "0" }), targetDate)
         }
     }
@@ -135,20 +143,20 @@ class FinanceViewModel(
         name: String, kind: TransactionKind, amount: String, accountId: String,
         categoryId: String?, frequency: String, nextDate: String,
     ) {
-        viewModelScope.launch {
+        launchOperation("create the recurring item") {
             repository.createRecurring(name, kind, Money.parseMajor(amount), accountId, categoryId, frequency, nextDate)
         }
     }
 
     fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String) {
-        viewModelScope.launch {
+        launchOperation("save the debt profile") {
             val basisPoints = ratePercent.toBigDecimal().movePointRight(2).intValueExact()
             repository.createDebt(accountId, basisPoints, Money.parseMajor(minimumPayment), dueDay.toInt())
         }
     }
 
     fun importCsv(csv: String) {
-        viewModelScope.launch {
+        launchOperation("import the CSV file") {
             val result = repository.importCsv(csv)
             importMessage.value =
                 "Imported ${result.imported}; skipped ${result.skippedDuplicates} duplicates; ${result.errors} errors"
@@ -156,15 +164,15 @@ class FinanceViewModel(
     }
 
     fun setAppLock(enabled: Boolean) {
-        viewModelScope.launch { preferences.setAppLock(enabled) }
+        launchOperation("update app lock") { preferences.setAppLock(enabled) }
     }
 
     fun setReminders(enabled: Boolean) {
-        viewModelScope.launch { preferences.setReminders(enabled) }
+        launchOperation("update reminders") { preferences.setReminders(enabled) }
     }
 
     fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
-        viewModelScope.launch { repository.createCategory(name, kind) }
+        launchOperation("create the category") { repository.createCategory(name, kind) }
     }
 
     suspend fun createFullBackup(): String = repository.createFullBackup()
@@ -174,6 +182,12 @@ class FinanceViewModel(
 
     suspend fun undoLastFullRestore(recoveryPassword: CharArray) =
         repository.undoLastFullRestore(recoveryPassword)
+
+    private fun launchOperation(label: String, operation: suspend () -> Unit) {
+        viewModelScope.launch {
+            reportOperationFailure(label, { eventChannel.send(FinanceUiEvent(it)) }, operation)
+        }
+    }
 
     private fun calculateForecast(balance: Money, schedules: List<RecurringItem>): CashFlowForecast {
         val today = LocalDate.now()
@@ -203,6 +217,25 @@ class FinanceViewModel(
             }
         }
         return CashFlowForecast(Money(projected), Money(lowest), lowestDate.toString(), count)
+    }
+}
+
+internal suspend fun reportOperationFailure(
+    label: String,
+    report: suspend (String) -> Unit,
+    operation: suspend () -> Unit,
+) {
+    try {
+        operation()
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        val detail = if (error is IllegalArgumentException && !error.message.isNullOrBlank()) {
+            " ${error.message}."
+        } else {
+            " Please try again."
+        }
+        report("Could not $label.$detail")
     }
 }
 

@@ -24,6 +24,7 @@ import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -254,7 +255,7 @@ class OfflineFinanceRepository(
         var duplicates = 0
         var errors = 0
         csv.lineSequence().drop(1).filter { it.isNotBlank() }.forEach { line ->
-            runCatching {
+            try {
                 val columns = parseCsvLine(line)
                 require(columns.size >= 7)
                 val date = LocalDate.parse(columns[0]).toString()
@@ -280,7 +281,11 @@ class OfflineFinanceRepository(
                     )
                     imported++
                 }
-            }.onFailure { errors++ }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                errors++
+            }
         }
         return com.northstar.money.domain.model.ImportResult(imported, duplicates, errors)
     }

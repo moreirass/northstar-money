@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -62,6 +63,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import com.northstar.money.NorthstarApplication
 import com.northstar.money.domain.model.CategoryKind
 import com.northstar.money.domain.model.AccountType
@@ -92,6 +94,12 @@ fun NorthstarApp() {
     var showAdd by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(financeViewModel, snackbarHostState) {
+        financeViewModel.events.collect { event ->
+            snackbarHostState.showSnackbar(event.message)
+        }
+    }
 
     Scaffold(
         topBar = { TopAppBar(title = { Text(destination.label) }) },
@@ -380,7 +388,7 @@ private fun MoreScreen(
         val password = pendingBackupPassword
         if (uri != null && password != null) {
             scope.launch {
-                runCatching {
+                runSuspendCatching {
                     withContext(Dispatchers.IO) {
                         val encrypted = backupCodec.encrypt(onCreateFullBackup(), password)
                         requireNotNull(context.contentResolver.openOutputStream(uri)).use { output ->
@@ -420,7 +428,7 @@ private fun MoreScreen(
     fun decryptSelectedBackup(password: CharArray) {
         val uri = pendingRestoreUri ?: return
         scope.launch {
-            val result = runCatching {
+            val result = runSuspendCatching {
                 withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
                         backupCodec.decrypt(input.readBytes(), password)
@@ -454,7 +462,7 @@ private fun MoreScreen(
         pendingRestorePassword = null
         showRestoreConfirmation = false
         scope.launch {
-            runCatching {
+            runSuspendCatching {
                 withContext(Dispatchers.IO) { onRestoreFullBackup(document, password) }
             }.onSuccess {
                 android.widget.Toast.makeText(
@@ -475,7 +483,7 @@ private fun MoreScreen(
     }
     fun undoFullRestore(password: CharArray) {
         scope.launch {
-            runCatching {
+            runSuspendCatching {
                 withContext(Dispatchers.IO) { onUndoFullRestore(password) }
             }.onSuccess {
                 android.widget.Toast.makeText(context, "Previous data restored", android.widget.Toast.LENGTH_LONG).show()
@@ -1134,4 +1142,12 @@ private fun ReconcileDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
+}
+
+private suspend fun <T> runSuspendCatching(block: suspend () -> T): Result<T> = try {
+    Result.success(block())
+} catch (error: CancellationException) {
+    throw error
+} catch (error: Throwable) {
+    Result.failure(error)
 }

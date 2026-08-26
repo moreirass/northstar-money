@@ -41,12 +41,16 @@ class NorthstarApplication : Application() {
                 )
             )
         }
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "financial-review-reminder",
-            ExistingPeriodicWorkPolicy.KEEP,
-            PeriodicWorkRequestBuilder<com.northstar.money.data.worker.ReviewReminderWorker>(
-                24, TimeUnit.HOURS
-            ).build(),
-        )
+        runCatching {
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "financial-review-reminder",
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<com.northstar.money.data.worker.ReviewReminderWorker>(
+                    24, TimeUnit.HOURS
+                ).build(),
+            )
+        }.onFailure { error ->
+            android.util.Log.e("NorthstarApplication", "Could not schedule financial review reminder", error)
+        }
     }
 }
