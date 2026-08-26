@@ -5,6 +5,7 @@ import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.FinanceDao
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
+import com.northstar.money.core.database.TransactionImportItem
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Category
@@ -19,12 +20,12 @@ import com.northstar.money.data.backup.FullBackupJsonCodec
 import com.northstar.money.data.backup.DatabaseSnapshotValidator
 import com.northstar.money.data.backup.PortableBackupCodec
 import com.northstar.money.data.backup.RestoreRecoveryStore
+import com.northstar.money.data.importing.TransactionCsvValidator
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -34,6 +35,7 @@ class OfflineFinanceRepository(
     private val restoreRecoveryStore: RestoreRecoveryStore? = null,
     private val portableBackupCodec: PortableBackupCodec = PortableBackupCodec(),
     private val snapshotValidator: DatabaseSnapshotValidator = DatabaseSnapshotValidator(),
+    private val csvValidator: TransactionCsvValidator = TransactionCsvValidator(),
 ) : FinanceRepository {
     private val restoreMutex = Mutex()
 
@@ -250,68 +252,40 @@ class OfflineFinanceRepository(
     override suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult {
         val accounts = dao.observeAccounts().first()
         val categories = dao.observeCategories().first()
-        var imported = 0
-        var duplicates = 0
-        var errors = 0
-        csv.lineSequence().drop(1).filter { it.isNotBlank() }.forEach { line ->
-            try {
-                val columns = parseCsvLine(line)
-                require(columns.size >= 7)
-                val date = LocalDate.parse(columns[0]).toString()
-                val kind = TransactionKind.valueOf(columns[1])
-                require(kind != TransactionKind.TRANSFER)
-                val payee = columns[2]
-                val category = categories.firstOrNull { it.name == columns[3] }
-                    ?: categories.first { it.kind == if (kind == TransactionKind.INCOME) "INCOME" else "EXPENSE" }
-                val account = accounts.firstOrNull { it.name == columns[4] } ?: accounts.first()
-                val signedMinor = columns[5].toLong()
-                val amountMinor = if (kind == TransactionKind.EXPENSE) -kotlin.math.abs(signedMinor) else kotlin.math.abs(signedMinor)
-                if (dao.countMatchingTransaction(date, payee, account.id, amountMinor) > 0) {
-                    duplicates++
-                } else {
-                    val id = UUID.randomUUID().toString()
-                    val now = System.currentTimeMillis()
-                    dao.insertTransaction(
-                        TransactionEntity(id, kind.name, date, payee, "", now, now),
-                        TransactionEntryEntity(
-                            UUID.randomUUID().toString(), id, account.id, category.id,
-                            amountMinor, columns[6], true,
-                        ),
-                    )
-                    imported++
-                }
-            } catch (error: CancellationException) {
-                throw error
-            } catch (_: Throwable) {
-                errors++
-            }
+        val validation = csvValidator.validate(csv, accounts, categories)
+        if (validation.errors > 0) {
+            return com.northstar.money.domain.model.ImportResult(0, validation.skippedDuplicates, validation.errors)
         }
-        return com.northstar.money.domain.model.ImportResult(imported, duplicates, errors)
-    }
-
-    private fun parseCsvLine(line: String): List<String> {
-        val result = mutableListOf<String>()
-        val value = StringBuilder()
-        var quoted = false
-        var index = 0
-        while (index < line.length) {
-            val char = line[index]
-            when {
-                char == '"' && quoted && index + 1 < line.length && line[index + 1] == '"' -> {
-                    value.append('"')
-                    index++
-                }
-                char == '"' -> quoted = !quoted
-                char == ',' && !quoted -> {
-                    result += value.toString()
-                    value.clear()
-                }
-                else -> value.append(char)
-            }
-            index++
+        val now = System.currentTimeMillis()
+        val items = validation.transactions.map { row ->
+            val transactionId = UUID.randomUUID().toString()
+            TransactionImportItem(
+                transaction = TransactionEntity(
+                    transactionId,
+                    row.kind.name,
+                    row.localDate,
+                    row.payee,
+                    "",
+                    now,
+                    now,
+                ),
+                entry = TransactionEntryEntity(
+                    UUID.randomUUID().toString(),
+                    transactionId,
+                    row.accountId,
+                    row.categoryId,
+                    row.amountMinor,
+                    row.currencyCode,
+                    true,
+                ),
+            )
         }
-        result += value.toString()
-        return result
+        val writeResult = dao.importTransactions(items)
+        return com.northstar.money.domain.model.ImportResult(
+            imported = writeResult.imported,
+            skippedDuplicates = validation.skippedDuplicates + writeResult.skippedDuplicates,
+            errors = 0,
+        )
     }
 
     override suspend fun createCategory(name: String, kind: CategoryKind) {

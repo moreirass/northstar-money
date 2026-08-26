@@ -201,15 +201,43 @@ abstract class FinanceDao {
         SELECT COUNT(*) FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
         WHERE t.localDate = :localDate AND t.payee = :payee
-          AND e.accountId = :accountId AND e.amountMinor = :amountMinor
+          AND e.accountId = :accountId AND e.categoryId = :categoryId
+          AND e.amountMinor = :amountMinor AND e.currencyCode = :currencyCode
         """
     )
     abstract suspend fun countMatchingTransaction(
         localDate: String,
         payee: String,
         accountId: String,
+        categoryId: String,
         amountMinor: Long,
+        currencyCode: String,
     ): Int
+
+    @Transaction
+    open suspend fun importTransactions(items: List<TransactionImportItem>): TransactionImportWriteResult {
+        var imported = 0
+        var duplicates = 0
+        items.forEach { item ->
+            if (
+                countMatchingTransaction(
+                    item.transaction.localDate,
+                    item.transaction.payee,
+                    item.entry.accountId,
+                    requireNotNull(item.entry.categoryId),
+                    item.entry.amountMinor,
+                    item.entry.currencyCode,
+                ) > 0
+            ) {
+                duplicates++
+            } else {
+                insertTransactionEntity(item.transaction)
+                insertEntry(item.entry)
+                imported++
+            }
+        }
+        return TransactionImportWriteResult(imported, duplicates)
+    }
 
     @Query("SELECT * FROM accounts ORDER BY id")
     protected abstract suspend fun getAllAccountsForBackup(): List<AccountEntity>
