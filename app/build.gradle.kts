@@ -22,6 +22,8 @@ android {
 
     buildFeatures.compose = true
 
+    sourceSets["androidTest"].assets.srcDir("$projectDir/schemas")
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -37,6 +39,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(platform(libs.kotlinx.serialization.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
@@ -57,6 +60,7 @@ dependencies {
     kapt(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.room.testing)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
