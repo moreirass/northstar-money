@@ -17,6 +17,7 @@ import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
+import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
@@ -110,13 +111,12 @@ class OfflineFinanceRepository(
     }
 
     override fun observeRecurring() = dao.observeRecurring().map { rows ->
-        rows.map {
-            com.northstar.money.domain.model.RecurringItem(
-                it.id, it.name, TransactionKind.valueOf(it.kind),
-                Money(it.amountMinor, it.currencyCode), it.nextLocalDate, it.frequency,
-            )
-        }
+        rows.map(::recurringToDomain)
     }
+
+    override fun observePausedRecurring() = dao.observePausedRecurring().map { rows -> rows.map(::recurringToDomain) }
+
+    override fun observeDeletedRecurring() = dao.observeDeletedRecurring().map { rows -> rows.map(::recurringToDomain) }
 
     override fun observeDebts() = dao.observeDebts().map { rows ->
         rows.map {
@@ -398,15 +398,91 @@ class OfflineFinanceRepository(
         nextDate: String,
     ) {
         require(name.isNotBlank() && amount.minor > 0)
+        require(kind == TransactionKind.INCOME || kind == TransactionKind.EXPENSE) { "Recurring transfers are not supported" }
         requireAccountCurrency(accountId, amount.currencyCode)
+        val requiredCategoryId = requireNotNull(categoryId) { "Category is required" }
+        require(dao.getActiveCategoryKind(requiredCategoryId) == kind.name) {
+            "Category does not match the recurring type"
+        }
+        require(frequency in FREQUENCIES) { "Unsupported recurring frequency" }
         LocalDate.parse(nextDate)
         dao.insertRecurring(
             com.northstar.money.core.database.RecurringScheduleEntity(
                 UUID.randomUUID().toString(), name.trim(), kind.name, amount.minor,
-                amount.currencyCode, accountId, categoryId, frequency, 1, nextDate, true,
+                amount.currencyCode, accountId, requiredCategoryId, frequency, 1, nextDate, true,
                 System.currentTimeMillis(),
             )
         )
+    }
+
+    override suspend fun getRecurringForEdit(id: String): EditableRecurring {
+        val recurring = requireNotNull(dao.getRecurringForEdit(id)) { "Recurring schedule is missing or deleted" }
+        return EditableRecurring(
+            id = recurring.id,
+            name = recurring.name,
+            kind = TransactionKind.valueOf(recurring.kind),
+            amount = Money(recurring.amountMinor, recurring.currencyCode),
+            accountId = recurring.accountId,
+            categoryId = recurring.categoryId?.let { dao.getCanonicalActiveCategoryId(it) },
+            frequency = recurring.frequency,
+            intervalCount = recurring.intervalCount,
+            nextLocalDate = recurring.nextLocalDate,
+        )
+    }
+
+    override suspend fun updateRecurring(recurring: EditableRecurring) {
+        require(recurring.name.isNotBlank() && recurring.amount.minor > 0) {
+            "Name and positive amount are required"
+        }
+        require(recurring.kind == TransactionKind.INCOME || recurring.kind == TransactionKind.EXPENSE) {
+            "Recurring transfers are not supported"
+        }
+        require(recurring.frequency in FREQUENCIES && recurring.intervalCount > 0) {
+            "Unsupported recurring frequency"
+        }
+        LocalDate.parse(recurring.nextLocalDate)
+        val stored = requireNotNull(dao.getRecurringForEdit(recurring.id)) { "Recurring schedule is missing or deleted" }
+        require(recurring.amount.currencyCode == stored.currencyCode) { "Recurring currency cannot be changed" }
+        requireAccountCurrency(recurring.accountId, recurring.amount.currencyCode)
+        val categoryId = requireNotNull(recurring.categoryId) { "Category is required" }
+        require(dao.getActiveCategoryKind(categoryId) == recurring.kind.name) {
+            "Category does not match the recurring type"
+        }
+        dao.updateRecurring(
+            stored.copy(
+                name = recurring.name.trim(),
+                kind = recurring.kind.name,
+                amountMinor = recurring.amount.minor,
+                accountId = recurring.accountId,
+                categoryId = categoryId,
+                frequency = recurring.frequency,
+                intervalCount = recurring.intervalCount,
+                nextLocalDate = recurring.nextLocalDate,
+            ),
+        )
+    }
+
+    override suspend fun pauseRecurring(id: String) {
+        dao.pauseRecurring(id)
+    }
+
+    override suspend fun resumeRecurring(id: String) {
+        val recurring = requireNotNull(dao.getRecurringForEdit(id)) { "Recurring schedule is missing or deleted" }
+        requireAccountCurrency(recurring.accountId, recurring.currencyCode)
+        val categoryId = requireNotNull(recurring.categoryId?.let { dao.getCanonicalActiveCategoryId(it) }) {
+            "Choose an active category before resuming"
+        }
+        require(dao.getActiveCategoryKind(categoryId) == recurring.kind) { "Category does not match the recurring type" }
+        if (categoryId != recurring.categoryId) dao.updateRecurring(recurring.copy(categoryId = categoryId))
+        dao.resumeRecurring(id)
+    }
+
+    override suspend fun deleteRecurring(id: String) {
+        dao.deleteRecurring(id, System.currentTimeMillis())
+    }
+
+    override suspend fun restoreRecurring(id: String) {
+        dao.restoreRecurring(id)
     }
 
     override suspend fun createDebt(
@@ -538,6 +614,17 @@ class OfflineFinanceRepository(
         localDate = row.localDate,
     )
 
+    private fun recurringToDomain(row: com.northstar.money.core.database.RecurringScheduleEntity) =
+        com.northstar.money.domain.model.RecurringItem(
+            row.id,
+            row.name,
+            TransactionKind.valueOf(row.kind),
+            Money(row.amountMinor, row.currencyCode),
+            row.nextLocalDate,
+            row.frequency,
+            row.intervalCount,
+        )
+
     private suspend fun requireAccountCurrency(accountId: String, currencyCode: String) {
         val accountCurrency = requireNotNull(dao.getActiveAccountCurrency(accountId)) {
             "Account is missing or archived"
@@ -549,5 +636,6 @@ class OfflineFinanceRepository(
 
     companion object {
         private const val BASE_CURRENCY_CODE = "EUR"
+        private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
     }
 }

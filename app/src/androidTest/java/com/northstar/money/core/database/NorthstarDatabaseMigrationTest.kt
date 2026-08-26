@@ -241,6 +241,62 @@ class NorthstarDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate6To7_preservesRecurrencesAndAddsRecoverableDeletion() {
+        helper.createDatabase(DB_6_7, 6).apply {
+            insertBaseData()
+            execSQL(
+                """
+                INSERT INTO recurring_schedules (
+                    id, name, kind, amountMinor, currencyCode, accountId, categoryId,
+                    frequency, intervalCount, nextLocalDate, active, createdAt
+                ) VALUES (
+                    'recurring-1', 'Rent', 'EXPENSE', 75000, 'EUR', 'account-1', 'category-1',
+                    'MONTHLY', 1, '2026-09-01', 1, 4
+                )
+                """.trimIndent(),
+            )
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DB_6_7, 7, true, MIGRATION_6_7).apply {
+            assertBaseDataPreserved()
+            query("SELECT deletedAt FROM recurring_schedules WHERE id = 'recurring-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(true, cursor.isNull(0))
+            }
+            execSQL("UPDATE recurring_schedules SET deletedAt = 123 WHERE id = 'recurring-1'")
+            query("SELECT deletedAt FROM recurring_schedules WHERE id = 'recurring-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(123L, cursor.getLong(0))
+            }
+            close()
+        }
+    }
+
+    @Test
+    fun migrate1To7_runsCompleteMigrationChainWithoutDataLoss() {
+        helper.createDatabase(DB_1_7, 1).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DB_1_7,
+            7,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+        ).apply {
+            assertBaseDataPreserved()
+            close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertBaseData() {
         execSQL(
             """
@@ -297,5 +353,7 @@ class NorthstarDatabaseMigrationTest {
         private const val DB_1_5 = "migration-1-5"
         private const val DB_5_6 = "migration-5-6"
         private const val DB_1_6 = "migration-1-6"
+        private const val DB_6_7 = "migration-6-7"
+        private const val DB_1_7 = "migration-1-7"
     }
 }

@@ -45,10 +45,12 @@ class FullBackupJsonCodecTest {
         val legacy = codec.encode(completeSnapshot(), databaseVersion = 5, createdAtEpochMillis = 1234)
             .replace(",\"mergedIntoCategoryId\":\"target\"", "")
             .replace(",\"mergedIntoCategoryId\":null", "")
+            .replace(",\"deletedAt\":null", "")
 
         val decoded = codec.decode(legacy)
 
         assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
+        assertTrue(decoded.recurringSchedules.all { it.deletedAt == null })
     }
 
     private fun completeSnapshot() = DatabaseSnapshot(

@@ -36,4 +36,23 @@ class ForecastCurrencyIntegrityTest {
         assertEquals("EUR", forecast.projectedBalance.currencyCode)
         assertEquals(1, forecast.scheduledEvents)
     }
+
+    @Test
+    fun forecastHonorsRecurringIntervalCount() {
+        val today = LocalDate.of(2026, 8, 26)
+        val schedule = RecurringItem(
+            "bill",
+            "Fortnightly bill",
+            TransactionKind.EXPENSE,
+            Money(100, "EUR"),
+            today.plusDays(1).toString(),
+            "WEEKLY",
+            intervalCount = 2,
+        )
+
+        val forecast = calculateForecast(Money(1_000, "EUR"), listOf(schedule), today)
+
+        assertEquals(700L, forecast.projectedBalance.minor)
+        assertEquals(3, forecast.scheduledEvents)
+    }
 }

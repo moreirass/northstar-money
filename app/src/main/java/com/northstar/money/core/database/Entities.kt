@@ -196,7 +196,7 @@ data class BudgetRow(
         ForeignKey(entity = AccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"], onDelete = ForeignKey.CASCADE),
         ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.SET_NULL),
     ],
-    indices = [Index("accountId"), Index("categoryId"), Index("nextLocalDate")],
+    indices = [Index("accountId"), Index("categoryId"), Index("nextLocalDate"), Index("deletedAt")],
 )
 data class RecurringScheduleEntity(
     @PrimaryKey val id: String,
@@ -211,6 +211,7 @@ data class RecurringScheduleEntity(
     val nextLocalDate: String,
     val active: Boolean,
     val createdAt: Long,
+    val deletedAt: Long? = null,
 )
 
 @Serializable

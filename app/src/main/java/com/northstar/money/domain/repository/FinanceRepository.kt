@@ -9,6 +9,7 @@ import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
+import com.northstar.money.domain.model.EditableRecurring
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
@@ -22,6 +23,8 @@ interface FinanceRepository {
     fun observeBudgets(): Flow<List<com.northstar.money.domain.model.BudgetProgress>>
     fun observeGoals(): Flow<List<com.northstar.money.domain.model.SavingsGoal>>
     fun observeRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
+    fun observePausedRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
+    fun observeDeletedRecurring(): Flow<List<com.northstar.money.domain.model.RecurringItem>>
     fun observeDebts(): Flow<List<com.northstar.money.domain.model.DebtProfile>>
     suspend fun seedIfEmpty()
     suspend fun addTransaction(
@@ -44,6 +47,12 @@ interface FinanceRepository {
         name: String, kind: TransactionKind, amount: Money, accountId: String,
         categoryId: String?, frequency: String, nextDate: String,
     )
+    suspend fun getRecurringForEdit(id: String): EditableRecurring
+    suspend fun updateRecurring(recurring: EditableRecurring)
+    suspend fun pauseRecurring(id: String)
+    suspend fun resumeRecurring(id: String)
+    suspend fun deleteRecurring(id: String)
+    suspend fun restoreRecurring(id: String)
     suspend fun createDebt(accountId: String, annualRateBasisPoints: Int, minimumPayment: Money, dueDay: Int)
     suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)

@@ -111,6 +111,19 @@ data class RecurringItem(
     val amount: Money,
     val nextLocalDate: String,
     val frequency: String,
+    val intervalCount: Int = 1,
+)
+
+data class EditableRecurring(
+    val id: String,
+    val name: String,
+    val kind: TransactionKind,
+    val amount: Money,
+    val accountId: String,
+    val categoryId: String?,
+    val frequency: String,
+    val intervalCount: Int,
+    val nextLocalDate: String,
 )
 
 data class DebtProfile(

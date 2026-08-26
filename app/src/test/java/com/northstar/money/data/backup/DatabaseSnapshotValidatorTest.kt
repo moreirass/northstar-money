@@ -72,6 +72,21 @@ class DatabaseSnapshotValidatorTest {
         assertThrows(IllegalArgumentException::class.java) { validator.validate(archivedTarget) }
     }
 
+    @Test
+    fun validate_rejectsInvalidRecurringDeletionTimestamp() {
+        val base = validSnapshot()
+        val invalid = base.copy(
+            recurringSchedules = listOf(
+                com.northstar.money.core.database.RecurringScheduleEntity(
+                    "recurring", "Rent", "EXPENSE", 100, "EUR", "account", "category",
+                    "MONTHLY", 1, "2026-09-01", true, 1, deletedAt = -1,
+                ),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
+    }
+
     private fun validSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),
         categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 0)),

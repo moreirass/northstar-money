@@ -112,6 +112,9 @@ class DatabaseSnapshotValidator {
                     (it.categoryId == null || it.categoryId in categoryIds) && it.frequency in FREQUENCIES &&
                     it.intervalCount > 0,
             ) { "Backup contains an invalid recurring schedule" }
+            require(it.deletedAt == null || it.deletedAt >= 0) {
+                "Backup contains an invalid recurring deletion timestamp"
+            }
             requireDate(it.nextLocalDate, "recurring schedule")
         }
         snapshot.debtProfiles.forEach {

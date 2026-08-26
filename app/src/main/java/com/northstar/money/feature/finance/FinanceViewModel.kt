@@ -21,6 +21,7 @@ import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
+import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -43,6 +44,8 @@ data class FinanceUiState(
     val budgets: List<BudgetProgress> = emptyList(),
     val goals: List<SavingsGoal> = emptyList(),
     val recurring: List<RecurringItem> = emptyList(),
+    val pausedRecurring: List<RecurringItem> = emptyList(),
+    val deletedRecurring: List<RecurringItem> = emptyList(),
     val debts: List<DebtProfile> = emptyList(),
     val forecast: CashFlowForecast = CashFlowForecast(Money(0), Money(0), LocalDate.now().toString(), 0),
     val importMessage: String? = null,
@@ -50,6 +53,12 @@ data class FinanceUiState(
 )
 
 data class FinanceUiEvent(val message: String)
+
+private data class RecurringUiState(
+    val active: List<RecurringItem>,
+    val paused: List<RecurringItem>,
+    val deleted: List<RecurringItem>,
+)
 
 class FinanceViewModel(
     private val repository: FinanceRepository,
@@ -89,17 +98,25 @@ class FinanceViewModel(
         )
     }
 
+    private val recurringState = combine(
+        repository.observeRecurring(),
+        repository.observePausedRecurring(),
+        repository.observeDeletedRecurring(),
+    ) { active, paused, deleted -> RecurringUiState(active, paused, deleted) }
+
     val uiState: StateFlow<FinanceUiState> = combine(
         planningState,
-        repository.observeRecurring(),
+        recurringState,
         repository.observeDebts(),
         importMessage,
         preferences.settings,
-    ) { state, recurring, debts, message, settings ->
+    ) { state, recurringState, debts, message, settings ->
         state.copy(
-            recurring = recurring,
+            recurring = recurringState.active,
+            pausedRecurring = recurringState.paused,
+            deletedRecurring = recurringState.deleted,
             debts = debts,
-            forecast = calculateForecast(state.summary.balance, recurring),
+            forecast = calculateForecast(state.summary.balance, recurringState.active),
             importMessage = message,
             settings = settings,
         )
@@ -188,6 +205,28 @@ class FinanceViewModel(
         }
     }
 
+    suspend fun getRecurringForEdit(id: String): EditableRecurring = repository.getRecurringForEdit(id)
+
+    fun updateRecurring(recurring: EditableRecurring) {
+        launchOperation("update the recurring item") { repository.updateRecurring(recurring) }
+    }
+
+    fun pauseRecurring(id: String) {
+        launchOperation("pause the recurring item") { repository.pauseRecurring(id) }
+    }
+
+    fun resumeRecurring(id: String) {
+        launchOperation("resume the recurring item") { repository.resumeRecurring(id) }
+    }
+
+    fun deleteRecurring(id: String) {
+        launchOperation("delete the recurring item") { repository.deleteRecurring(id) }
+    }
+
+    fun restoreRecurring(id: String) {
+        launchOperation("restore the recurring item") { repository.restoreRecurring(id) }
+    }
+
     fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String) {
         launchOperation("save the debt profile") {
             val basisPoints = ratePercent.toBigDecimal().movePointRight(2).intValueExact()
@@ -261,15 +300,17 @@ internal fun calculateForecast(
     var lowest = projected
     var lowestDate = today
     var count = 0
-    schedules.filter { it.amount.currencyCode == balance.currencyCode }.flatMap { schedule ->
+    schedules.filter {
+        it.amount.currencyCode == balance.currencyCode && it.intervalCount > 0
+    }.flatMap { schedule ->
         val dates = mutableListOf<LocalDate>()
         var date = LocalDate.parse(schedule.nextLocalDate)
         while (!date.isAfter(end)) {
             if (!date.isBefore(today)) dates += date
             date = when (schedule.frequency) {
-                "WEEKLY" -> date.plusWeeks(1)
-                "YEARLY" -> date.plusYears(1)
-                else -> date.plusMonths(1)
+                "WEEKLY" -> date.plusWeeks(schedule.intervalCount.toLong())
+                "YEARLY" -> date.plusYears(schedule.intervalCount.toLong())
+                else -> date.plusMonths(schedule.intervalCount.toLong())
             }
         }
         dates.map { it to schedule }

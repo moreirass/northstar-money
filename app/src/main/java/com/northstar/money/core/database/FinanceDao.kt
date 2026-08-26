@@ -130,11 +130,17 @@ abstract class FinanceDao {
         """
         SELECT r.* FROM recurring_schedules r
         JOIN accounts a ON a.id = r.accountId
-        WHERE r.active = 1 AND a.archivedAt IS NULL
+        WHERE r.active = 1 AND r.deletedAt IS NULL AND a.archivedAt IS NULL
         ORDER BY r.nextLocalDate
         """,
     )
     abstract fun observeRecurring(): Flow<List<RecurringScheduleEntity>>
+
+    @Query("SELECT * FROM recurring_schedules WHERE active = 0 AND deletedAt IS NULL ORDER BY nextLocalDate")
+    abstract fun observePausedRecurring(): Flow<List<RecurringScheduleEntity>>
+
+    @Query("SELECT * FROM recurring_schedules WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
+    abstract fun observeDeletedRecurring(): Flow<List<RecurringScheduleEntity>>
 
     @Query(
         """
@@ -263,6 +269,20 @@ abstract class FinanceDao {
     @Query("SELECT kind FROM categories WHERE id = :categoryId AND archivedAt IS NULL")
     abstract suspend fun getActiveCategoryKind(categoryId: String): String?
 
+    @Query(
+        """
+        SELECT CASE
+            WHEN c.archivedAt IS NULL THEN c.id
+            WHEN target.archivedAt IS NULL THEN target.id
+            ELSE NULL
+        END
+        FROM categories c
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        WHERE c.id = :categoryId
+        """,
+    )
+    abstract suspend fun getCanonicalActiveCategoryId(categoryId: String): String?
+
     @Query("SELECT * FROM categories WHERE id = :categoryId")
     protected abstract suspend fun getCategory(categoryId: String): CategoryEntity?
 
@@ -326,6 +346,49 @@ abstract class FinanceDao {
     @Transaction
     open suspend fun undoCategoryMerge(categoryId: String) {
         require(undoMergedCategory(categoryId) == 1) { "Category is not an archived merge" }
+    }
+
+    @Query("SELECT * FROM recurring_schedules WHERE id = :id AND deletedAt IS NULL")
+    abstract suspend fun getRecurringForEdit(id: String): RecurringScheduleEntity?
+
+    @Update
+    protected abstract suspend fun updateRecurringEntity(recurring: RecurringScheduleEntity): Int
+
+    @Query("UPDATE recurring_schedules SET active = 0 WHERE id = :id AND active = 1 AND deletedAt IS NULL")
+    protected abstract suspend fun pauseActiveRecurring(id: String): Int
+
+    @Query("UPDATE recurring_schedules SET active = 1 WHERE id = :id AND active = 0 AND deletedAt IS NULL")
+    protected abstract suspend fun resumePausedRecurring(id: String): Int
+
+    @Query("UPDATE recurring_schedules SET deletedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
+    protected abstract suspend fun softDeleteRecurring(id: String, deletedAt: Long): Int
+
+    @Query("UPDATE recurring_schedules SET deletedAt = NULL, active = 0 WHERE id = :id AND deletedAt IS NOT NULL")
+    protected abstract suspend fun restoreDeletedRecurring(id: String): Int
+
+    @Transaction
+    open suspend fun updateRecurring(recurring: RecurringScheduleEntity) {
+        require(updateRecurringEntity(recurring) == 1) { "Recurring schedule could not be updated" }
+    }
+
+    @Transaction
+    open suspend fun pauseRecurring(id: String) {
+        require(pauseActiveRecurring(id) == 1) { "Recurring schedule is missing, paused, or deleted" }
+    }
+
+    @Transaction
+    open suspend fun resumeRecurring(id: String) {
+        require(resumePausedRecurring(id) == 1) { "Recurring schedule is missing, active, or deleted" }
+    }
+
+    @Transaction
+    open suspend fun deleteRecurring(id: String, deletedAt: Long) {
+        require(softDeleteRecurring(id, deletedAt) == 1) { "Recurring schedule is missing or deleted" }
+    }
+
+    @Transaction
+    open suspend fun restoreRecurring(id: String) {
+        require(restoreDeletedRecurring(id) == 1) { "Recurring schedule is not available for recovery" }
     }
 
     @Transaction

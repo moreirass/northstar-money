@@ -78,6 +78,7 @@ import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.model.EditableAccount
+import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
@@ -103,6 +104,7 @@ fun NorthstarApp() {
     var pendingDeleteTransactionId by remember { mutableStateOf<String?>(null) }
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
+    var editingRecurring by remember { mutableStateOf<EditableRecurring?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -172,6 +174,21 @@ fun NorthstarApp() {
                 onReconcile = financeViewModel::reconcile,
                 onCreateGoal = financeViewModel::createGoal,
                 onCreateRecurring = financeViewModel::createRecurring,
+                onEditRecurring = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getRecurringForEdit(id) }
+                            .onSuccess { editingRecurring = it }
+                            .onFailure {
+                                snackbarHostState.showSnackbar(
+                                    it.message ?: "Could not open the recurring item for editing.",
+                                )
+                            }
+                    }
+                },
+                onPauseRecurring = financeViewModel::pauseRecurring,
+                onResumeRecurring = financeViewModel::resumeRecurring,
+                onDeleteRecurring = financeViewModel::deleteRecurring,
+                onRestoreRecurring = financeViewModel::restoreRecurring,
                 onCreateDebt = financeViewModel::createDebt,
                 onImportCsv = financeViewModel::importCsv,
                 onSetAppLock = financeViewModel::setAppLock,
@@ -254,6 +271,18 @@ fun NorthstarApp() {
             onSave = {
                 financeViewModel.updateAccount(it)
                 editingAccount = null
+            },
+        )
+    }
+
+    editingRecurring?.let { recurring ->
+        EditRecurringDialog(
+            recurring = recurring,
+            state = state,
+            onDismiss = { editingRecurring = null },
+            onSave = {
+                financeViewModel.updateRecurring(it)
+                editingRecurring = null
             },
         )
     }
@@ -426,6 +455,11 @@ private fun MoreScreen(
     onReconcile: (String, String, Boolean) -> Unit,
     onCreateGoal: (String, String, String, String?) -> Unit,
     onCreateRecurring: (String, TransactionKind, String, String, String?, String, String) -> Unit,
+    onEditRecurring: (String) -> Unit,
+    onPauseRecurring: (String) -> Unit,
+    onResumeRecurring: (String) -> Unit,
+    onDeleteRecurring: (String) -> Unit,
+    onRestoreRecurring: (String) -> Unit,
     onCreateDebt: (String, String, String, String) -> Unit,
     onImportCsv: (String) -> Unit,
     onSetAppLock: (Boolean) -> Unit,
@@ -633,6 +667,7 @@ private fun MoreScreen(
     var archiveCategoryId by remember { mutableStateOf<String?>(null) }
     var mergeCategoryId by remember { mutableStateOf<String?>(null) }
     var archiveAccountId by remember { mutableStateOf<String?>(null) }
+    var deleteRecurringId by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(20.dp),
@@ -796,9 +831,49 @@ private fun MoreScreen(
         if (state.recurring.isEmpty()) item { Text("No recurring schedules yet.") }
         items(state.recurring, key = { it.id }) { item ->
             Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(item.name, fontWeight = FontWeight.Medium)
-                    Text("${item.amount.formatted()} • ${item.frequency.lowercase()} • next ${item.nextLocalDate}")
+                    Text(
+                        "${item.amount.formatted()} • every ${item.intervalCount} ${item.frequency.lowercase()} period(s) • next ${item.nextLocalDate}",
+                    )
+                    Row {
+                        TextButton(onClick = { onEditRecurring(item.id) }) { Text("Edit") }
+                        TextButton(onClick = { onPauseRecurring(item.id) }) { Text("Pause") }
+                        TextButton(onClick = { deleteRecurringId = item.id }) { Text("Delete") }
+                    }
+                }
+            }
+        }
+        if (state.pausedRecurring.isNotEmpty()) {
+            item { Text("Paused recurrences", style = MaterialTheme.typography.titleMedium) }
+            items(state.pausedRecurring, key = { "paused-${it.id}" }) { item ->
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(item.name, fontWeight = FontWeight.Medium)
+                        Text("${item.amount.formatted()} • next ${item.nextLocalDate}")
+                        Row {
+                            TextButton(onClick = { onEditRecurring(item.id) }) { Text("Edit") }
+                            TextButton(onClick = { onResumeRecurring(item.id) }) { Text("Resume") }
+                            TextButton(onClick = { deleteRecurringId = item.id }) { Text("Delete") }
+                        }
+                    }
+                }
+            }
+        }
+        if (state.deletedRecurring.isNotEmpty()) {
+            item { Text("Recently deleted recurrences", style = MaterialTheme.typography.titleMedium) }
+            items(state.deletedRecurring, key = { "deleted-recurring-${it.id}" }) { item ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(item.name, fontWeight = FontWeight.Medium)
+                            Text("Restores paused for review", style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { onRestoreRecurring(item.id) }) { Text("Restore") }
+                    }
                 }
             }
         }
@@ -1048,6 +1123,27 @@ private fun MoreScreen(
                     ) { Text("Archive") }
                 },
                 dismissButton = { TextButton(onClick = { archiveAccountId = null }) { Text("Cancel") } },
+            )
+        }
+    }
+    deleteRecurringId?.let { id ->
+        val item = (state.recurring + state.pausedRecurring).firstOrNull { it.id == id }
+        if (item != null) {
+            AlertDialog(
+                onDismissRequest = { deleteRecurringId = null },
+                title = { Text("Delete ${item.name}?") },
+                text = {
+                    Text("It will stop affecting forecasts. You can restore it later from Recently deleted recurrences.")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onDeleteRecurring(id)
+                            deleteRecurringId = null
+                        },
+                    ) { Text("Delete") }
+                },
+                dismissButton = { TextButton(onClick = { deleteRecurringId = null }) { Text("Cancel") } },
             )
         }
     }
@@ -1302,6 +1398,119 @@ private fun EditTransactionDialog(
                             accountId = accountId,
                             categoryId = categoryId,
                             destinationAccountId = destinationAccountId,
+                        ),
+                    )
+                },
+                enabled = valid,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun EditRecurringDialog(
+    recurring: EditableRecurring,
+    state: FinanceUiState,
+    onDismiss: () -> Unit,
+    onSave: (EditableRecurring) -> Unit,
+) {
+    val fractionDigits = java.util.Currency.getInstance(recurring.amount.currencyCode).defaultFractionDigits
+    var name by remember(recurring.id) { mutableStateOf(recurring.name) }
+    var kind by remember(recurring.id) { mutableStateOf(recurring.kind) }
+    var amount by remember(recurring.id) {
+        mutableStateOf(recurring.amount.minor.toBigDecimal().movePointLeft(fractionDigits).toPlainString())
+    }
+    var accountId by remember(recurring.id) { mutableStateOf(recurring.accountId) }
+    var categoryId by remember(recurring.id) { mutableStateOf(recurring.categoryId) }
+    var frequency by remember(recurring.id) { mutableStateOf(recurring.frequency) }
+    var intervalCount by remember(recurring.id) { mutableStateOf(recurring.intervalCount.toString()) }
+    var nextDate by remember(recurring.id) { mutableStateOf(recurring.nextLocalDate) }
+    val accounts = state.accounts.filter { it.currencyCode == recurring.amount.currencyCode }
+    val requiredCategoryKind = if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+    val categories = state.categories.filter { it.kind == requiredCategoryKind }
+    val parsedAmount = runCatching { Money.parseMajor(amount, recurring.amount.currencyCode) }.getOrNull()
+    val parsedInterval = intervalCount.toIntOrNull()
+    val valid = name.isNotBlank() && parsedAmount?.minor?.let { it > 0 } == true &&
+        parsedInterval?.let { it > 0 } == true &&
+        runCatching { java.time.LocalDate.parse(nextDate) }.isSuccess &&
+        accounts.any { it.id == accountId } && categories.any { it.id == categoryId }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit recurrence") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf(TransactionKind.EXPENSE, TransactionKind.INCOME).forEach { option ->
+                        FilterChip(
+                            selected = kind == option,
+                            onClick = {
+                                kind = option
+                                val targetKind = if (option == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+                                categoryId = state.categories.firstOrNull { it.kind == targetKind }?.id
+                            },
+                            label = { Text(option.name.lowercase()) },
+                        )
+                    }
+                }
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (${recurring.amount.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                Text("Account")
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    accounts.forEach { account ->
+                        FilterChip(account.id == accountId, { accountId = account.id }, { Text(account.name) })
+                    }
+                }
+                Text("Category")
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    categories.forEach { category ->
+                        FilterChip(category.id == categoryId, { categoryId = category.id }, { Text(category.name) })
+                    }
+                }
+                Text("Frequency")
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("WEEKLY", "MONTHLY", "YEARLY").forEach { option ->
+                        FilterChip(frequency == option, { frequency = option }, { Text(option.lowercase()) })
+                    }
+                }
+                OutlinedTextField(
+                    intervalCount,
+                    { intervalCount = it },
+                    label = { Text("Every N periods") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    nextDate,
+                    { nextDate = it },
+                    label = { Text("Next date (YYYY-MM-DD)") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        recurring.copy(
+                            name = name,
+                            kind = kind,
+                            amount = requireNotNull(parsedAmount),
+                            accountId = accountId,
+                            categoryId = categoryId,
+                            frequency = frequency,
+                            intervalCount = requireNotNull(parsedInterval),
+                            nextLocalDate = nextDate,
                         ),
                     )
                 },
