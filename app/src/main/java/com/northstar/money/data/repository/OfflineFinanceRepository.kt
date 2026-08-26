@@ -57,15 +57,25 @@ class OfflineFinanceRepository(
 
     override fun observeSummary(): Flow<FinanceSummary> {
         val monthStart = LocalDate.now().withDayOfMonth(1).toString()
-        return dao.observeSummary(monthStart).map {
-            FinanceSummary(Money(it.balanceMinor), Money(it.incomeMinor), Money(it.expenseMinor))
+        return dao.observeSummary(monthStart, BASE_CURRENCY_CODE).map {
+            FinanceSummary(
+                Money(it.balanceMinor, BASE_CURRENCY_CODE),
+                Money(it.incomeMinor, BASE_CURRENCY_CODE),
+                Money(it.expenseMinor, BASE_CURRENCY_CODE),
+            )
         }
     }
 
-    override fun observeBudgets() = dao.observeBudgets(LocalDate.now().withDayOfMonth(1).toString()).map { rows ->
+    override fun observeBudgets() = dao.observeBudgets(
+        LocalDate.now().withDayOfMonth(1).toString(),
+        BASE_CURRENCY_CODE,
+    ).map { rows ->
         rows.map {
             com.northstar.money.domain.model.BudgetProgress(
-                it.categoryId, it.categoryName, Money(it.plannedMinor), Money(it.spentMinor)
+                it.categoryId,
+                it.categoryName,
+                Money(it.plannedMinor, BASE_CURRENCY_CODE),
+                Money(it.spentMinor, BASE_CURRENCY_CODE),
             )
         }
     }
@@ -91,7 +101,11 @@ class OfflineFinanceRepository(
     override fun observeDebts() = dao.observeDebts().map { rows ->
         rows.map {
             com.northstar.money.domain.model.DebtProfile(
-                it.id, it.accountId, it.annualRateBasisPoints, Money(it.minimumPaymentMinor), it.dueDay
+                it.id,
+                it.accountId,
+                it.annualRateBasisPoints,
+                Money(it.minimumPaymentMinor, it.currencyCode),
+                it.dueDay,
             )
         }
     }
@@ -119,6 +133,7 @@ class OfflineFinanceRepository(
     ) {
         require(kind != TransactionKind.TRANSFER) { "Transfers require two entries" }
         require(amount.minor > 0) { "Amount must be positive" }
+        requireAccountCurrency(accountId, amount.currencyCode)
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         dao.insertTransaction(
@@ -163,6 +178,8 @@ class OfflineFinanceRepository(
     ) {
         require(amount.minor > 0)
         require(sourceAccountId != destinationAccountId)
+        requireAccountCurrency(sourceAccountId, amount.currencyCode)
+        requireAccountCurrency(destinationAccountId, amount.currencyCode)
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         dao.insertTransaction(
@@ -175,6 +192,7 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean) {
+        requireAccountCurrency(accountId, statementBalance.currencyCode)
         val calculated = dao.getAccountBalance(accountId)
         val difference = statementBalance.minor - calculated
         val now = System.currentTimeMillis()
@@ -196,6 +214,7 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun setBudget(categoryId: String, planned: Money) {
+        require(planned.currencyCode == BASE_CURRENCY_CODE) { "Budgets use $BASE_CURRENCY_CODE" }
         val month = LocalDate.now().withDayOfMonth(1).toString()
         dao.upsertBudget(
             com.northstar.money.core.database.BudgetAllocationEntity(
@@ -224,6 +243,7 @@ class OfflineFinanceRepository(
         nextDate: String,
     ) {
         require(name.isNotBlank() && amount.minor > 0)
+        requireAccountCurrency(accountId, amount.currencyCode)
         LocalDate.parse(nextDate)
         dao.insertRecurring(
             com.northstar.money.core.database.RecurringScheduleEntity(
@@ -241,6 +261,7 @@ class OfflineFinanceRepository(
         dueDay: Int,
     ) {
         require(annualRateBasisPoints >= 0 && minimumPayment.minor >= 0 && dueDay in 1..31)
+        requireAccountCurrency(accountId, minimumPayment.currencyCode)
         dao.upsertDebt(
             com.northstar.money.core.database.DebtProfileEntity(
                 UUID.randomUUID().toString(), accountId, annualRateBasisPoints,
@@ -340,4 +361,17 @@ class OfflineFinanceRepository(
         amount = Money(row.amountMinor, row.currencyCode),
         localDate = row.localDate,
     )
+
+    private suspend fun requireAccountCurrency(accountId: String, currencyCode: String) {
+        val accountCurrency = requireNotNull(dao.getActiveAccountCurrency(accountId)) {
+            "Account is missing or archived"
+        }
+        require(accountCurrency == currencyCode) {
+            "Account uses $accountCurrency; $currencyCode operations are not supported for it"
+        }
+    }
+
+    companion object {
+        private const val BASE_CURRENCY_CODE = "EUR"
+    }
 }

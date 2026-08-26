@@ -16,6 +16,7 @@ abstract class FinanceDao {
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
+            AND e.currencyCode = a.currencyCode
         WHERE a.archivedAt IS NULL
         GROUP BY a.id
         ORDER BY a.createdAt
@@ -61,15 +62,19 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT
-          COALESCE((SELECT SUM(openingBalanceMinor) FROM accounts WHERE archivedAt IS NULL), 0)
+          COALESCE((SELECT SUM(openingBalanceMinor) FROM accounts
+                    WHERE archivedAt IS NULL AND currencyCode = :baseCurrencyCode), 0)
             + COALESCE(SUM(e.amountMinor), 0) AS balanceMinor,
           COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS incomeMinor,
           COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS expenseMinor
         FROM transaction_entries e
         JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
+        JOIN accounts a ON a.id = e.accountId
+        WHERE a.archivedAt IS NULL AND a.currencyCode = :baseCurrencyCode
+          AND e.currencyCode = :baseCurrencyCode
         """
     )
-    abstract fun observeSummary(monthStart: String): Flow<SummaryRow>
+    abstract fun observeSummary(monthStart: String, baseCurrencyCode: String): Flow<SummaryRow>
 
     @Query(
         """
@@ -78,14 +83,14 @@ abstract class FinanceDao {
                COALESCE(-SUM(CASE WHEN t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS spentMinor
         FROM categories c
         LEFT JOIN budget_allocations b ON b.categoryId = c.id AND b.monthStart = :monthStart
-        LEFT JOIN transaction_entries e ON e.categoryId = c.id
+        LEFT JOIN transaction_entries e ON e.categoryId = c.id AND e.currencyCode = :baseCurrencyCode
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
         GROUP BY c.id, b.plannedMinor
         ORDER BY c.sortOrder, c.name
         """
     )
-    abstract fun observeBudgets(monthStart: String): Flow<List<BudgetRow>>
+    abstract fun observeBudgets(monthStart: String, baseCurrencyCode: String): Flow<List<BudgetRow>>
 
     @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt")
     abstract fun observeGoals(): Flow<List<GoalEntity>>
@@ -93,8 +98,16 @@ abstract class FinanceDao {
     @Query("SELECT * FROM recurring_schedules WHERE active = 1 ORDER BY nextLocalDate")
     abstract fun observeRecurring(): Flow<List<RecurringScheduleEntity>>
 
-    @Query("SELECT * FROM debt_profiles ORDER BY createdAt")
-    abstract fun observeDebts(): Flow<List<DebtProfileEntity>>
+    @Query(
+        """
+        SELECT d.id, d.accountId, d.annualRateBasisPoints, d.minimumPaymentMinor,
+               d.dueDay, d.createdAt, a.currencyCode
+        FROM debt_profiles d
+        JOIN accounts a ON a.id = d.accountId
+        ORDER BY d.createdAt
+        """
+    )
+    abstract fun observeDebts(): Flow<List<DebtProfileRow>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertBudget(item: BudgetAllocationEntity)
@@ -171,11 +184,15 @@ abstract class FinanceDao {
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
+            AND e.currencyCode = a.currencyCode
         WHERE a.id = :accountId
         GROUP BY a.id
         """
     )
     abstract suspend fun getAccountBalance(accountId: String): Long
+
+    @Query("SELECT currencyCode FROM accounts WHERE id = :accountId AND archivedAt IS NULL")
+    abstract suspend fun getActiveAccountCurrency(accountId: String): String?
 
     @Transaction
     open suspend fun insertReconciliationWithAdjustment(

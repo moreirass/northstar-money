@@ -16,6 +16,7 @@ class DatabaseSnapshotValidator {
         requireUniqueIds("debt profiles", snapshot.debtProfiles.map { it.id })
 
         val accountIds = snapshot.accounts.mapTo(mutableSetOf()) { it.id }
+        val accountCurrencies = snapshot.accounts.associate { it.id to it.currencyCode }
         val categoryIds = snapshot.categories.mapTo(mutableSetOf()) { it.id }
         val transactionIds = snapshot.transactions.mapTo(mutableSetOf()) { it.id }
 
@@ -52,6 +53,9 @@ class DatabaseSnapshotValidator {
                 "Backup contains a transaction entry with a missing category"
             }
             require(it.currencyCode.isCurrencyCode()) { "Backup contains an invalid transaction currency" }
+            require(it.currencyCode == accountCurrencies[it.accountId]) {
+                "Backup contains a transaction currency that does not match its account"
+            }
         }
         require(snapshot.transactionEntries.groupBy { it.transactionId }.keys.containsAll(transactionIds)) {
             "Backup contains a transaction without entries"
@@ -96,6 +100,7 @@ class DatabaseSnapshotValidator {
             require(
                 it.name.isNotBlank() && it.kind in RECURRING_KINDS && it.amountMinor > 0 &&
                     it.currencyCode.isCurrencyCode() && it.accountId in accountIds &&
+                    it.currencyCode == accountCurrencies[it.accountId] &&
                     (it.categoryId == null || it.categoryId in categoryIds) && it.frequency in FREQUENCIES &&
                     it.intervalCount > 0,
             ) { "Backup contains an invalid recurring schedule" }

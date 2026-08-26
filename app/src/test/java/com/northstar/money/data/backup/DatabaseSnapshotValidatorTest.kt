@@ -45,6 +45,15 @@ class DatabaseSnapshotValidatorTest {
         assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
     }
 
+    @Test
+    fun validate_rejectsEntryCurrencyThatDoesNotMatchAccount() {
+        val invalid = validSnapshot().copy(
+            transactionEntries = validSnapshot().transactionEntries.map { it.copy(currencyCode = "USD") },
+        )
+
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
+    }
+
     private fun validSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),
         categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 0)),

@@ -191,35 +191,44 @@ class FinanceViewModel(
         }
     }
 
-    private fun calculateForecast(balance: Money, schedules: List<RecurringItem>): CashFlowForecast {
-        val today = LocalDate.now()
-        val end = today.plusDays(30)
-        var projected = balance.minor
-        var lowest = projected
-        var lowestDate = today
-        var count = 0
-        schedules.flatMap { schedule ->
-            val dates = mutableListOf<LocalDate>()
-            var date = LocalDate.parse(schedule.nextLocalDate)
-            while (!date.isAfter(end)) {
-                if (!date.isBefore(today)) dates += date
-                date = when (schedule.frequency) {
-                    "WEEKLY" -> date.plusWeeks(1)
-                    "YEARLY" -> date.plusYears(1)
-                    else -> date.plusMonths(1)
-                }
-            }
-            dates.map { it to schedule }
-        }.sortedBy { it.first }.forEach { (date, schedule) ->
-            projected += if (schedule.kind == TransactionKind.EXPENSE) -schedule.amount.minor else schedule.amount.minor
-            count++
-            if (projected < lowest) {
-                lowest = projected
-                lowestDate = date
+}
+
+internal fun calculateForecast(
+    balance: Money,
+    schedules: List<RecurringItem>,
+    today: LocalDate = LocalDate.now(),
+): CashFlowForecast {
+    val end = today.plusDays(30)
+    var projected = balance.minor
+    var lowest = projected
+    var lowestDate = today
+    var count = 0
+    schedules.filter { it.amount.currencyCode == balance.currencyCode }.flatMap { schedule ->
+        val dates = mutableListOf<LocalDate>()
+        var date = LocalDate.parse(schedule.nextLocalDate)
+        while (!date.isAfter(end)) {
+            if (!date.isBefore(today)) dates += date
+            date = when (schedule.frequency) {
+                "WEEKLY" -> date.plusWeeks(1)
+                "YEARLY" -> date.plusYears(1)
+                else -> date.plusMonths(1)
             }
         }
-        return CashFlowForecast(Money(projected), Money(lowest), lowestDate.toString(), count)
+        dates.map { it to schedule }
+    }.sortedBy { it.first }.forEach { (date, schedule) ->
+        projected += if (schedule.kind == TransactionKind.EXPENSE) -schedule.amount.minor else schedule.amount.minor
+        count++
+        if (projected < lowest) {
+            lowest = projected
+            lowestDate = date
+        }
     }
+    return CashFlowForecast(
+        Money(projected, balance.currencyCode),
+        Money(lowest, balance.currencyCode),
+        lowestDate.toString(),
+        count,
+    )
 }
 
 internal suspend fun reportOperationFailure(

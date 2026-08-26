@@ -213,3 +213,13 @@ data class DebtProfileEntity(
     val dueDay: Int,
     val createdAt: Long,
 )
+
+data class DebtProfileRow(
+    val id: String,
+    val accountId: String,
+    val annualRateBasisPoints: Int,
+    val minimumPaymentMinor: Long,
+    val dueDay: Int,
+    val createdAt: Long,
+    val currencyCode: String,
+)
