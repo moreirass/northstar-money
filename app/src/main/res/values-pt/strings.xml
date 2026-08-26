@@ -244,4 +244,8 @@
     <string name="state_retry">Tentar novamente</string>
     <string name="state_empty_accounts">Ainda não existem contas. Adicione uma conta para começar a criar o seu plano.</string>
     <string name="state_empty_budgets">Ainda não existem orçamentos. Adicione uma categoria de despesa e defina o respetivo orçamento mensal.</string>
+    <string name="money_hidden_value">••••</string>
+    <string name="money_hide_values">Ocultar valores monetários</string>
+    <string name="money_show_values">Mostrar valores monetários</string>
+    <string name="money_privacy_explanation">Oculta os montantes no ecrã sem impedir capturas. As exportações e cópias de segurança cifradas mantêm os valores reais.</string>
 </resources>

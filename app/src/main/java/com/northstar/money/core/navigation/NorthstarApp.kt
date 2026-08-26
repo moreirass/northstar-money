@@ -30,6 +30,8 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -54,6 +56,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -129,6 +132,7 @@ fun NorthstarApp() {
         OnboardingScreen(onComplete = { financeViewModel.setOnboardingCompleted(true) })
         return
     }
+    CompositionLocalProvider(LocalMoneyValuesHidden provides state.settings.moneyValuesHidden) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = Destination.entries.firstOrNull { it.route == backStackEntry?.destination?.route }
@@ -153,7 +157,24 @@ fun NorthstarApp() {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
     val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
-        topBar = { TopAppBar(title = { Text(stringResource(destination.labelRes)) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(destination.labelRes)) },
+                actions = {
+                    val moneyVisibilityDescription = stringResource(
+                        if (state.settings.moneyValuesHidden) R.string.money_show_values else R.string.money_hide_values,
+                    )
+                    IconButton(
+                        onClick = { financeViewModel.setMoneyValuesHidden(!state.settings.moneyValuesHidden) },
+                    ) {
+                        Icon(
+                            imageVector = if (state.settings.moneyValuesHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                            contentDescription = moneyVisibilityDescription,
+                        )
+                    }
+                },
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
@@ -325,6 +346,7 @@ fun NorthstarApp() {
                 onImportCsv = financeViewModel::importCsv,
                 onSetAppLock = financeViewModel::setAppLock,
                 onSetReminders = financeViewModel::setReminders,
+                onSetMoneyValuesHidden = financeViewModel::setMoneyValuesHidden,
                 onShowOnboarding = { financeViewModel.setOnboardingCompleted(false) },
                 onCreateCategory = financeViewModel::createCategory,
                 onRenameCategory = financeViewModel::renameCategory,
@@ -433,6 +455,7 @@ fun NorthstarApp() {
                 showAdd = false
             },
         )
+    }
     }
 }
 

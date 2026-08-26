@@ -110,19 +110,19 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
         item {
             val balanceDescription = stringResource(
                 R.string.accessibility_available_balance,
-                state.summary.balance.formatted(),
+                state.summary.balance.displayValue(),
             )
             Column(Modifier.semantics(mergeDescendants = true) { contentDescription = balanceDescription }) {
                 Text(stringResource(R.string.ui_available_now), style = MaterialTheme.typography.labelLarge)
-                Text(state.summary.balance.formatted(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+                Text(state.summary.balance.displayValue(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
             }
         }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(stringResource(R.string.ui_30_day_forecast), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.forecast_projected, state.forecast.projectedBalance.formatted()))
-                    Text(stringResource(R.string.forecast_lowest, state.forecast.lowestBalance.formatted(), state.forecast.lowestDate))
+                    Text(stringResource(R.string.forecast_projected, state.forecast.projectedBalance.displayValue()))
+                    Text(stringResource(R.string.forecast_lowest, state.forecast.lowestBalance.displayValue(), state.forecast.lowestDate))
                     Text(stringResource(R.string.forecast_scheduled_events, state.forecast.scheduledEvents), style = MaterialTheme.typography.bodySmall)
                 }
             }
@@ -153,11 +153,11 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
 
 @Composable
 internal fun SummaryCard(label: String, money: Money, modifier: Modifier = Modifier) {
-    val description = stringResource(R.string.accessibility_summary_amount, label, money.formatted())
+    val description = stringResource(R.string.accessibility_summary_amount, label, money.displayValue())
     Card(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = MaterialTheme.typography.labelLarge)
-            Text(money.formatted(), style = MaterialTheme.typography.titleLarge)
+            Text(money.displayValue(), style = MaterialTheme.typography.titleLarge)
         }
     }
 }
@@ -176,8 +176,8 @@ internal fun BudgetProgressChart(budget: com.northstar.money.domain.model.Budget
     val description = stringResource(
         R.string.accessibility_budget_usage,
         budget.categoryName,
-        budget.spent.formatted(),
-        budget.planned.formatted(),
+        budget.spent.displayValue(),
+        budget.planned.displayValue(),
         percent,
     )
     val progressColor = if (percent > 100) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
@@ -205,8 +205,8 @@ internal fun IncomeExpenseChart(income: Money, expenses: Money) {
     val expenseFraction = chartFraction(expenses.minor, maximum)
     val incomePercent = (incomeFraction * 100).roundToInt()
     val expensePercent = (expenseFraction * 100).roundToInt()
-    val incomeDescription = stringResource(R.string.accessibility_income_chart, income.formatted(), incomePercent)
-    val expenseDescription = stringResource(R.string.accessibility_expense_chart, expenses.formatted(), expensePercent)
+    val incomeDescription = stringResource(R.string.accessibility_income_chart, income.displayValue(), incomePercent)
+    val expenseDescription = stringResource(R.string.accessibility_expense_chart, expenses.displayValue(), expensePercent)
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         LinearProgressIndicator(
             progress = { incomeFraction },
@@ -305,7 +305,7 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
         item.payee,
         item.categoryName ?: item.kind.name,
         item.accountName,
-        item.amount.formatted(),
+        item.amount.displayValue(),
         stateLabel,
     )
     Row(
@@ -326,7 +326,7 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
         }
         val shown = if (item.kind == TransactionKind.EXPENSE) item.amount else item.amount
         Text(
-            shown.formatted(),
+            shown.displayValue(),
             color = if (item.kind == TransactionKind.INCOME) Color(0xFF087F5B) else MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.SemiBold,
         )
@@ -344,7 +344,7 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
         item { Text(stringResource(R.string.ui_monthly_plan), style = MaterialTheme.typography.headlineMedium) }
         val totalPlanned = state.budgets.sumOf { it.planned.minor }
         val totalSpent = state.budgets.sumOf { it.spent.minor }
-        item { Text(stringResource(R.string.budget_spent_planned, Money(totalSpent).formatted(), Money(totalPlanned).formatted())) }
+        item { Text(stringResource(R.string.budget_spent_planned, Money(totalSpent).displayValue(), Money(totalPlanned).displayValue())) }
         if (state.budgets.isEmpty()) {
             item { EmptyStateCard(stringResource(R.string.state_empty_budgets)) }
         }
@@ -353,11 +353,11 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(budget.categoryName, fontWeight = FontWeight.Medium)
-                        Text(stringResource(R.string.money_pair, budget.spent.formatted(), budget.planned.formatted()))
+                        Text(stringResource(R.string.money_pair, budget.spent.displayValue(), budget.planned.displayValue()))
                         BudgetProgressChart(budget)
                         if (budget.rollover.minor != 0L) {
                             Text(
-                                stringResource(R.string.budget_allocated_rollover, budget.allocated.formatted(), budget.rollover.formatted()),
+                                stringResource(R.string.budget_allocated_rollover, budget.allocated.displayValue(), budget.rollover.displayValue()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -407,6 +407,7 @@ internal fun MoreScreen(
     onImportCsv: (String) -> Unit,
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
+    onSetMoneyValuesHidden: (Boolean) -> Unit,
     onShowOnboarding: () -> Unit,
     onCreateCategory: (String, CategoryKind) -> Unit,
     onRenameCategory: (String, String) -> Unit,
@@ -647,6 +648,19 @@ internal fun MoreScreen(
                         },
                         label = { Text(stringResource(R.string.ui_daily_financial_review_reminders)) },
                     )
+                    FilterChip(
+                        selected = state.settings.moneyValuesHidden,
+                        onClick = { onSetMoneyValuesHidden(!state.settings.moneyValuesHidden) },
+                        label = {
+                            Text(
+                                stringResource(
+                                    if (state.settings.moneyValuesHidden) R.string.money_show_values
+                                    else R.string.money_hide_values,
+                                ),
+                            )
+                        },
+                    )
+                    Text(stringResource(R.string.money_privacy_explanation), style = MaterialTheme.typography.bodySmall)
                     Text(stringResource(R.string.ui_app_lock_applies_the_next_time_northstar_starts), style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = onShowOnboarding) {
                         Text(stringResource(R.string.onboarding_reopen))
@@ -723,7 +737,7 @@ internal fun MoreScreen(
                         Column(Modifier.weight(1f)) {
                             Text(transaction.payee, fontWeight = FontWeight.Medium)
                             Text(
-                                stringResource(R.string.transaction_date_amount, transaction.localDate, transaction.amount.formatted()),
+                                stringResource(R.string.transaction_date_amount, transaction.localDate, transaction.amount.displayValue()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -766,10 +780,10 @@ internal fun MoreScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val net = state.summary.incomeThisMonth.minor - state.summary.expensesThisMonth.minor
                     Text(stringResource(R.string.ui_income_versus_expenses), fontWeight = FontWeight.Medium)
-                    Text(stringResource(R.string.report_income_value, state.summary.incomeThisMonth.formatted()))
-                    Text(stringResource(R.string.report_expenses_value, state.summary.expensesThisMonth.formatted()))
+                    Text(stringResource(R.string.report_income_value, state.summary.incomeThisMonth.displayValue()))
+                    Text(stringResource(R.string.report_expenses_value, state.summary.expensesThisMonth.displayValue()))
                     IncomeExpenseChart(state.summary.incomeThisMonth, state.summary.expensesThisMonth)
-                    Text(stringResource(R.string.report_net_value, Money(net).formatted()), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.report_net_value, Money(net).displayValue()), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
@@ -779,7 +793,7 @@ internal fun MoreScreen(
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Text(item.nextLocalDate, Modifier.weight(0.35f))
                 Text(item.name, Modifier.weight(0.4f))
-                Text(item.amount.formatted(), Modifier.weight(0.25f))
+                Text(item.amount.displayValue(), Modifier.weight(0.25f))
             }
         }
         item {
@@ -796,7 +810,7 @@ internal fun MoreScreen(
                     Text(
                         stringResource(
                             R.string.recurrence_schedule_summary,
-                            item.amount.formatted(),
+                            item.amount.displayValue(),
                             item.intervalCount,
                             item.frequency.lowercase(),
                             item.nextLocalDate,
@@ -816,7 +830,7 @@ internal fun MoreScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(item.name, fontWeight = FontWeight.Medium)
-                        Text(stringResource(R.string.recurrence_next, item.amount.formatted(), item.nextLocalDate))
+                        Text(stringResource(R.string.recurrence_next, item.amount.displayValue(), item.nextLocalDate))
                         Row {
                             TextButton(onClick = { onEditRecurring(item.id) }) { Text(stringResource(R.string.ui_edit)) }
                             TextButton(onClick = { onResumeRecurring(item.id) }) { Text(stringResource(R.string.ui_resume)) }
@@ -856,7 +870,7 @@ internal fun MoreScreen(
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(accountName, fontWeight = FontWeight.Medium)
-                    Text(stringResource(R.string.debt_summary, debt.annualRateBasisPoints / 100.0, debt.minimumPayment.formatted(), debt.dueDay))
+                    Text(stringResource(R.string.debt_summary, debt.annualRateBasisPoints / 100.0, debt.minimumPayment.displayValue(), debt.dueDay))
                     TextButton(onClick = { onEditDebt(debt.id) }) { Text(stringResource(R.string.ui_edit)) }
                 }
             }
@@ -870,10 +884,10 @@ internal fun MoreScreen(
                             Text(account.name, fontWeight = FontWeight.Medium)
                             Text(stringResource(R.string.account_type_currency, account.type.name.lowercase(), account.currencyCode))
                         }
-                        Text(account.balance.formatted(), fontWeight = FontWeight.SemiBold)
+                        Text(account.balance.displayValue(), fontWeight = FontWeight.SemiBold)
                     }
                     Text(
-                        stringResource(R.string.account_cleared_balance, account.clearedBalance.formatted()),
+                        stringResource(R.string.account_cleared_balance, account.clearedBalance.displayValue()),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row {
@@ -895,7 +909,7 @@ internal fun MoreScreen(
                         Column(Modifier.weight(1f)) {
                             Text(account.name, fontWeight = FontWeight.Medium)
                             Text(
-                                stringResource(R.string.account_type_balance, account.type.name.lowercase(), account.balance.formatted()),
+                                stringResource(R.string.account_type_balance, account.type.name.lowercase(), account.balance.displayValue()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -915,7 +929,7 @@ internal fun MoreScreen(
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(goal.name, fontWeight = FontWeight.Medium)
-                    Text(stringResource(R.string.goal_progress, goal.saved.formatted(), goal.target.formatted()))
+                    Text(stringResource(R.string.goal_progress, goal.saved.displayValue(), goal.target.displayValue()))
                     Text(goal.status.lowercase(), style = MaterialTheme.typography.bodySmall)
                     Row {
                         TextButton(onClick = { onEditGoal(goal.id) }) { Text(stringResource(R.string.ui_edit)) }
@@ -930,7 +944,7 @@ internal fun MoreScreen(
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(contribution.goalName, fontWeight = FontWeight.Medium)
-                        Text(stringResource(R.string.amount_date, contribution.amount.formatted(), contribution.localDate))
+                        Text(stringResource(R.string.amount_date, contribution.amount.displayValue(), contribution.localDate))
                         if (contribution.note.isNotBlank()) Text(contribution.note, style = MaterialTheme.typography.bodySmall)
                         Row {
                             TextButton(onClick = { onEditGoalContribution(contribution.id) }) { Text(stringResource(R.string.ui_edit)) }
@@ -950,7 +964,7 @@ internal fun MoreScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(contribution.goalName, fontWeight = FontWeight.Medium)
-                            Text(stringResource(R.string.amount_date, contribution.amount.formatted(), contribution.localDate))
+                            Text(stringResource(R.string.amount_date, contribution.amount.displayValue(), contribution.localDate))
                         }
                         TextButton(onClick = { onRestoreGoalContribution(contribution.id) }) { Text(stringResource(R.string.ui_restore)) }
                     }
@@ -1172,7 +1186,7 @@ internal fun MoreScreen(
                 onDismissRequest = { deleteContributionId = null },
                 title = { Text(stringResource(R.string.ui_delete_contribution)) },
                 text = {
-                    Text(stringResource(R.string.confirm_delete_contribution, contribution.amount.formatted(), contribution.goalName))
+                    Text(stringResource(R.string.confirm_delete_contribution, contribution.amount.displayValue(), contribution.goalName))
                 },
                 confirmButton = {
                     TextButton(

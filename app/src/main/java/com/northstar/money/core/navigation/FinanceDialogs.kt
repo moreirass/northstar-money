@@ -1174,8 +1174,8 @@ internal fun ReconcileDialog(
         title = { Text(stringResource(R.string.dialog_reconcile_named, accountName)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(stringResource(R.string.current_total_balance, currentBalance.formatted()))
-                Text(stringResource(R.string.current_cleared_balance, clearedBalance.formatted()))
+                Text(stringResource(R.string.current_total_balance, currentBalance.displayValue()))
+                Text(stringResource(R.string.current_cleared_balance, clearedBalance.displayValue()))
                 Text(stringResource(R.string.ui_only_cleared_transactions_on_or_before_the_statement))
                 OutlinedTextField(
                     statementDate,

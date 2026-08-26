@@ -387,6 +387,10 @@ class FinanceViewModel(
         launchOperation { preferences.setOnboardingCompleted(completed) }
     }
 
+    fun setMoneyValuesHidden(hidden: Boolean) {
+        launchOperation { preferences.setMoneyValuesHidden(hidden) }
+    }
+
     fun retryLoading() {
         refreshRequests.value += 1
     }

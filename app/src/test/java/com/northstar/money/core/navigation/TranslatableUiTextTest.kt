@@ -43,6 +43,16 @@ class TranslatableUiTextTest {
     }
 
     @Test
+    fun appDoesNotGloballyBlockScreenshots() {
+        val activity = File(
+            findAppDirectory(),
+            "src/main/java/com/northstar/money/MainActivity.kt",
+        ).readText()
+
+        assertFalse("FLAG_SECURE would block every screenshot", activity.contains("FLAG_SECURE"))
+    }
+
+    @Test
     fun portugueseCatalogHasTheSameKeysAndFormatArguments() {
         val appDir = findAppDirectory()
         val base = readStrings(File(appDir, "src/main/res/values/strings.xml"))

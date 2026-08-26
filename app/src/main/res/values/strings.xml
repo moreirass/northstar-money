@@ -244,4 +244,8 @@
     <string name="state_retry">Try again</string>
     <string name="state_empty_accounts">No accounts yet. Add an account to start building your plan.</string>
     <string name="state_empty_budgets">No budgets yet. Add an expense category, then set its monthly budget.</string>
+    <string name="money_hidden_value">••••</string>
+    <string name="money_hide_values">Hide monetary values</string>
+    <string name="money_show_values">Show monetary values</string>
+    <string name="money_privacy_explanation">Masks amounts on screen while keeping screenshots available. Exports and encrypted backups retain the real values.</string>
 </resources>
