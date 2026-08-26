@@ -78,4 +78,17 @@ class FullBackupRepositoryTest {
         assertEquals(99L, snapshot.categories.single().archivedAt)
         assertEquals(false, snapshot.recurringSchedules.single().active)
     }
+
+    @Test
+    fun passwordProtectedBackup_roundTripsWithAndroidCryptoProvider() = runBlocking {
+        val plainText = OfflineFinanceRepository(database.financeDao()).createFullBackup()
+        val password = "correct horse battery staple".toCharArray()
+        try {
+            val encrypted = SecureBackupCodec().encrypt(plainText, password)
+
+            assertEquals(plainText, SecureBackupCodec().decrypt(encrypted, password))
+        } finally {
+            password.fill('\u0000')
+        }
+    }
 }

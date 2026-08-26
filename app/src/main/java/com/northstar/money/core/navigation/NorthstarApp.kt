@@ -55,10 +55,13 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.northstar.money.NorthstarApplication
 import com.northstar.money.domain.model.CategoryKind
 import com.northstar.money.domain.model.AccountType
@@ -359,15 +362,22 @@ private fun MoreScreen(
         }
     }
     val backupCodec = remember { SecureBackupCodec() }
+    var showBackupPasswordDialog by remember { mutableStateOf(false) }
+    var pendingBackupPassword by remember { mutableStateOf<CharArray?>(null) }
+    var showRestorePasswordDialog by remember { mutableStateOf(false) }
+    var pendingRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        uri?.let {
+        val password = pendingBackupPassword
+        if (uri != null && password != null) {
             scope.launch {
                 runCatching {
-                    val encrypted = backupCodec.encrypt(onCreateFullBackup())
-                    requireNotNull(context.contentResolver.openOutputStream(it)).use { output ->
-                        output.write(encrypted)
+                    withContext(Dispatchers.IO) {
+                        val encrypted = backupCodec.encrypt(onCreateFullBackup(), password)
+                        requireNotNull(context.contentResolver.openOutputStream(uri)).use { output ->
+                            output.write(encrypted)
+                        }
                     }
                 }.onSuccess {
                     android.widget.Toast.makeText(
@@ -381,33 +391,52 @@ private fun MoreScreen(
                         "Backup failed: ${error.message ?: "unknown error"}",
                         android.widget.Toast.LENGTH_LONG,
                     ).show()
+                }.also {
+                    password.fill('\u0000')
+                    pendingBackupPassword = null
                 }
             }
+        } else {
+            password?.fill('\u0000')
+            pendingBackupPassword = null
         }
     }
     val restoreLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        uri?.let {
-            context.contentResolver.openInputStream(it)?.use { input ->
-                runCatching { backupCodec.decrypt(input.readBytes()) }
-                    .onSuccess { decrypted ->
-                        if (decrypted.trimStart().startsWith("{")) {
-                            android.widget.Toast.makeText(
-                                context,
-                                "Complete backup detected; use the full restore flow",
-                                android.widget.Toast.LENGTH_LONG,
-                            ).show()
-                        } else {
-                            onImportCsv(decrypted)
-                        }
-                    }.onFailure { error ->
+        if (uri != null) {
+            pendingRestoreUri = uri
+            showRestorePasswordDialog = true
+        }
+    }
+    fun decryptSelectedBackup(password: CharArray) {
+        val uri = pendingRestoreUri ?: return
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
+                        backupCodec.decrypt(input.readBytes(), password)
+                    }
+                }
+            }.onSuccess { decrypted ->
+                if (decrypted.trimStart().startsWith("{")) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Complete backup detected; use the full restore flow",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                } else {
+                    onImportCsv(decrypted)
+                }
+            }.onFailure { error ->
                         android.widget.Toast.makeText(
                             context,
                             "Backup could not be read: ${error.message ?: "unknown error"}",
                             android.widget.Toast.LENGTH_LONG,
                         ).show()
-                    }
+            }.also {
+                password.fill('\u0000')
+                pendingRestoreUri = null
             }
         }
     }
@@ -474,11 +503,11 @@ private fun MoreScreen(
                 TextButton(onClick = { pdfLauncher.launch("northstar-monthly-summary.pdf") }) {
                     Text("Export monthly report to PDF")
                 }
-                TextButton(onClick = { backupLauncher.launch("northstar-encrypted-backup.nsb") }) {
-                    Text("Create encrypted full backup")
+                TextButton(onClick = { showBackupPasswordDialog = true }) {
+                    Text("Create password-protected full backup")
                 }
                 TextButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
-                    Text("Restore encrypted transaction backup")
+                    Text("Restore password-protected backup")
                 }
                 state.importMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
@@ -566,6 +595,34 @@ private fun MoreScreen(
             }
         }
     }
+    if (showBackupPasswordDialog) {
+        BackupPasswordDialog(
+            title = "Protect backup",
+            confirmLabel = "Choose file",
+            requireConfirmation = true,
+            onDismiss = { showBackupPasswordDialog = false },
+            onConfirm = { password ->
+                pendingBackupPassword = password
+                showBackupPasswordDialog = false
+                backupLauncher.launch("northstar-full-backup.nsmb")
+            },
+        )
+    }
+    if (showRestorePasswordDialog) {
+        BackupPasswordDialog(
+            title = "Unlock backup",
+            confirmLabel = "Unlock",
+            requireConfirmation = false,
+            onDismiss = {
+                showRestorePasswordDialog = false
+                pendingRestoreUri = null
+            },
+            onConfirm = { password ->
+                showRestorePasswordDialog = false
+                decryptSelectedBackup(password)
+            },
+        )
+    }
     if (showGoal) {
         GoalDialog(
             onDismiss = { showGoal = false },
@@ -628,6 +685,55 @@ private fun MoreScreen(
             )
         }
     }
+}
+
+@Composable
+private fun BackupPasswordDialog(
+    title: String,
+    confirmLabel: String,
+    requireConfirmation: Boolean,
+    onDismiss: () -> Unit,
+    onConfirm: (CharArray) -> Unit,
+) {
+    var password by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    val lengthIsValid = password.length in
+        com.northstar.money.data.backup.PortableBackupCodec.MIN_PASSWORD_LENGTH..
+            com.northstar.money.data.backup.PortableBackupCodec.MAX_PASSWORD_LENGTH
+    val passwordsMatch = !requireConfirmation || password == confirmation
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Use 12–128 characters. Losing this password makes the backup unrecoverable.")
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                )
+                if (requireConfirmation) {
+                    OutlinedTextField(
+                        value = confirmation,
+                        onValueChange = { confirmation = it },
+                        label = { Text("Confirm password") },
+                        singleLine = true,
+                        visualTransformation = PasswordVisualTransformation(),
+                        isError = confirmation.isNotEmpty() && !passwordsMatch,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(password.toCharArray()) },
+                enabled = lengthIsValid && passwordsMatch,
+            ) { Text(confirmLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable
