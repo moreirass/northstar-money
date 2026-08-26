@@ -81,6 +81,7 @@ data class EditableTransaction(
     val accountId: String,
     val categoryId: String?,
     val destinationAccountId: String? = null,
+    val destinationAmount: Money? = null,
 )
 
 data class FinanceSummary(

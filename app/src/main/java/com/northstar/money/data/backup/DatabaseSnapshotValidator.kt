@@ -77,12 +77,16 @@ class DatabaseSnapshotValidator {
                 "INCOME" -> require(entries.all { it.amountMinor > 0 }) { "Backup contains invalid income entries" }
                 "EXPENSE" -> require(entries.all { it.amountMinor < 0 }) { "Backup contains invalid expense entries" }
                 "TRANSFER" -> {
-                    require(entries.size >= 2 && entries.all { it.categoryId == null }) {
+                    val source = entries.singleOrNull { it.amountMinor < 0 }
+                    val destination = entries.singleOrNull { it.amountMinor > 0 }
+                    require(entries.size == 2 && entries.all { it.categoryId == null } && source != null && destination != null) {
                         "Backup contains an invalid transfer"
                     }
-                    require(entries.groupBy { it.currencyCode }.values.all { currencyEntries ->
-                        currencyEntries.sumOf { it.amountMinor } == 0L
-                    }) { "Backup contains an unbalanced transfer" }
+                    if (source.currencyCode == destination.currencyCode) {
+                        require(Math.addExact(source.amountMinor, destination.amountMinor) == 0L) {
+                            "Backup contains an unbalanced transfer"
+                        }
+                    }
                 }
             }
         }

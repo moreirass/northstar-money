@@ -127,6 +127,34 @@ class TransactionEditingTest {
     }
 
     @Test
+    fun editCrossCurrencyTransfer_preservesIndependentAmountsAndCurrencies() = runBlocking {
+        database.financeDao().insertTransaction(
+            TransactionEntity("transfer", "TRANSFER", "2026-08-01", "Transfer", "", 10, 10),
+            listOf(
+                TransactionEntryEntity("source-entry", "transfer", "account-1", null, -500, "EUR", true),
+                TransactionEntryEntity("destination-entry", "transfer", "usd", null, 625, "USD", false),
+            ),
+        )
+        val editable = repository.getTransactionForEdit("transfer")
+
+        assertEquals(Money(500, "EUR"), editable.amount)
+        assertEquals(Money(625, "USD"), editable.destinationAmount)
+        repository.updateTransaction(
+            editable.copy(
+                amount = Money(800, "EUR"),
+                destinationAmount = Money(1_000, "USD"),
+                note = "Updated exchange",
+            ),
+        )
+
+        val entries = database.financeDao().exportSnapshot().transactionEntries.associateBy { it.id }
+        assertEquals(-800L, entries.getValue("source-entry").amountMinor)
+        assertEquals("EUR", entries.getValue("source-entry").currencyCode)
+        assertEquals(1_000L, entries.getValue("destination-entry").amountMinor)
+        assertEquals("USD", entries.getValue("destination-entry").currencyCode)
+    }
+
+    @Test
     fun reconciliationAdjustment_cannotBeOpenedForEditing() = runBlocking {
         seedExpense()
         database.financeDao().insertReconciliationWithAdjustment(

@@ -48,6 +48,28 @@ class DatabaseSnapshotValidatorTest {
     }
 
     @Test
+    fun validate_acceptsCrossCurrencyTransferWithIndependentAmounts() {
+        val base = validSnapshot()
+        val transfer = base.copy(
+            accounts = base.accounts +
+                AccountEntity("usd", "USD account", "CHECKING", "USD", 0, null, 1, 1),
+            transactions = listOf(base.transactions.single().copy(kind = "TRANSFER")),
+            transactionEntries = listOf(
+                base.transactionEntries.single().copy(categoryId = null, amountMinor = -100),
+                base.transactionEntries.single().copy(
+                    id = "usd-entry",
+                    accountId = "usd",
+                    categoryId = null,
+                    amountMinor = 125,
+                    currencyCode = "USD",
+                ),
+            ),
+        )
+
+        validator.validate(transfer)
+    }
+
+    @Test
     fun validate_rejectsEntryCurrencyThatDoesNotMatchAccount() {
         val invalid = validSnapshot().copy(
             transactionEntries = validSnapshot().transactionEntries.map { it.copy(currencyCode = "USD") },

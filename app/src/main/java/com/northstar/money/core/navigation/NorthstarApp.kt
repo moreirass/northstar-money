@@ -358,9 +358,9 @@ fun NorthstarApp() {
         AddTransactionSheet(
             state = state,
             onDismiss = { showAdd = false },
-            onSave = { kind, amount, account, destinationAccount, category, payee ->
+            onSave = { kind, amount, destinationAmount, account, destinationAccount, category, payee ->
                 if (kind == TransactionKind.TRANSFER) {
-                    financeViewModel.transfer(amount, account, destinationAccount, payee)
+                    financeViewModel.transfer(amount, destinationAmount, account, destinationAccount, payee)
                 } else {
                     financeViewModel.addTransaction(kind, amount, account, category, payee)
                 }
@@ -521,7 +521,7 @@ private fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudge
 private fun MoreScreen(
     state: FinanceUiState,
     padding: PaddingValues,
-    onCreateAccount: (String, AccountType, String) -> Unit,
+    onCreateAccount: (String, AccountType, String, String) -> Unit,
     onEditAccount: (String) -> Unit,
     onArchiveAccount: (String) -> Unit,
     onRestoreAccount: (String) -> Unit,
@@ -1305,8 +1305,8 @@ private fun MoreScreen(
     if (showCreate) {
         AccountDialog(
             onDismiss = { showCreate = false },
-            onSave = { name, type, opening ->
-                onCreateAccount(name, type, opening)
+            onSave = { name, type, opening, currency ->
+                onCreateAccount(name, type, opening, currency)
                 showCreate = false
             },
         )
@@ -1470,7 +1470,15 @@ private fun EditTransactionDialog(
     onDismiss: () -> Unit,
     onSave: (EditableTransaction) -> Unit,
 ) {
-    var amount by remember { mutableStateOf(transaction.amount.minor.toBigDecimal().movePointLeft(2).toPlainString()) }
+    val sourceDigits = java.util.Currency.getInstance(transaction.amount.currencyCode).defaultFractionDigits
+    val initialDestinationAmount = transaction.destinationAmount ?: transaction.amount
+    val destinationDigits = java.util.Currency.getInstance(initialDestinationAmount.currencyCode).defaultFractionDigits
+    var amount by remember {
+        mutableStateOf(transaction.amount.minor.toBigDecimal().movePointLeft(sourceDigits).toPlainString())
+    }
+    var destinationAmount by remember {
+        mutableStateOf(initialDestinationAmount.minor.toBigDecimal().movePointLeft(destinationDigits).toPlainString())
+    }
     var localDate by remember { mutableStateOf(transaction.localDate) }
     var payee by remember { mutableStateOf(transaction.payee) }
     var note by remember { mutableStateOf(transaction.note) }
@@ -1478,14 +1486,19 @@ private fun EditTransactionDialog(
     var categoryId by remember { mutableStateOf(transaction.categoryId) }
     var destinationAccountId by remember { mutableStateOf(transaction.destinationAccountId) }
     val accounts = state.accounts.filter { it.currencyCode == transaction.amount.currencyCode }
+    val destinationAccounts = state.accounts.filter { it.currencyCode == initialDestinationAmount.currencyCode }
     val categories = state.categories.filter { it.kind.name == transaction.kind.name }
     val parsedAmount = runCatching { Money.parseMajor(amount, transaction.amount.currencyCode) }.getOrNull()
+    val parsedDestinationAmount = runCatching {
+        Money.parseMajor(destinationAmount, initialDestinationAmount.currencyCode)
+    }.getOrNull()
     val valid = parsedAmount?.minor?.let { it > 0 } == true &&
         runCatching { java.time.LocalDate.parse(localDate) }.isSuccess &&
         accounts.any { it.id == accountId } &&
         if (transaction.kind == TransactionKind.TRANSFER) {
             destinationAccountId != null && destinationAccountId != accountId &&
-                accounts.any { it.id == destinationAccountId }
+                destinationAccounts.any { it.id == destinationAccountId } &&
+                parsedDestinationAmount?.minor?.let { it > 0 } == true
         } else {
             categoryId != null && categories.any { it.id == categoryId }
         }
@@ -1505,6 +1518,17 @@ private fun EditTransactionDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
+                if (transaction.kind == TransactionKind.TRANSFER &&
+                    transaction.amount.currencyCode != initialDestinationAmount.currencyCode
+                ) {
+                    OutlinedTextField(
+                        destinationAmount,
+                        { destinationAmount = it },
+                        label = { Text("Received amount (${initialDestinationAmount.currencyCode})") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true,
+                    )
+                }
                 OutlinedTextField(localDate, { localDate = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
                 OutlinedTextField(payee, { payee = it }, label = { Text("Payee") }, singleLine = true)
                 OutlinedTextField(note, { note = it }, label = { Text("Note") })
@@ -1521,7 +1545,7 @@ private fun EditTransactionDialog(
                 if (transaction.kind == TransactionKind.TRANSFER) {
                     Text("To account")
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        accounts.filter { it.id != accountId }.forEach { account ->
+                        destinationAccounts.filter { it.id != accountId }.forEach { account ->
                             FilterChip(
                                 selected = account.id == destinationAccountId,
                                 onClick = { destinationAccountId = account.id },
@@ -1555,6 +1579,9 @@ private fun EditTransactionDialog(
                             accountId = accountId,
                             categoryId = categoryId,
                             destinationAccountId = destinationAccountId,
+                            destinationAmount = if (
+                                transaction.amount.currencyCode == initialDestinationAmount.currencyCode
+                            ) requireNotNull(parsedAmount) else requireNotNull(parsedDestinationAmount),
                         ),
                     )
                 },
@@ -2117,24 +2144,30 @@ private fun GoalContributionDialog(
 internal fun AddTransactionSheet(
     state: FinanceUiState,
     onDismiss: () -> Unit,
-    onSave: (TransactionKind, String, String, String, String, String) -> Unit,
+    onSave: (TransactionKind, String, String, String, String, String, String) -> Unit,
 ) {
     var kind by remember { mutableStateOf(TransactionKind.EXPENSE) }
     var amount by remember { mutableStateOf("") }
+    var destinationAmount by remember { mutableStateOf("") }
     var payee by remember { mutableStateOf("") }
     var sourceAccountId by remember(state.accounts) { mutableStateOf(state.accounts.firstOrNull()?.id.orEmpty()) }
     val sourceAccount = state.accounts.firstOrNull { it.id == sourceAccountId }
-    val possibleDestinations = state.accounts.filter {
-        it.id != sourceAccountId && it.currencyCode == sourceAccount?.currencyCode
-    }
+    val possibleDestinations = state.accounts.filter { it.id != sourceAccountId }
     var destinationAccountId by remember(sourceAccountId, possibleDestinations) {
         mutableStateOf(possibleDestinations.firstOrNull()?.id.orEmpty())
     }
+    val destinationAccount = possibleDestinations.firstOrNull { it.id == destinationAccountId }
+    val isCrossCurrency = sourceAccount != null && destinationAccount != null &&
+        sourceAccount.currencyCode != destinationAccount.currencyCode
     val requiredKind = if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
     val categories = state.categories.filter { it.kind == requiredKind }
     var categoryId by remember(kind, categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
     val validAmount = runCatching {
         Money.parseMajor(amount, sourceAccount?.currencyCode ?: "EUR").minor > 0
+    }.getOrDefault(false)
+    val effectiveDestinationAmount = if (isCrossCurrency) destinationAmount else amount
+    val validDestinationAmount = runCatching {
+        Money.parseMajor(effectiveDestinationAmount, destinationAccount?.currencyCode ?: "EUR").minor > 0
     }.getOrDefault(false)
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -2157,6 +2190,17 @@ internal fun AddTransactionSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            if (kind == TransactionKind.TRANSFER && isCrossCurrency) {
+                OutlinedTextField(
+                    value = destinationAmount,
+                    onValueChange = { destinationAmount = it },
+                    label = { Text("Received amount (${destinationAccount.currencyCode})") },
+                    supportingText = { Text("Enter the amount credited by the destination account") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
             OutlinedTextField(
                 value = payee,
                 onValueChange = { payee = it },
@@ -2199,9 +2243,21 @@ internal fun AddTransactionSheet(
             }
             Spacer(Modifier.height(4.dp))
             TextButton(
-                onClick = { onSave(kind, amount, sourceAccountId, destinationAccountId, categoryId, payee) },
+                onClick = {
+                    onSave(
+                        kind,
+                        amount,
+                        effectiveDestinationAmount,
+                        sourceAccountId,
+                        destinationAccountId,
+                        categoryId,
+                        payee,
+                    )
+                },
                 enabled = validAmount && sourceAccountId.isNotBlank() &&
-                    if (kind == TransactionKind.TRANSFER) destinationAccountId.isNotBlank()
+                    if (kind == TransactionKind.TRANSFER) {
+                        destinationAccountId.isNotBlank() && validDestinationAmount
+                    }
                     else categoryId.isNotBlank(),
                 modifier = Modifier.align(Alignment.End),
             ) { Text("Save transaction") }
@@ -2272,20 +2328,33 @@ private fun EditAccountDialog(
 @Composable
 private fun AccountDialog(
     onDismiss: () -> Unit,
-    onSave: (String, AccountType, String) -> Unit,
+    onSave: (String, AccountType, String, String) -> Unit,
 ) {
     var name by remember { mutableStateOf("") }
     var opening by remember { mutableStateOf("0") }
     var type by remember { mutableStateOf(AccountType.CHECKING) }
+    var currencyCode by remember { mutableStateOf("EUR") }
+    val normalizedCurrency = currencyCode.trim().uppercase()
+    val validCurrency = runCatching { java.util.Currency.getInstance(normalizedCurrency) }.isSuccess
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("New account") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
                 OutlinedTextField(name, { name = it }, label = { Text("Account name") }, singleLine = true)
                 OutlinedTextField(
-                    opening, { opening = it }, label = { Text("Opening balance (EUR)") },
+                    opening, { opening = it }, label = { Text("Opening balance ($normalizedCurrency)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
+                )
+                OutlinedTextField(
+                    currencyCode,
+                    { currencyCode = it.take(3).uppercase() },
+                    label = { Text("Currency (ISO 4217)") },
+                    supportingText = { if (!validCurrency) Text("Enter a valid 3-letter currency code") },
+                    singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(AccountType.CHECKING, AccountType.SAVINGS, AccountType.CASH).forEach { option ->
@@ -2296,8 +2365,9 @@ private fun AccountDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name, type, opening) },
-                enabled = name.isNotBlank() && runCatching { Money.parseMajor(opening) }.isSuccess,
+                onClick = { onSave(name, type, opening, normalizedCurrency) },
+                enabled = name.isNotBlank() && validCurrency &&
+                    runCatching { Money.parseMajor(opening, normalizedCurrency) }.isSuccess,
             ) { Text("Create") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

@@ -44,7 +44,13 @@ interface FinanceRepository {
     suspend fun updateAccount(account: EditableAccount)
     suspend fun archiveAccount(id: String)
     suspend fun restoreAccount(id: String)
-    suspend fun transfer(amount: Money, sourceAccountId: String, destinationAccountId: String, note: String)
+    suspend fun transfer(
+        sourceAmount: Money,
+        destinationAmount: Money,
+        sourceAccountId: String,
+        destinationAccountId: String,
+        note: String,
+    )
     suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean)
     suspend fun setBudget(categoryId: String, planned: Money)
     suspend fun createGoal(name: String, target: Money, saved: Money, targetDate: String?)

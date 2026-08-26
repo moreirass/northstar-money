@@ -175,9 +175,13 @@ class FinanceViewModel(
         launchOperation("update the transaction") { repository.updateTransaction(transaction) }
     }
 
-    fun createAccount(name: String, type: AccountType, openingBalance: String) {
+    fun createAccount(name: String, type: AccountType, openingBalance: String, currencyCode: String) {
         launchOperation("create the account") {
-            repository.createAccount(name, type, Money.parseMajor(openingBalance.ifBlank { "0" }))
+            repository.createAccount(
+                name,
+                type,
+                Money.parseMajor(openingBalance.ifBlank { "0" }, currencyCode.trim().uppercase()),
+            )
         }
     }
 
@@ -195,12 +199,27 @@ class FinanceViewModel(
         launchOperation("restore the account") { repository.restoreAccount(id) }
     }
 
-    fun transfer(amount: String, sourceId: String, destinationId: String, note: String) {
+    fun transfer(
+        sourceAmount: String,
+        destinationAmount: String,
+        sourceId: String,
+        destinationId: String,
+        note: String,
+    ) {
         launchOperation("save the transfer") {
-            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == sourceId }) {
+            val sourceCurrency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == sourceId }) {
                 "Transfer source account is missing or archived"
             }.currencyCode
-            repository.transfer(Money.parseMajor(amount, currency), sourceId, destinationId, note)
+            val destinationCurrency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == destinationId }) {
+                "Transfer destination account is missing or archived"
+            }.currencyCode
+            repository.transfer(
+                sourceAmount = Money.parseMajor(sourceAmount, sourceCurrency),
+                destinationAmount = Money.parseMajor(destinationAmount, destinationCurrency),
+                sourceAccountId = sourceId,
+                destinationAccountId = destinationId,
+                note = note,
+            )
         }
     }
 

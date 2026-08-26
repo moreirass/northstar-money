@@ -215,10 +215,11 @@ class OfflineFinanceRepository(
             val destination = stored.entries.singleOrNull { it.amountMinor > 0 }
             requireNotNull(source) { "Transfer source is invalid" }
             requireNotNull(destination) { "Transfer destination is invalid" }
-            require(
-                source.currencyCode == destination.currencyCode &&
-                    Math.addExact(source.amountMinor, destination.amountMinor) == 0L,
-            ) { "Cross-currency or unbalanced transfer cannot be edited yet" }
+            if (source.currencyCode == destination.currencyCode) {
+                require(Math.addExact(source.amountMinor, destination.amountMinor) == 0L) {
+                    "Same-currency transfer is unbalanced"
+                }
+            }
             EditableTransaction(
                 id = id,
                 kind = kind,
@@ -229,6 +230,7 @@ class OfflineFinanceRepository(
                 accountId = source.accountId,
                 categoryId = null,
                 destinationAccountId = destination.accountId,
+                destinationAmount = Money(destination.amountMinor, destination.currencyCode),
             )
         } else {
             require(stored.entries.size == 1) { "Income and expense transactions must contain one entry" }
@@ -266,9 +268,16 @@ class OfflineFinanceRepository(
         val updatedEntries = if (transaction.kind == TransactionKind.TRANSFER) {
             require(stored.entries.size == 2) { "Transfer must contain exactly two entries" }
             val destinationAccountId = requireNotNull(transaction.destinationAccountId) { "Destination account is required" }
+            val destinationAmount = requireNotNull(transaction.destinationAmount) { "Destination amount is required" }
+            require(destinationAmount.minor > 0) { "Destination amount must be positive" }
             require(transaction.accountId != destinationAccountId) { "Transfer accounts must be different" }
             requireAccountCurrency(transaction.accountId, transaction.amount.currencyCode)
-            requireAccountCurrency(destinationAccountId, transaction.amount.currencyCode)
+            requireAccountCurrency(destinationAccountId, destinationAmount.currencyCode)
+            val effectiveDestinationAmount = if (transaction.amount.currencyCode == destinationAmount.currencyCode) {
+                transaction.amount
+            } else {
+                destinationAmount
+            }
             val source = requireNotNull(stored.entries.singleOrNull { it.amountMinor < 0 }) { "Transfer source is invalid" }
             val destination = requireNotNull(stored.entries.singleOrNull { it.amountMinor > 0 }) { "Transfer destination is invalid" }
             listOf(
@@ -281,8 +290,8 @@ class OfflineFinanceRepository(
                 destination.copy(
                     accountId = destinationAccountId,
                     categoryId = null,
-                    amountMinor = transaction.amount.minor,
-                    currencyCode = transaction.amount.currencyCode,
+                    amountMinor = effectiveDestinationAmount.minor,
+                    currencyCode = effectiveDestinationAmount.currencyCode,
                 ),
             )
         } else {
@@ -357,22 +366,33 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun transfer(
-        amount: Money,
+        sourceAmount: Money,
+        destinationAmount: Money,
         sourceAccountId: String,
         destinationAccountId: String,
         note: String,
     ) {
-        require(amount.minor > 0)
+        require(sourceAmount.minor > 0 && destinationAmount.minor > 0)
         require(sourceAccountId != destinationAccountId)
-        requireAccountCurrency(sourceAccountId, amount.currencyCode)
-        requireAccountCurrency(destinationAccountId, amount.currencyCode)
+        requireAccountCurrency(sourceAccountId, sourceAmount.currencyCode)
+        requireAccountCurrency(destinationAccountId, destinationAmount.currencyCode)
+        require(
+            sourceAmount.currencyCode != destinationAmount.currencyCode ||
+                sourceAmount.minor == destinationAmount.minor,
+        ) { "Same-currency transfer amounts must match" }
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         dao.insertTransaction(
             TransactionEntity(id, TransactionKind.TRANSFER.name, LocalDate.now().toString(), "Transfer", note.trim(), now, now),
             listOf(
-                TransactionEntryEntity(UUID.randomUUID().toString(), id, sourceAccountId, null, -amount.minor, amount.currencyCode, true),
-                TransactionEntryEntity(UUID.randomUUID().toString(), id, destinationAccountId, null, amount.minor, amount.currencyCode, true),
+                TransactionEntryEntity(
+                    UUID.randomUUID().toString(), id, sourceAccountId, null,
+                    Math.negateExact(sourceAmount.minor), sourceAmount.currencyCode, true,
+                ),
+                TransactionEntryEntity(
+                    UUID.randomUUID().toString(), id, destinationAccountId, null,
+                    destinationAmount.minor, destinationAmount.currencyCode, true,
+                ),
             ),
         )
     }

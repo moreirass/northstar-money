@@ -3,6 +3,7 @@ package com.northstar.money.core.navigation
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Category
@@ -29,7 +30,7 @@ class FormSelectionUiTest {
     fun addTransactionSheet_exposesLastAccountAndCategory() {
         composeRule.setContent {
             MaterialTheme {
-                AddTransactionSheet(state, onDismiss = {}) { _, _, _, _, _, _ -> }
+                AddTransactionSheet(state, onDismiss = {}) { _, _, _, _, _, _, _ -> }
             }
         }
 
@@ -58,5 +59,24 @@ class FormSelectionUiTest {
         }
 
         composeRule.onNodeWithText("Account 6").fetchSemanticsNode()
+    }
+
+    @Test
+    fun transferBetweenDifferentCurrencies_requestsDestinationAmount() {
+        val crossCurrencyState = state.copy(
+            accounts = listOf(
+                Account("eur", "Euro account", AccountType.CHECKING, "EUR", Money(0, "EUR")),
+                Account("usd", "Dollar account", AccountType.CHECKING, "USD", Money(0, "USD")),
+            ),
+        )
+        composeRule.setContent {
+            MaterialTheme {
+                AddTransactionSheet(crossCurrencyState, onDismiss = {}) { _, _, _, _, _, _, _ -> }
+            }
+        }
+
+        composeRule.onNodeWithText("Transfer").performClick()
+
+        composeRule.onNodeWithText("Received amount (USD)").fetchSemanticsNode()
     }
 }

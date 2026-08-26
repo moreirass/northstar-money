@@ -74,7 +74,7 @@ class FinancialAggregateIntegrityTest {
     }
 
     @Test
-    fun repositoryRejectsCurrencyMismatchBeforeWriting() = runBlocking {
+    fun repositorySupportsCrossCurrencyTransferWithoutMixingAccountBalances() = runBlocking {
         val dao = database.financeDao()
         val repository = OfflineFinanceRepository(dao)
         dao.insertAccounts(
@@ -88,13 +88,21 @@ class FinancialAggregateIntegrityTest {
         val transactionFailure = runCatching {
             repository.addTransaction(TransactionKind.EXPENSE, Money(100, "EUR"), "usd", "food", "Shop")
         }.exceptionOrNull()
-        val transferFailure = runCatching {
-            repository.transfer(Money(100, "EUR"), "eur", "usd", "Transfer")
-        }.exceptionOrNull()
+        repository.transfer(
+            sourceAmount = Money(100, "EUR"),
+            destinationAmount = Money(125, "USD"),
+            sourceAccountId = "eur",
+            destinationAccountId = "usd",
+            note = "Exchange",
+        )
 
         assertTrue(transactionFailure is IllegalArgumentException)
-        assertTrue(transferFailure is IllegalArgumentException)
-        assertEquals(emptyList<Any>(), dao.exportSnapshot().transactions)
+        val accounts = repository.observeAccounts().first().associateBy { it.id }
+        assertEquals(-100L, accounts.getValue("eur").balance.minor)
+        assertEquals(125L, accounts.getValue("usd").balance.minor)
+        val entries = dao.exportSnapshot().transactionEntries.associateBy { it.accountId }
+        assertEquals("EUR", entries.getValue("eur").currencyCode)
+        assertEquals("USD", entries.getValue("usd").currencyCode)
     }
 
     private suspend fun insertExpense(
