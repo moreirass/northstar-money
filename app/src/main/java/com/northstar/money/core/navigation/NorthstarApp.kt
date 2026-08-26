@@ -1,6 +1,8 @@
 package com.northstar.money.core.navigation
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -9,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +39,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationRail
+import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -98,6 +103,14 @@ internal enum class Destination(val route: String, val label: String, val icon: 
     Activity("activity", "Activity", Icons.AutoMirrored.Filled.ReceiptLong),
     More("more", "More", Icons.Default.MoreHoriz),
 }
+
+internal enum class WindowWidthClass { COMPACT, MEDIUM, EXPANDED }
+
+internal fun classifyWindowWidth(widthDp: Int): WindowWidthClass = when {
+    widthDp < 600 -> WindowWidthClass.COMPACT
+    widthDp < 840 -> WindowWidthClass.MEDIUM
+    else -> WindowWidthClass.EXPANDED
+}
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NorthstarApp() {
@@ -126,6 +139,9 @@ fun NorthstarApp() {
         }
     }
 
+    BoxWithConstraints {
+    val widthClass = classifyWindowWidth(maxWidth.value.toInt())
+    val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
         topBar = { TopAppBar(title = { Text(destination.label) }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -135,7 +151,7 @@ fun NorthstarApp() {
             }
         },
         bottomBar = {
-            NavigationBar {
+            if (!useNavigationRail) NavigationBar {
                 Destination.entries.forEach { item ->
                     NavigationBarItem(
                         selected = destination == item,
@@ -153,13 +169,37 @@ fun NorthstarApp() {
             }
         },
     ) { padding ->
+        Row(Modifier.fillMaxSize()) {
+        if (useNavigationRail) {
+            NavigationRail {
+                Destination.entries.forEach { item ->
+                    NavigationRailItem(
+                        selected = destination == item,
+                        onClick = {
+                            navController.navigate(item.route) {
+                                popUpTo(Destination.Home.route) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
+                        icon = { Icon(item.icon, contentDescription = null) },
+                        label = { Text(item.label) },
+                    )
+                }
+            }
+        }
         NavHost(
             navController = navController,
             startDestination = Destination.Home.route,
+            modifier = Modifier.weight(1f),
         ) {
-            composable(Destination.Home.route) { HomeScreen(state, padding) }
-            composable(Destination.Plan.route) { PlanScreen(state, padding, financeViewModel::setBudget) }
-            composable(Destination.Activity.route) { ActivityScreen(
+            composable(Destination.Home.route) {
+                AdaptiveContentPane(widthClass) { HomeScreen(state, padding) }
+            }
+            composable(Destination.Plan.route) {
+                AdaptiveContentPane(widthClass) { PlanScreen(state, padding, financeViewModel::setBudget) }
+            }
+            composable(Destination.Activity.route) { AdaptiveContentPane(widthClass) { ActivityScreen(
                 state = state,
                 padding = padding,
                 onEdit = { id ->
@@ -199,8 +239,8 @@ fun NorthstarApp() {
                         }
                     }
                 },
-            ) }
-            composable(Destination.More.route) { MoreScreen(
+            ) } }
+            composable(Destination.More.route) { AdaptiveContentPane(widthClass) { MoreScreen(
                 state = state,
                 padding = padding,
                 onCreateAccount = financeViewModel::createAccount,
@@ -279,8 +319,10 @@ fun NorthstarApp() {
                             .onFailure { snackbarHostState.showSnackbar("Could not restore the transaction. Please try again.") }
                     }
                 },
-            ) }
+            ) } }
         }
+        }
+    }
     }
 
     editingTransaction?.let { transaction ->
@@ -367,5 +409,20 @@ fun NorthstarApp() {
                 showAdd = false
             },
         )
+    }
+}
+
+@Composable
+internal fun AdaptiveContentPane(
+    widthClass: WindowWidthClass,
+    content: @Composable () -> Unit,
+) {
+    val maximumWidth = when (widthClass) {
+        WindowWidthClass.COMPACT -> 600.dp
+        WindowWidthClass.MEDIUM -> 760.dp
+        WindowWidthClass.EXPANDED -> 1040.dp
+    }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        Box(Modifier.fillMaxSize().widthIn(max = maximumWidth)) { content() }
     }
 }
