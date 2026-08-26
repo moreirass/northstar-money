@@ -152,9 +152,12 @@ class FinanceViewModel(
         payee: String,
     ) {
         launchOperation("save the transaction") {
+            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
+                "Transaction account is missing or archived"
+            }.currencyCode
             repository.addTransaction(
                 kind = kind,
-                amount = Money.parseMajor(amountText),
+                amount = Money.parseMajor(amountText, currency),
                 accountId = accountId,
                 categoryId = categoryId,
                 payee = payee.ifBlank { if (kind == TransactionKind.INCOME) "Income" else "Expense" },
@@ -194,13 +197,19 @@ class FinanceViewModel(
 
     fun transfer(amount: String, sourceId: String, destinationId: String, note: String) {
         launchOperation("save the transfer") {
-            repository.transfer(Money.parseMajor(amount), sourceId, destinationId, note)
+            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == sourceId }) {
+                "Transfer source account is missing or archived"
+            }.currencyCode
+            repository.transfer(Money.parseMajor(amount, currency), sourceId, destinationId, note)
         }
     }
 
     fun reconcile(accountId: String, statementBalance: String, createAdjustment: Boolean) {
         launchOperation("reconcile the account") {
-            repository.reconcile(accountId, Money.parseMajor(statementBalance), createAdjustment)
+            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
+                "Reconciliation account is missing or archived"
+            }.currencyCode
+            repository.reconcile(accountId, Money.parseMajor(statementBalance, currency), createAdjustment)
         }
     }
 
@@ -247,7 +256,18 @@ class FinanceViewModel(
         categoryId: String?, frequency: String, nextDate: String,
     ) {
         launchOperation("create the recurring item") {
-            repository.createRecurring(name, kind, Money.parseMajor(amount), accountId, categoryId, frequency, nextDate)
+            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
+                "Recurring account is missing or archived"
+            }.currencyCode
+            repository.createRecurring(
+                name,
+                kind,
+                Money.parseMajor(amount, currency),
+                accountId,
+                categoryId,
+                frequency,
+                nextDate,
+            )
         }
     }
 

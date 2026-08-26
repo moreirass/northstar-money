@@ -1437,7 +1437,10 @@ private fun MergeCategoryDialog(
         onDismissRequest = onDismiss,
         title = { Text("Merge $sourceName") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 Text(
                     "Past activity will appear under the selected category. $sourceName will be archived and the merge can be undone.",
                 )
@@ -1676,7 +1679,7 @@ private fun EditRecurringDialog(
 }
 
 @Composable
-private fun RecurringDialog(
+internal fun RecurringDialog(
     state: FinanceUiState,
     onDismiss: () -> Unit,
     onSave: (String, TransactionKind, String, String, String?, String, String) -> Unit,
@@ -1686,17 +1689,31 @@ private fun RecurringDialog(
     var date by remember { mutableStateOf(java.time.LocalDate.now().plusMonths(1).toString()) }
     var kind by remember { mutableStateOf(TransactionKind.EXPENSE) }
     var frequency by remember { mutableStateOf("MONTHLY") }
-    val account = state.accounts.firstOrNull()
-    val category = state.categories.firstOrNull {
-        it.kind == if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
-    }
+    val accounts = state.accounts
+    var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id.orEmpty()) }
+    val account = accounts.firstOrNull { it.id == accountId }
+    val requiredCategoryKind = if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+    val categories = state.categories.filter { it.kind == requiredCategoryKind }
+    var categoryId by remember(kind, categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
+    val parsedAmount = runCatching {
+        Money.parseMajor(amount, account?.currencyCode ?: "EUR")
+    }.getOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Recurring transaction") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(amount, { amount = it }, label = { Text("Amount") }, singleLine = true)
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (${account?.currencyCode ?: "—"})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
                 OutlinedTextField(date, { date = it }, label = { Text("Next date (YYYY-MM-DD)") }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text("Expense") })
@@ -1707,13 +1724,31 @@ private fun RecurringDialog(
                         FilterChip(frequency == it, { frequency = it }, { Text(it.lowercase()) })
                     }
                 }
+                Text("Account", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    accounts.forEach { option ->
+                        FilterChip(accountId == option.id, { accountId = option.id }, { Text(option.name) })
+                    }
+                }
+                Text("Category", style = MaterialTheme.typography.labelLarge)
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    categories.forEach { option ->
+                        FilterChip(categoryId == option.id, { categoryId = option.id }, { Text(option.name) })
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(name, kind, amount, account!!.id, category?.id, frequency, date) },
-                enabled = name.isNotBlank() && account != null && category != null &&
-                    runCatching { Money.parseMajor(amount).minor > 0 }.getOrDefault(false) &&
+                onClick = { onSave(name, kind, amount, account!!.id, categoryId, frequency, date) },
+                enabled = name.isNotBlank() && account != null && categories.any { it.id == categoryId } &&
+                    parsedAmount?.minor?.let { it > 0 } == true &&
                     runCatching { java.time.LocalDate.parse(date) }.isSuccess,
             ) { Text("Create") }
         },
@@ -1722,7 +1757,7 @@ private fun RecurringDialog(
 }
 
 @Composable
-private fun DebtDialog(
+internal fun DebtDialog(
     state: FinanceUiState,
     onDismiss: () -> Unit,
     onSave: (String, String, String, String) -> Unit,
@@ -1730,15 +1765,38 @@ private fun DebtDialog(
     var rate by remember { mutableStateOf("") }
     var payment by remember { mutableStateOf("") }
     var dueDay by remember { mutableStateOf("1") }
-    val account = state.accounts.firstOrNull()
+    val accounts = state.accounts.filter { candidate -> state.debts.none { it.accountId == candidate.id } }
+    var accountId by remember(accounts) { mutableStateOf(accounts.firstOrNull()?.id.orEmpty()) }
+    val account = accounts.firstOrNull { it.id == accountId }
+    val parsedPayment = runCatching {
+        Money.parseMajor(payment, account?.currencyCode ?: "EUR")
+    }.getOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Debt profile") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Account: ${account?.name ?: "Create an account first"}")
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text("Account", style = MaterialTheme.typography.labelLarge)
+                if (accounts.isEmpty()) Text("Create an account without a debt profile first")
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    accounts.forEach { option ->
+                        FilterChip(accountId == option.id, { accountId = option.id }, { Text(option.name) })
+                    }
+                }
                 OutlinedTextField(rate, { rate = it }, label = { Text("Annual rate (%)") }, singleLine = true)
-                OutlinedTextField(payment, { payment = it }, label = { Text("Minimum payment") }, singleLine = true)
+                OutlinedTextField(
+                    payment,
+                    { payment = it },
+                    label = { Text("Minimum payment (${account?.currencyCode ?: "—"})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
                 OutlinedTextField(dueDay, { dueDay = it }, label = { Text("Due day") }, singleLine = true)
             }
         },
@@ -1746,7 +1804,7 @@ private fun DebtDialog(
             TextButton(
                 onClick = { onSave(account!!.id, rate, payment, dueDay) },
                 enabled = account != null && rate.toBigDecimalOrNull() != null &&
-                    runCatching { Money.parseMajor(payment).minor >= 0 }.getOrDefault(false) &&
+                    parsedPayment?.minor?.let { it >= 0 } == true &&
                     dueDay.toIntOrNull() in 1..31,
             ) { Text("Save") }
         },
@@ -2056,7 +2114,7 @@ private fun GoalContributionDialog(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddTransactionSheet(
+internal fun AddTransactionSheet(
     state: FinanceUiState,
     onDismiss: () -> Unit,
     onSave: (TransactionKind, String, String, String, String, String) -> Unit,
@@ -2064,20 +2122,25 @@ private fun AddTransactionSheet(
     var kind by remember { mutableStateOf(TransactionKind.EXPENSE) }
     var amount by remember { mutableStateOf("") }
     var payee by remember { mutableStateOf("") }
-    val account = state.accounts.firstOrNull()
-    var sourceAccountId by remember(state.accounts) { mutableStateOf(account?.id.orEmpty()) }
-    val possibleDestinations = state.accounts.filter { it.id != sourceAccountId }
+    var sourceAccountId by remember(state.accounts) { mutableStateOf(state.accounts.firstOrNull()?.id.orEmpty()) }
+    val sourceAccount = state.accounts.firstOrNull { it.id == sourceAccountId }
+    val possibleDestinations = state.accounts.filter {
+        it.id != sourceAccountId && it.currencyCode == sourceAccount?.currencyCode
+    }
     var destinationAccountId by remember(sourceAccountId, possibleDestinations) {
         mutableStateOf(possibleDestinations.firstOrNull()?.id.orEmpty())
     }
     val requiredKind = if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
     val categories = state.categories.filter { it.kind == requiredKind }
     var categoryId by remember(kind, categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
-    val validAmount = runCatching { Money.parseMajor(amount).minor > 0 }.getOrDefault(false)
+    val validAmount = runCatching {
+        Money.parseMajor(amount, sourceAccount?.currencyCode ?: "EUR").minor > 0
+    }.getOrDefault(false)
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Add transaction", style = MaterialTheme.typography.headlineSmall)
@@ -2089,7 +2152,7 @@ private fun AddTransactionSheet(
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("Amount (EUR)") },
+                label = { Text("Amount (${sourceAccount?.currencyCode ?: "—"})") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -2101,23 +2164,35 @@ private fun AddTransactionSheet(
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
-            if (kind == TransactionKind.TRANSFER) {
-                Text("From account", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    state.accounts.forEach { item ->
-                        FilterChip(sourceAccountId == item.id, { sourceAccountId = item.id }, { Text(item.name) })
-                    }
+            Text(
+                if (kind == TransactionKind.TRANSFER) "From account" else "Account",
+                style = MaterialTheme.typography.labelLarge,
+            )
+            Row(
+                Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                state.accounts.forEach { item ->
+                    FilterChip(sourceAccountId == item.id, { sourceAccountId = item.id }, { Text(item.name) })
                 }
+            }
+            if (kind == TransactionKind.TRANSFER) {
                 Text("To account", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
                     possibleDestinations.forEach { item ->
                         FilterChip(destinationAccountId == item.id, { destinationAccountId = item.id }, { Text(item.name) })
                     }
                 }
             } else {
                 Text("Category", style = MaterialTheme.typography.labelLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    categories.take(4).forEach { category ->
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    categories.forEach { category ->
                         FilterChip(categoryId == category.id, { categoryId = category.id }, { Text(category.name) })
                     }
                 }
@@ -2245,7 +2320,9 @@ private fun ReconcileDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Current app balance: ${currentBalance.formatted()}")
                 OutlinedTextField(
-                    statement, { statement = it }, label = { Text("Statement balance") },
+                    statement,
+                    { statement = it },
+                    label = { Text("Statement balance (${currentBalance.currencyCode})") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
                 )
                 FilterChip(
@@ -2258,7 +2335,7 @@ private fun ReconcileDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(statement, adjustment) },
-                enabled = runCatching { Money.parseMajor(statement) }.isSuccess,
+                enabled = runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess,
             ) { Text("Reconcile") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
