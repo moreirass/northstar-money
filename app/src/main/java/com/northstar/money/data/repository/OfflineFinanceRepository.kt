@@ -9,6 +9,7 @@ import com.northstar.money.core.database.TransactionImportItem
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Category
+import com.northstar.money.domain.model.ArchivedCategory
 import com.northstar.money.domain.model.CategoryKind
 import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.Money
@@ -47,6 +48,19 @@ class OfflineFinanceRepository(
     override fun observeCategories(): Flow<List<Category>> = dao.observeCategories().map { rows ->
         rows.map { Category(it.id, it.name, CategoryKind.valueOf(it.kind)) }
     }
+
+    override fun observeArchivedCategories(): Flow<List<ArchivedCategory>> =
+        dao.observeArchivedCategories().map { rows ->
+            rows.map {
+                ArchivedCategory(
+                    id = it.id,
+                    name = it.name,
+                    kind = CategoryKind.valueOf(it.kind),
+                    mergedIntoCategoryId = it.mergedIntoCategoryId,
+                    mergedIntoCategoryName = it.mergedIntoCategoryName,
+                )
+            }
+        }
 
     override fun observeTransactions(): Flow<List<TransactionItem>> =
         dao.observeTransactions().map { rows ->
@@ -421,6 +435,27 @@ class OfflineFinanceRepository(
                 dao.observeCategories().first().count { it.kind == kind.name },
             )
         )
+    }
+
+    override suspend fun renameCategory(id: String, name: String) {
+        require(name.isNotBlank()) { "Category name is required" }
+        dao.renameCategory(id, name.trim())
+    }
+
+    override suspend fun archiveCategory(id: String) {
+        dao.archiveCategory(id, System.currentTimeMillis())
+    }
+
+    override suspend fun restoreCategory(id: String) {
+        dao.restoreCategory(id)
+    }
+
+    override suspend fun mergeCategory(sourceId: String, targetId: String) {
+        dao.mergeCategory(sourceId, targetId, System.currentTimeMillis())
+    }
+
+    override suspend fun undoCategoryMerge(id: String) {
+        dao.undoCategoryMerge(id)
     }
 
     override suspend fun createFullBackup(): String = backupCodec.encode(

@@ -71,6 +71,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import com.northstar.money.NorthstarApplication
 import com.northstar.money.domain.model.CategoryKind
+import com.northstar.money.domain.model.Category
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
@@ -161,6 +162,11 @@ fun NorthstarApp() {
                 onSetAppLock = financeViewModel::setAppLock,
                 onSetReminders = financeViewModel::setReminders,
                 onCreateCategory = financeViewModel::createCategory,
+                onRenameCategory = financeViewModel::renameCategory,
+                onArchiveCategory = financeViewModel::archiveCategory,
+                onRestoreCategory = financeViewModel::restoreCategory,
+                onMergeCategory = financeViewModel::mergeCategory,
+                onUndoCategoryMerge = financeViewModel::undoCategoryMerge,
                 onCreateFullBackup = financeViewModel::createFullBackup,
                 onRestoreFullBackup = financeViewModel::restoreFullBackup,
                 onUndoFullRestore = financeViewModel::undoLastFullRestore,
@@ -396,6 +402,11 @@ private fun MoreScreen(
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
     onCreateCategory: (String, CategoryKind) -> Unit,
+    onRenameCategory: (String, String) -> Unit,
+    onArchiveCategory: (String) -> Unit,
+    onRestoreCategory: (String) -> Unit,
+    onMergeCategory: (String, String) -> Unit,
+    onUndoCategoryMerge: (String) -> Unit,
     onCreateFullBackup: suspend () -> String,
     onRestoreFullBackup: suspend (String, CharArray) -> Unit,
     onUndoFullRestore: suspend (CharArray) -> Unit,
@@ -589,6 +600,9 @@ private fun MoreScreen(
     var showRecurring by remember { mutableStateOf(false) }
     var showDebt by remember { mutableStateOf(false) }
     var showCategory by remember { mutableStateOf(false) }
+    var renameCategoryId by remember { mutableStateOf<String?>(null) }
+    var archiveCategoryId by remember { mutableStateOf<String?>(null) }
+    var mergeCategoryId by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(20.dp),
@@ -631,7 +645,54 @@ private fun MoreScreen(
                 TextButton(onClick = { showCategory = true }) { Text("Add") }
             }
         }
-        item { Text(state.categories.joinToString(" • ") { it.name }, style = MaterialTheme.typography.bodySmall) }
+        if (state.categories.isEmpty()) item { Text("No active categories.") }
+        items(state.categories, key = { "category-${it.id}" }) { category ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(category.name, fontWeight = FontWeight.Medium)
+                            Text(category.kind.name.lowercase(), style = MaterialTheme.typography.bodySmall)
+                        }
+                        TextButton(onClick = { renameCategoryId = category.id }) { Text("Rename") }
+                    }
+                    Row {
+                        TextButton(onClick = { archiveCategoryId = category.id }) { Text("Archive") }
+                        if (state.categories.any { it.id != category.id && it.kind == category.kind }) {
+                            TextButton(onClick = { mergeCategoryId = category.id }) { Text("Merge") }
+                        }
+                    }
+                }
+            }
+        }
+        if (state.archivedCategories.isNotEmpty()) {
+            item { Text("Archived categories", style = MaterialTheme.typography.titleMedium) }
+            items(state.archivedCategories, key = { "archived-category-${it.id}" }) { category ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(category.name, fontWeight = FontWeight.Medium)
+                            Text(
+                                category.mergedIntoCategoryName?.let { "Merged into $it" } ?: "Archived",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                if (category.mergedIntoCategoryId == null) {
+                                    onRestoreCategory(category.id)
+                                } else {
+                                    onUndoCategoryMerge(category.id)
+                                }
+                            },
+                        ) { Text(if (category.mergedIntoCategoryId == null) "Restore" else "Undo merge") }
+                    }
+                }
+            }
+        }
         if (state.deletedTransactions.isNotEmpty()) {
             item { Text("Recently deleted", style = MaterialTheme.typography.titleLarge) }
             items(state.deletedTransactions, key = { "deleted-${it.id}" }) { transaction ->
@@ -867,6 +928,53 @@ private fun MoreScreen(
         )
     }
 
+    renameCategoryId?.let { id ->
+        val category = state.categories.firstOrNull { it.id == id }
+        if (category != null) {
+            RenameCategoryDialog(
+                currentName = category.name,
+                onDismiss = { renameCategoryId = null },
+                onSave = { name ->
+                    onRenameCategory(id, name)
+                    renameCategoryId = null
+                },
+            )
+        }
+    }
+    archiveCategoryId?.let { id ->
+        val category = state.categories.firstOrNull { it.id == id }
+        if (category != null) {
+            AlertDialog(
+                onDismissRequest = { archiveCategoryId = null },
+                title = { Text("Archive ${category.name}?") },
+                text = { Text("Existing transactions keep their category. You can restore it from Archived categories.") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onArchiveCategory(id)
+                            archiveCategoryId = null
+                        },
+                    ) { Text("Archive") }
+                },
+                dismissButton = { TextButton(onClick = { archiveCategoryId = null }) { Text("Cancel") } },
+            )
+        }
+    }
+    mergeCategoryId?.let { sourceId ->
+        val source = state.categories.firstOrNull { it.id == sourceId }
+        if (source != null) {
+            MergeCategoryDialog(
+                sourceName = source.name,
+                targets = state.categories.filter { it.id != sourceId && it.kind == source.kind },
+                onDismiss = { mergeCategoryId = null },
+                onMerge = { targetId ->
+                    onMergeCategory(sourceId, targetId)
+                    mergeCategoryId = null
+                },
+            )
+        }
+    }
+
     if (showCreate) {
         AccountDialog(
             onDismiss = { showCreate = false },
@@ -960,6 +1068,66 @@ private fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind)
         },
         confirmButton = {
             TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun RenameCategoryDialog(
+    currentName: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var name by remember(currentName) { mutableStateOf(currentName) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename category") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Category name") },
+                singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text("Rename") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun MergeCategoryDialog(
+    sourceName: String,
+    targets: List<Category>,
+    onDismiss: () -> Unit,
+    onMerge: (String) -> Unit,
+) {
+    var targetId by remember(targets) { mutableStateOf(targets.firstOrNull()?.id) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Merge $sourceName") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    "Past activity will appear under the selected category. $sourceName will be archived and the merge can be undone.",
+                )
+                targets.forEach { target ->
+                    FilterChip(
+                        selected = target.id == targetId,
+                        onClick = { targetId = target.id },
+                        label = { Text(target.name) },
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { targetId?.let(onMerge) },
+                enabled = targetId != null,
+            ) { Text("Merge") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

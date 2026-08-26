@@ -18,6 +18,7 @@ class DatabaseSnapshotValidator {
         val accountIds = snapshot.accounts.mapTo(mutableSetOf()) { it.id }
         val accountCurrencies = snapshot.accounts.associate { it.id to it.currencyCode }
         val categoryIds = snapshot.categories.mapTo(mutableSetOf()) { it.id }
+        val categoriesById = snapshot.categories.associateBy { it.id }
         val transactionIds = snapshot.transactions.mapTo(mutableSetOf()) { it.id }
 
         require(snapshot.categories.distinctBy { it.kind to it.name }.size == snapshot.categories.size) {
@@ -38,6 +39,13 @@ class DatabaseSnapshotValidator {
         snapshot.categories.forEach {
             require(it.name.isNotBlank() && it.kind in CATEGORY_KINDS && it.sortOrder >= 0) {
                 "Backup contains an invalid category"
+            }
+            it.mergedIntoCategoryId?.let { targetId ->
+                val target = categoriesById[targetId]
+                require(
+                    it.archivedAt != null && targetId != it.id && target != null &&
+                        target.kind == it.kind && target.archivedAt == null && target.mergedIntoCategoryId == null,
+                ) { "Backup contains an invalid category merge" }
             }
         }
         snapshot.transactions.forEach {

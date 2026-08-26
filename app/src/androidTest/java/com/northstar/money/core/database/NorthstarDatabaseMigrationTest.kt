@@ -198,6 +198,49 @@ class NorthstarDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate5To6_preservesCategoriesAndAddsReversibleMergeLink() {
+        helper.createDatabase(DB_5_6, 5).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DB_5_6, 6, true, MIGRATION_5_6).apply {
+            assertBaseDataPreserved()
+            query("SELECT mergedIntoCategoryId FROM categories WHERE id = 'category-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(true, cursor.isNull(0))
+            }
+            close()
+        }
+    }
+
+    @Test
+    fun migrate1To6_runsCompleteMigrationChainWithoutDataLoss() {
+        helper.createDatabase(DB_1_6, 1).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DB_1_6,
+            6,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+        ).apply {
+            assertBaseDataPreserved()
+            query("SELECT mergedIntoCategoryId FROM categories WHERE id = 'category-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(true, cursor.isNull(0))
+            }
+            close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertBaseData() {
         execSQL(
             """
@@ -252,5 +295,7 @@ class NorthstarDatabaseMigrationTest {
         private const val DB_1_4 = "migration-1-4"
         private const val DB_4_5 = "migration-4-5"
         private const val DB_1_5 = "migration-1-5"
+        private const val DB_5_6 = "migration-5-6"
+        private const val DB_1_6 = "migration-1-6"
     }
 }

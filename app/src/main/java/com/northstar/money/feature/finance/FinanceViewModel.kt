@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Category
+import com.northstar.money.domain.model.ArchivedCategory
 import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.BudgetProgress
 import com.northstar.money.domain.model.SavingsGoal
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 data class FinanceUiState(
     val accounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
+    val archivedCategories: List<ArchivedCategory> = emptyList(),
     val transactions: List<TransactionItem> = emptyList(),
     val summary: FinanceSummary = FinanceSummary(),
     val deletedTransactions: List<TransactionItem> = emptyList(),
@@ -60,7 +62,12 @@ class FinanceViewModel(
         repository.observeTransactions(),
         repository.observeSummary(),
     ) { accounts, categories, transactions, summary ->
-        FinanceUiState(accounts, categories, transactions, summary)
+        FinanceUiState(
+            accounts = accounts,
+            categories = categories,
+            transactions = transactions,
+            summary = summary,
+        )
     }
 
     private val planningState = combine(
@@ -68,8 +75,14 @@ class FinanceViewModel(
         repository.observeBudgets(),
         repository.observeGoals(),
         repository.observeDeletedTransactions(),
-    ) { core, budgets, goals, deletedTransactions ->
-        core.copy(budgets = budgets, goals = goals, deletedTransactions = deletedTransactions)
+        repository.observeArchivedCategories(),
+    ) { core, budgets, goals, deletedTransactions, archivedCategories ->
+        core.copy(
+            budgets = budgets,
+            goals = goals,
+            deletedTransactions = deletedTransactions,
+            archivedCategories = archivedCategories,
+        )
     }
 
     val uiState: StateFlow<FinanceUiState> = combine(
@@ -182,6 +195,26 @@ class FinanceViewModel(
 
     fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
         launchOperation("create the category") { repository.createCategory(name, kind) }
+    }
+
+    fun renameCategory(id: String, name: String) {
+        launchOperation("rename the category") { repository.renameCategory(id, name) }
+    }
+
+    fun archiveCategory(id: String) {
+        launchOperation("archive the category") { repository.archiveCategory(id) }
+    }
+
+    fun restoreCategory(id: String) {
+        launchOperation("restore the category") { repository.restoreCategory(id) }
+    }
+
+    fun mergeCategory(sourceId: String, targetId: String) {
+        launchOperation("merge the category") { repository.mergeCategory(sourceId, targetId) }
+    }
+
+    fun undoCategoryMerge(id: String) {
+        launchOperation("undo the category merge") { repository.undoCategoryMerge(id) }
     }
 
     suspend fun createFullBackup(): String = repository.createFullBackup()

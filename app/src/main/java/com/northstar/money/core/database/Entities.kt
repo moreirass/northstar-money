@@ -20,13 +20,32 @@ data class AccountEntity(
 )
 
 @Serializable
-@Entity(tableName = "categories", indices = [Index(value = ["kind", "name"], unique = true)])
+@Entity(
+    tableName = "categories",
+    foreignKeys = [ForeignKey(
+        entity = CategoryEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["mergedIntoCategoryId"],
+        onDelete = ForeignKey.SET_NULL,
+        deferred = true,
+    )],
+    indices = [Index(value = ["kind", "name"], unique = true), Index("mergedIntoCategoryId")],
+)
 data class CategoryEntity(
     @PrimaryKey val id: String,
     val name: String,
     val kind: String,
     val sortOrder: Int,
     val archivedAt: Long? = null,
+    val mergedIntoCategoryId: String? = null,
+)
+
+data class ArchivedCategoryRow(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val mergedIntoCategoryId: String?,
+    val mergedIntoCategoryName: String?,
 )
 
 @Serializable

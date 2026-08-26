@@ -46,6 +46,14 @@ data class Account(
 
 data class Category(val id: String, val name: String, val kind: CategoryKind)
 
+data class ArchivedCategory(
+    val id: String,
+    val name: String,
+    val kind: CategoryKind,
+    val mergedIntoCategoryId: String?,
+    val mergedIntoCategoryName: String?,
+)
+
 data class TransactionItem(
     val id: String,
     val payee: String,

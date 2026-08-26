@@ -2,6 +2,7 @@ package com.northstar.money.domain.repository
 
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.Category
+import com.northstar.money.domain.model.ArchivedCategory
 import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
@@ -12,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
 interface FinanceRepository {
     fun observeAccounts(): Flow<List<Account>>
     fun observeCategories(): Flow<List<Category>>
+    fun observeArchivedCategories(): Flow<List<ArchivedCategory>>
     fun observeTransactions(): Flow<List<TransactionItem>>
     fun observeDeletedTransactions(): Flow<List<TransactionItem>>
     fun observeSummary(): Flow<FinanceSummary>
@@ -39,6 +41,11 @@ interface FinanceRepository {
     suspend fun createDebt(accountId: String, annualRateBasisPoints: Int, minimumPayment: Money, dueDay: Int)
     suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
+    suspend fun renameCategory(id: String, name: String)
+    suspend fun archiveCategory(id: String)
+    suspend fun restoreCategory(id: String)
+    suspend fun mergeCategory(sourceId: String, targetId: String)
+    suspend fun undoCategoryMerge(id: String)
     suspend fun deleteTransaction(id: String)
     suspend fun restoreTransaction(id: String)
     suspend fun getTransactionForEdit(id: String): EditableTransaction

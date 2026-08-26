@@ -12,6 +12,7 @@ import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FullBackupJsonCodecTest {
@@ -21,12 +22,12 @@ class FullBackupJsonCodecTest {
     fun encodeAndDecode_preservesEveryDatabaseTable() {
         val snapshot = completeSnapshot()
 
-        val encoded = codec.encode(snapshot, databaseVersion = 4, createdAtEpochMillis = 1234)
+        val encoded = codec.encode(snapshot, databaseVersion = 6, createdAtEpochMillis = 1234)
         val decoded = codec.decode(encoded)
 
         assertEquals(FullBackupJsonCodec.FORMAT, decoded.format)
         assertEquals(FullBackupJsonCodec.FORMAT_VERSION, decoded.formatVersion)
-        assertEquals(4, decoded.databaseVersion)
+        assertEquals(6, decoded.databaseVersion)
         assertEquals(1234L, decoded.createdAtEpochMillis)
         assertEquals(snapshot, decoded.toSnapshot())
     }
@@ -39,9 +40,23 @@ class FullBackupJsonCodecTest {
         assertThrows(IllegalArgumentException::class.java) { codec.decode(encoded) }
     }
 
+    @Test
+    fun decode_acceptsBackupCreatedBeforeCategoryMerges() {
+        val legacy = codec.encode(completeSnapshot(), databaseVersion = 5, createdAtEpochMillis = 1234)
+            .replace(",\"mergedIntoCategoryId\":\"target\"", "")
+            .replace(",\"mergedIntoCategoryId\":null", "")
+
+        val decoded = codec.decode(legacy)
+
+        assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
+    }
+
     private fun completeSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("account", "Account", "CHECKING", "EUR", 100, 9, 1, 2)),
-        categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 1, 9)),
+        categories = listOf(
+            CategoryEntity("category", "Food", "EXPENSE", 1, 9, "target"),
+            CategoryEntity("target", "Living", "EXPENSE", 2),
+        ),
         transactions = listOf(TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "Note", 3, 4)),
         transactionEntries = listOf(
             TransactionEntryEntity("entry", "transaction", "account", "category", -25, "EUR", false),

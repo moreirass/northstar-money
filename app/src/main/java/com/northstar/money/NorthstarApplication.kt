@@ -20,6 +20,7 @@ class NorthstarApplication : Application() {
             .addMigrations(com.northstar.money.core.database.MIGRATION_2_3)
             .addMigrations(com.northstar.money.core.database.MIGRATION_3_4)
             .addMigrations(com.northstar.money.core.database.MIGRATION_4_5)
+            .addMigrations(com.northstar.money.core.database.MIGRATION_5_6)
             .build()
     }
 

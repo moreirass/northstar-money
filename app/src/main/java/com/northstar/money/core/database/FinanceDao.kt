@@ -30,12 +30,25 @@ abstract class FinanceDao {
 
     @Query(
         """
+        SELECT c.id, c.name, c.kind, c.mergedIntoCategoryId,
+               target.name AS mergedIntoCategoryName
+        FROM categories c
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        WHERE c.archivedAt IS NOT NULL
+        ORDER BY c.kind, c.name
+        """,
+    )
+    abstract fun observeArchivedCategories(): Flow<List<ArchivedCategoryRow>>
+
+    @Query(
+        """
         SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
-               a.name AS accountName, c.name AS categoryName
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName
         FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
         JOIN accounts a ON a.id = e.accountId
         LEFT JOIN categories c ON c.id = e.categoryId
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
         WHERE t.deletedAt IS NULL AND e.rowid = (
             SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
         )
@@ -47,11 +60,12 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
-               a.name AS accountName, c.name AS categoryName
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName
         FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
         JOIN accounts a ON a.id = e.accountId
         LEFT JOIN categories c ON c.id = e.categoryId
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
         WHERE t.deletedAt IS NOT NULL AND e.rowid = (
             SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
         )
@@ -84,7 +98,8 @@ abstract class FinanceDao {
                COALESCE(-SUM(CASE WHEN t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS spentMinor
         FROM categories c
         LEFT JOIN budget_allocations b ON b.categoryId = c.id AND b.monthStart = :monthStart
-        LEFT JOIN transaction_entries e ON e.categoryId = c.id AND e.currencyCode = :baseCurrencyCode
+        LEFT JOIN categories source ON COALESCE(source.mergedIntoCategoryId, source.id) = c.id
+        LEFT JOIN transaction_entries e ON e.categoryId = source.id AND e.currencyCode = :baseCurrencyCode
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
         GROUP BY c.id, b.plannedMinor
@@ -197,6 +212,71 @@ abstract class FinanceDao {
 
     @Query("SELECT kind FROM categories WHERE id = :categoryId AND archivedAt IS NULL")
     abstract suspend fun getActiveCategoryKind(categoryId: String): String?
+
+    @Query("SELECT * FROM categories WHERE id = :categoryId")
+    protected abstract suspend fun getCategory(categoryId: String): CategoryEntity?
+
+    @Query("UPDATE categories SET name = :name WHERE id = :categoryId AND archivedAt IS NULL")
+    protected abstract suspend fun renameActiveCategory(categoryId: String, name: String): Int
+
+    @Query(
+        "UPDATE categories SET archivedAt = :archivedAt, mergedIntoCategoryId = NULL " +
+            "WHERE id = :categoryId AND archivedAt IS NULL",
+    )
+    protected abstract suspend fun archiveActiveCategory(categoryId: String, archivedAt: Long): Int
+
+    @Query(
+        "UPDATE categories SET archivedAt = :mergedAt, mergedIntoCategoryId = :targetCategoryId " +
+            "WHERE id = :sourceCategoryId AND archivedAt IS NULL",
+    )
+    protected abstract suspend fun markCategoryMerged(
+        sourceCategoryId: String,
+        targetCategoryId: String,
+        mergedAt: Long,
+    ): Int
+
+    @Query(
+        "UPDATE categories SET archivedAt = NULL, mergedIntoCategoryId = NULL " +
+            "WHERE id = :categoryId AND archivedAt IS NOT NULL AND mergedIntoCategoryId IS NULL",
+    )
+    protected abstract suspend fun restoreArchivedCategory(categoryId: String): Int
+
+    @Query(
+        "UPDATE categories SET archivedAt = NULL, mergedIntoCategoryId = NULL " +
+            "WHERE id = :categoryId AND archivedAt IS NOT NULL AND mergedIntoCategoryId IS NOT NULL",
+    )
+    protected abstract suspend fun undoMergedCategory(categoryId: String): Int
+
+    @Transaction
+    open suspend fun renameCategory(categoryId: String, name: String) {
+        require(renameActiveCategory(categoryId, name) == 1) { "Category is missing or archived" }
+    }
+
+    @Transaction
+    open suspend fun archiveCategory(categoryId: String, archivedAt: Long) {
+        require(archiveActiveCategory(categoryId, archivedAt) == 1) { "Category is missing or already archived" }
+    }
+
+    @Transaction
+    open suspend fun mergeCategory(sourceCategoryId: String, targetCategoryId: String, mergedAt: Long) {
+        require(sourceCategoryId != targetCategoryId) { "A category cannot be merged into itself" }
+        val source = requireNotNull(getCategory(sourceCategoryId)) { "Source category is missing" }
+        val target = requireNotNull(getCategory(targetCategoryId)) { "Target category is missing" }
+        require(source.archivedAt == null && source.mergedIntoCategoryId == null) { "Source category is not active" }
+        require(target.archivedAt == null && target.mergedIntoCategoryId == null) { "Target category is not active" }
+        require(source.kind == target.kind) { "Categories must have the same type" }
+        require(markCategoryMerged(sourceCategoryId, targetCategoryId, mergedAt) == 1) { "Category could not be merged" }
+    }
+
+    @Transaction
+    open suspend fun restoreCategory(categoryId: String) {
+        require(restoreArchivedCategory(categoryId) == 1) { "Category is missing, active, or was merged" }
+    }
+
+    @Transaction
+    open suspend fun undoCategoryMerge(categoryId: String) {
+        require(undoMergedCategory(categoryId) == 1) { "Category is not an archived merge" }
+    }
 
     @Transaction
     open suspend fun insertReconciliationWithAdjustment(

@@ -22,7 +22,7 @@ abstract class NorthstarDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
     }
 }
 
@@ -118,5 +118,18 @@ val MIGRATION_4_5 = object : androidx.room.migration.Migration(4, 5) {
     override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
         db.execSQL("ALTER TABLE transactions ADD COLUMN deletedAt INTEGER")
         db.execSQL("CREATE INDEX IF NOT EXISTS index_transactions_deletedAt ON transactions(deletedAt)")
+    }
+}
+
+val MIGRATION_5_6 = object : androidx.room.migration.Migration(5, 6) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            "ALTER TABLE categories ADD COLUMN mergedIntoCategoryId TEXT " +
+                "REFERENCES categories(id) ON DELETE SET NULL DEFERRABLE INITIALLY DEFERRED",
+        )
+        db.execSQL(
+            "CREATE INDEX IF NOT EXISTS index_categories_mergedIntoCategoryId " +
+                "ON categories(mergedIntoCategoryId)",
+        )
     }
 }
