@@ -404,6 +404,7 @@ internal fun MoreScreen(
     onImportCsv: (String) -> Unit,
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
+    onShowOnboarding: () -> Unit,
     onCreateCategory: (String, CategoryKind) -> Unit,
     onRenameCategory: (String, String) -> Unit,
     onArchiveCategory: (String) -> Unit,
@@ -643,6 +644,9 @@ internal fun MoreScreen(
                         label = { Text(stringResource(R.string.ui_daily_financial_review_reminders)) },
                     )
                     Text(stringResource(R.string.ui_app_lock_applies_the_next_time_northstar_starts), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = onShowOnboarding) {
+                        Text(stringResource(R.string.onboarding_reopen))
+                    }
                 }
             }
         }

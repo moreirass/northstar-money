@@ -125,6 +125,10 @@ fun NorthstarApp() {
         factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
     )
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
+    if (!state.settings.onboardingCompleted) {
+        OnboardingScreen(onComplete = { financeViewModel.setOnboardingCompleted(true) })
+        return
+    }
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val destination = Destination.entries.firstOrNull { it.route == backStackEntry?.destination?.route }
@@ -309,6 +313,7 @@ fun NorthstarApp() {
                 onImportCsv = financeViewModel::importCsv,
                 onSetAppLock = financeViewModel::setAppLock,
                 onSetReminders = financeViewModel::setReminders,
+                onShowOnboarding = { financeViewModel.setOnboardingCompleted(false) },
                 onCreateCategory = financeViewModel::createCategory,
                 onRenameCategory = financeViewModel::renameCategory,
                 onArchiveCategory = financeViewModel::archiveCategory,

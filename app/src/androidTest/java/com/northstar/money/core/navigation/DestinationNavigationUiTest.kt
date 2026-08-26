@@ -15,6 +15,13 @@ class DestinationNavigationUiTest {
 
     @Test
     fun bottomDestinationParticipatesInAndroidBackStack() {
+        composeRule.waitForIdle()
+        if (composeRule.onAllNodesWithText("Skip introduction").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithText("Skip introduction").performClick()
+            composeRule.waitUntil(timeoutMillis = 5_000) {
+                composeRule.onAllNodesWithText("Activity").fetchSemanticsNodes().isNotEmpty()
+            }
+        }
         composeRule.onNodeWithText("Activity").performClick()
         composeRule.onNodeWithText("Search transactions").assertIsDisplayed()
 

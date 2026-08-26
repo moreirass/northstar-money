@@ -12,16 +12,19 @@ private val Context.settingsDataStore by preferencesDataStore("northstar_setting
 data class AppSettings(
     val appLockEnabled: Boolean = false,
     val remindersEnabled: Boolean = true,
+    val onboardingCompleted: Boolean = false,
 )
 
 class UserPreferences(private val context: Context) {
     private val lockKey = booleanPreferencesKey("app_lock")
     private val remindersKey = booleanPreferencesKey("reminders")
+    private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed")
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map {
         AppSettings(
             appLockEnabled = it[lockKey] ?: false,
             remindersEnabled = it[remindersKey] ?: true,
+            onboardingCompleted = it[onboardingCompletedKey] ?: false,
         )
     }
 
@@ -31,5 +34,9 @@ class UserPreferences(private val context: Context) {
 
     suspend fun setReminders(enabled: Boolean) {
         context.settingsDataStore.edit { it[remindersKey] = enabled }
+    }
+
+    suspend fun setOnboardingCompleted(completed: Boolean) {
+        context.settingsDataStore.edit { it[onboardingCompletedKey] = completed }
     }
 }

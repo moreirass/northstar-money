@@ -226,4 +226,16 @@
     <string name="accessibility_budget_usage">%1$s budget: %2$s spent of %3$s planned, %4$d%% used</string>
     <string name="accessibility_income_chart">Income %1$s, %2$d%% of the larger monthly flow</string>
     <string name="accessibility_expense_chart">Expenses %1$s, %2$d%% of the larger monthly flow</string>
+    <string name="onboarding_progress">Step %1$d of %2$d</string>
+    <string name="onboarding_welcome_title">A clear view of your money</string>
+    <string name="onboarding_welcome_body">Northstar brings accounts, spending, budgets and upcoming commitments into one calm, private plan.</string>
+    <string name="onboarding_privacy_title">Your data stays under your control</string>
+    <string name="onboarding_privacy_body">Financial data is stored on this device. Full backups are encrypted with a password that only you know.</string>
+    <string name="onboarding_ready_title">Build your financial Northstar</string>
+    <string name="onboarding_ready_body">Add transactions, set monthly budgets and review the 30-day forecast. You can change reminders and app lock at any time.</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_skip">Skip introduction</string>
+    <string name="onboarding_finish">Get started</string>
+    <string name="onboarding_reopen">View introduction again</string>
 </resources>

@@ -363,6 +363,10 @@ class FinanceViewModel(
         launchOperation { preferences.setReminders(enabled) }
     }
 
+    fun setOnboardingCompleted(completed: Boolean) {
+        launchOperation { preferences.setOnboardingCompleted(completed) }
+    }
+
     fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
         launchOperation { repository.createCategory(name, kind) }
     }

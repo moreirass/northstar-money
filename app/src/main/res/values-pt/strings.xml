@@ -226,4 +226,16 @@
     <string name="accessibility_budget_usage">Orçamento de %1$s: %2$s gastos de %3$s planeados, %4$d%% utilizado</string>
     <string name="accessibility_income_chart">Rendimentos %1$s, %2$d%% do maior fluxo mensal</string>
     <string name="accessibility_expense_chart">Despesas %1$s, %2$d%% do maior fluxo mensal</string>
+    <string name="onboarding_progress">Passo %1$d de %2$d</string>
+    <string name="onboarding_welcome_title">Uma visão clara do seu dinheiro</string>
+    <string name="onboarding_welcome_body">O Northstar reúne contas, despesas, orçamentos e compromissos futuros num plano tranquilo e privado.</string>
+    <string name="onboarding_privacy_title">Os seus dados ficam sob o seu controlo</string>
+    <string name="onboarding_privacy_body">Os dados financeiros são guardados neste dispositivo. As cópias de segurança completas são cifradas com uma palavra-passe que só o utilizador conhece.</string>
+    <string name="onboarding_ready_title">Construa o seu norte financeiro</string>
+    <string name="onboarding_ready_body">Adicione transações, defina orçamentos mensais e consulte a previsão a 30 dias. Pode alterar os lembretes e o bloqueio da app a qualquer momento.</string>
+    <string name="onboarding_next">Seguinte</string>
+    <string name="onboarding_back">Anterior</string>
+    <string name="onboarding_skip">Ignorar introdução</string>
+    <string name="onboarding_finish">Começar</string>
+    <string name="onboarding_reopen">Ver novamente a introdução</string>
 </resources>
