@@ -1,0 +1,35 @@
+package com.northstar.money.core.datastore
+
+import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.preferencesDataStore
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+
+private val Context.settingsDataStore by preferencesDataStore("northstar_settings")
+
+data class AppSettings(
+    val appLockEnabled: Boolean = false,
+    val remindersEnabled: Boolean = true,
+)
+
+class UserPreferences(private val context: Context) {
+    private val lockKey = booleanPreferencesKey("app_lock")
+    private val remindersKey = booleanPreferencesKey("reminders")
+
+    val settings: Flow<AppSettings> = context.settingsDataStore.data.map {
+        AppSettings(
+            appLockEnabled = it[lockKey] ?: false,
+            remindersEnabled = it[remindersKey] ?: true,
+        )
+    }
+
+    suspend fun setAppLock(enabled: Boolean) {
+        context.settingsDataStore.edit { it[lockKey] = enabled }
+    }
+
+    suspend fun setReminders(enabled: Boolean) {
+        context.settingsDataStore.edit { it[remindersKey] = enabled }
+    }
+}

@@ -1,0 +1,912 @@
+package com.northstar.money.core.navigation
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material3.Card
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import com.northstar.money.NorthstarApplication
+import com.northstar.money.domain.model.CategoryKind
+import com.northstar.money.domain.model.AccountType
+import com.northstar.money.domain.model.Money
+import com.northstar.money.domain.model.TransactionItem
+import com.northstar.money.domain.model.TransactionKind
+import com.northstar.money.feature.finance.FinanceUiState
+import com.northstar.money.feature.finance.FinanceViewModel
+import com.northstar.money.feature.finance.FinanceViewModelFactory
+import com.northstar.money.data.backup.SecureBackupCodec
+
+private enum class Destination(val label: String, val icon: ImageVector) {
+    Home("Home", Icons.Default.Home),
+    Plan("Plan", Icons.Default.Assessment),
+    Activity("Activity", Icons.AutoMirrored.Filled.ReceiptLong),
+    More("More", Icons.Default.MoreHoriz),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun NorthstarApp() {
+    val application = LocalContext.current.applicationContext as NorthstarApplication
+    val financeViewModel: FinanceViewModel = viewModel(
+        factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
+    )
+    val state by financeViewModel.uiState.collectAsStateWithLifecycle()
+    var destination by remember { mutableStateOf(Destination.Home) }
+    var showAdd by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(destination.label) }) },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        floatingActionButton = {
+            FloatingActionButton(onClick = { showAdd = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Add transaction")
+            }
+        },
+        bottomBar = {
+            NavigationBar {
+                Destination.entries.forEach { item ->
+                    NavigationBarItem(
+                        selected = destination == item,
+                        onClick = { destination = item },
+                        icon = { Icon(item.icon, contentDescription = null) },
+                        label = { Text(item.label) },
+                    )
+                }
+            }
+        },
+    ) { padding ->
+        when (destination) {
+            Destination.Home -> HomeScreen(state, padding)
+            Destination.Plan -> PlanScreen(state, padding, financeViewModel::setBudget)
+            Destination.Activity -> ActivityScreen(state, padding) { id ->
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "Delete this transaction?",
+                        actionLabel = "Undo",
+                    )
+                    if (result != SnackbarResult.ActionPerformed) financeViewModel.deleteTransaction(id)
+                }
+            }
+            Destination.More -> MoreScreen(
+                state = state,
+                padding = padding,
+                onCreateAccount = financeViewModel::createAccount,
+                onReconcile = financeViewModel::reconcile,
+                onCreateGoal = financeViewModel::createGoal,
+                onCreateRecurring = financeViewModel::createRecurring,
+                onCreateDebt = financeViewModel::createDebt,
+                onImportCsv = financeViewModel::importCsv,
+                onSetAppLock = financeViewModel::setAppLock,
+                onSetReminders = financeViewModel::setReminders,
+                onCreateCategory = financeViewModel::createCategory,
+            )
+        }
+    }
+
+    if (showAdd) {
+        AddTransactionSheet(
+            state = state,
+            onDismiss = { showAdd = false },
+            onSave = { kind, amount, account, destinationAccount, category, payee ->
+                if (kind == TransactionKind.TRANSFER) {
+                    financeViewModel.transfer(amount, account, destinationAccount, payee)
+                } else {
+                    financeViewModel.addTransaction(kind, amount, account, category, payee)
+                }
+                showAdd = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Text("Available now", style = MaterialTheme.typography.labelLarge)
+            Text(state.summary.balance.formatted(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+        }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("30-day forecast", style = MaterialTheme.typography.titleMedium)
+                    Text("Projected: ${state.forecast.projectedBalance.formatted()}")
+                    Text("Lowest: ${state.forecast.lowestBalance.formatted()} on ${state.forecast.lowestDate}")
+                    Text("${state.forecast.scheduledEvents} scheduled events included", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                SummaryCard("Income", state.summary.incomeThisMonth, Modifier.weight(1f))
+                SummaryCard("Spent", state.summary.expensesThisMonth, Modifier.weight(1f))
+            }
+        }
+        item { Text("Recent activity", style = MaterialTheme.typography.titleLarge) }
+        if (state.transactions.isEmpty()) {
+            item { Text("Add your first transaction to see your financial picture.") }
+        } else {
+            items(state.transactions.take(5), key = { it.id }) { TransactionRow(it) }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(label: String, money: Money, modifier: Modifier = Modifier) {
+    Card(modifier) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge)
+            Text(money.formatted(), style = MaterialTheme.typography.titleLarge)
+        }
+    }
+}
+
+@Composable
+private fun ActivityScreen(state: FinanceUiState, padding: PaddingValues, onDelete: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val visibleTransactions = state.transactions.filter {
+        query.isBlank() || it.payee.contains(query, ignoreCase = true) ||
+            it.categoryName.orEmpty().contains(query, ignoreCase = true) ||
+            it.accountName.contains(query, ignoreCase = true)
+    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(16.dp),
+    ) {
+        item {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Search transactions") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            )
+        }
+        if (visibleTransactions.isEmpty()) item { Text(if (query.isBlank()) "No transactions yet." else "No matching transactions.") }
+        items(visibleTransactions, key = { it.id }) { transaction ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TransactionRow(transaction, Modifier.weight(1f))
+                IconButton(onClick = { onDelete(transaction.id) }) {
+                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${transaction.payee}")
+                }
+            }
+            HorizontalDivider()
+        }
+    }
+}
+
+@Composable
+private fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier) {
+    Row(modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(item.payee, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+            Text("${item.categoryName ?: item.kind.name} • ${item.accountName}", style = MaterialTheme.typography.bodySmall)
+        }
+        val shown = if (item.kind == TransactionKind.EXPENSE) item.amount else item.amount
+        Text(
+            shown.formatted(),
+            color = if (item.kind == TransactionKind.INCOME) Color(0xFF087F5B) else MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+}
+
+@Composable
+private fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudget: (String, String) -> Unit) {
+    var editingCategoryId by remember { mutableStateOf<String?>(null) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item { Text("Monthly plan", style = MaterialTheme.typography.headlineMedium) }
+        val totalPlanned = state.budgets.sumOf { it.planned.minor }
+        val totalSpent = state.budgets.sumOf { it.spent.minor }
+        item { Text("${Money(totalSpent).formatted()} spent of ${Money(totalPlanned).formatted()} planned") }
+        items(state.budgets, key = { it.categoryId }) { budget ->
+            Card(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(budget.categoryName, fontWeight = FontWeight.Medium)
+                        Text("${budget.spent.formatted()} / ${budget.planned.formatted()}")
+                    }
+                    TextButton(onClick = { editingCategoryId = budget.categoryId }) { Text("Set") }
+                }
+            }
+        }
+    }
+    editingCategoryId?.let { id ->
+        val budget = state.budgets.firstOrNull { it.categoryId == id }
+        if (budget != null) {
+            AmountDialog(
+                title = "Budget for ${budget.categoryName}",
+                initial = if (budget.planned.minor == 0L) "" else budget.planned.minor.toBigDecimal().movePointLeft(2).toPlainString(),
+                onDismiss = { editingCategoryId = null },
+                onSave = { onSetBudget(id, it); editingCategoryId = null },
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoreScreen(
+    state: FinanceUiState,
+    padding: PaddingValues,
+    onCreateAccount: (String, AccountType, String) -> Unit,
+    onReconcile: (String, String, Boolean) -> Unit,
+    onCreateGoal: (String, String, String, String?) -> Unit,
+    onCreateRecurring: (String, TransactionKind, String, String, String?, String, String) -> Unit,
+    onCreateDebt: (String, String, String, String) -> Unit,
+    onImportCsv: (String) -> Unit,
+    onSetAppLock: (Boolean) -> Unit,
+    onSetReminders: (Boolean) -> Unit,
+    onCreateCategory: (String, CategoryKind) -> Unit,
+) {
+    val context = LocalContext.current
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { writer ->
+                writer.appendLine("date,type,payee,category,account,amount,currency")
+                state.transactions.forEach { transaction ->
+                    val values = listOf(
+                        transaction.localDate, transaction.kind.name, transaction.payee,
+                        transaction.categoryName.orEmpty(), transaction.accountName,
+                        transaction.amount.minor.toString(), transaction.amount.currencyCode,
+                    ).joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" }
+                    writer.appendLine(values)
+                }
+            }
+        }
+    }
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
+                onImportCsv(reader.readText())
+            }
+        }
+    }
+    val pdfLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        uri?.let {
+            val document = android.graphics.pdf.PdfDocument()
+            val page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
+            val paint = android.graphics.Paint().apply { textSize = 18f; isAntiAlias = true }
+            page.canvas.drawText("Northstar monthly summary", 48f, 64f, paint)
+            paint.textSize = 14f
+            page.canvas.drawText("Balance: ${state.summary.balance.formatted()}", 48f, 100f, paint)
+            page.canvas.drawText("Income: ${state.summary.incomeThisMonth.formatted()}", 48f, 126f, paint)
+            page.canvas.drawText("Expenses: ${state.summary.expensesThisMonth.formatted()}", 48f, 152f, paint)
+            page.canvas.drawText("30-day projection: ${state.forecast.projectedBalance.formatted()}", 48f, 178f, paint)
+            var y = 220f
+            state.budgets.take(15).forEach { budget ->
+                page.canvas.drawText(
+                    "${budget.categoryName}: ${budget.spent.formatted()} / ${budget.planned.formatted()}",
+                    48f, y, paint,
+                )
+                y += 22f
+            }
+            document.finishPage(page)
+            context.contentResolver.openOutputStream(it)?.use(document::writeTo)
+            document.close()
+        }
+    }
+    val backupCodec = remember { SecureBackupCodec() }
+    val backupLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/octet-stream")
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.use { output ->
+                output.write(backupCodec.encrypt(transactionsCsv(state)))
+            }
+        }
+    }
+    val restoreLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri?.let {
+            context.contentResolver.openInputStream(it)?.use { input ->
+                runCatching { backupCodec.decrypt(input.readBytes()) }.onSuccess(onImportCsv)
+            }
+        }
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> onSetReminders(granted) }
+    var showCreate by remember { mutableStateOf(false) }
+    var reconcileAccountId by remember { mutableStateOf<String?>(null) }
+    var showGoal by remember { mutableStateOf(false) }
+    var showRecurring by remember { mutableStateOf(false) }
+    var showDebt by remember { mutableStateOf(false) }
+    var showCategory by remember { mutableStateOf(false) }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(padding),
+        contentPadding = PaddingValues(20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Accounts", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCreate = true }) { Text("Add account") }
+            }
+        }
+        item { Text("Settings", style = MaterialTheme.typography.titleLarge) }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = state.settings.appLockEnabled,
+                        onClick = { onSetAppLock(!state.settings.appLockEnabled) },
+                        label = { Text("Biometric/device-credential lock") },
+                    )
+                    FilterChip(
+                        selected = state.settings.remindersEnabled,
+                        onClick = {
+                            val enabled = !state.settings.remindersEnabled
+                            if (enabled && android.os.Build.VERSION.SDK_INT >= 33) {
+                                notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                onSetReminders(enabled)
+                            }
+                        },
+                        label = { Text("Daily financial review reminders") },
+                    )
+                    Text("App lock applies the next time Northstar starts.", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Categories", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCategory = true }) { Text("Add") }
+            }
+        }
+        item { Text(state.categories.joinToString(" • ") { it.name }, style = MaterialTheme.typography.bodySmall) }
+        item {
+            Column {
+                TextButton(onClick = { importLauncher.launch(arrayOf("text/*", "text/csv")) }) {
+                    Text("Import transactions from CSV")
+                }
+                TextButton(onClick = { exportLauncher.launch("northstar-transactions.csv") }) {
+                    Text("Export transactions to CSV")
+                }
+                TextButton(onClick = { pdfLauncher.launch("northstar-monthly-summary.pdf") }) {
+                    Text("Export monthly report to PDF")
+                }
+                TextButton(onClick = { backupLauncher.launch("northstar-encrypted-backup.nsb") }) {
+                    Text("Create encrypted transaction backup")
+                }
+                TextButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
+                    Text("Restore encrypted transaction backup")
+                }
+                state.importMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+            }
+        }
+        item { Text("Reports", style = MaterialTheme.typography.titleLarge) }
+        item {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    val net = state.summary.incomeThisMonth.minor - state.summary.expensesThisMonth.minor
+                    Text("Income versus expenses", fontWeight = FontWeight.Medium)
+                    Text("Income ${state.summary.incomeThisMonth.formatted()}")
+                    Text("Expenses ${state.summary.expensesThisMonth.formatted()}")
+                    Text("Net ${Money(net).formatted()}", fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+        item { Text("Financial calendar", style = MaterialTheme.typography.titleLarge) }
+        if (state.recurring.isEmpty()) item { Text("No upcoming scheduled events.") }
+        items(state.recurring.sortedBy { it.nextLocalDate }, key = { "calendar-${it.id}" }) { item ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+                Text(item.nextLocalDate, Modifier.weight(0.35f))
+                Text(item.name, Modifier.weight(0.4f))
+                Text(item.amount.formatted(), Modifier.weight(0.25f))
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Recurring", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showRecurring = true }) { Text("Add") }
+            }
+        }
+        if (state.recurring.isEmpty()) item { Text("No recurring schedules yet.") }
+        items(state.recurring, key = { it.id }) { item ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(item.name, fontWeight = FontWeight.Medium)
+                    Text("${item.amount.formatted()} • ${item.frequency.lowercase()} • next ${item.nextLocalDate}")
+                }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Debts", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showDebt = true }) { Text("Add") }
+            }
+        }
+        if (state.debts.isEmpty()) item { Text("No debt profiles yet.") }
+        items(state.debts, key = { it.id }) { debt ->
+            val accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name ?: "Account"
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(accountName, fontWeight = FontWeight.Medium)
+                    Text("${debt.annualRateBasisPoints / 100.0}% APR • minimum ${debt.minimumPayment.formatted()} • due day ${debt.dueDay}")
+                }
+            }
+        }
+        items(state.accounts) { account ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.AccountBalance, contentDescription = null)
+                        Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                            Text(account.name, fontWeight = FontWeight.Medium)
+                            Text("${account.type.name.lowercase()} • ${account.currencyCode}")
+                        }
+                        Text(account.balance.formatted(), fontWeight = FontWeight.SemiBold)
+                    }
+                    TextButton(onClick = { reconcileAccountId = account.id }) { Text("Reconcile") }
+                }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Savings goals", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showGoal = true }) { Text("Add goal") }
+            }
+        }
+        if (state.goals.isEmpty()) item { Text("No savings goals yet.") }
+        items(state.goals, key = { it.id }) { goal ->
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(goal.name, fontWeight = FontWeight.Medium)
+                    Text("${goal.saved.formatted()} of ${goal.target.formatted()}")
+                }
+            }
+        }
+    }
+    if (showGoal) {
+        GoalDialog(
+            onDismiss = { showGoal = false },
+            onSave = { name, target, saved, date ->
+                onCreateGoal(name, target, saved, date)
+                showGoal = false
+            },
+        )
+    }
+    if (showRecurring) {
+        RecurringDialog(
+            state = state,
+            onDismiss = { showRecurring = false },
+            onSave = { name, kind, amount, account, category, frequency, date ->
+                onCreateRecurring(name, kind, amount, account, category, frequency, date)
+                showRecurring = false
+            },
+        )
+    }
+    if (showDebt) {
+        DebtDialog(
+            state = state,
+            onDismiss = { showDebt = false },
+            onSave = { account, rate, payment, day ->
+                onCreateDebt(account, rate, payment, day)
+                showDebt = false
+            },
+        )
+    }
+    if (showCategory) {
+        CategoryDialog(
+            onDismiss = { showCategory = false },
+            onSave = { name, kind ->
+                onCreateCategory(name, kind)
+                showCategory = false
+            },
+        )
+    }
+
+    if (showCreate) {
+        AccountDialog(
+            onDismiss = { showCreate = false },
+            onSave = { name, type, opening ->
+                onCreateAccount(name, type, opening)
+                showCreate = false
+            },
+        )
+    }
+    reconcileAccountId?.let { id ->
+        val account = state.accounts.firstOrNull { it.id == id }
+        if (account != null) {
+            ReconcileDialog(
+                accountName = account.name,
+                currentBalance = account.balance,
+                onDismiss = { reconcileAccountId = null },
+                onSave = { amount, adjustment ->
+                    onReconcile(id, amount, adjustment)
+                    reconcileAccountId = null
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New category") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Category name") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    CategoryKind.entries.forEach { option ->
+                        FilterChip(kind == option, { kind = option }, { Text(option.name.lowercase()) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+private fun transactionsCsv(state: FinanceUiState): String = buildString {
+    appendLine("date,type,payee,category,account,amount,currency")
+    state.transactions.forEach { transaction ->
+        appendLine(
+            listOf(
+                transaction.localDate, transaction.kind.name, transaction.payee,
+                transaction.categoryName.orEmpty(), transaction.accountName,
+                transaction.amount.minor.toString(), transaction.amount.currencyCode,
+            ).joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" }
+        )
+    }
+}
+
+@Composable
+private fun RecurringDialog(
+    state: FinanceUiState,
+    onDismiss: () -> Unit,
+    onSave: (String, TransactionKind, String, String, String?, String, String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var date by remember { mutableStateOf(java.time.LocalDate.now().plusMonths(1).toString()) }
+    var kind by remember { mutableStateOf(TransactionKind.EXPENSE) }
+    var frequency by remember { mutableStateOf("MONTHLY") }
+    val account = state.accounts.firstOrNull()
+    val category = state.categories.firstOrNull {
+        it.kind == if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Recurring transaction") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(amount, { amount = it }, label = { Text("Amount") }, singleLine = true)
+                OutlinedTextField(date, { date = it }, label = { Text("Next date (YYYY-MM-DD)") }, singleLine = true)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text("Expense") })
+                    FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text("Income") })
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    listOf("WEEKLY", "MONTHLY", "YEARLY").forEach {
+                        FilterChip(frequency == it, { frequency = it }, { Text(it.lowercase()) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name, kind, amount, account!!.id, category?.id, frequency, date) },
+                enabled = name.isNotBlank() && account != null && category != null &&
+                    runCatching { Money.parseMajor(amount).minor > 0 }.getOrDefault(false) &&
+                    runCatching { java.time.LocalDate.parse(date) }.isSuccess,
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun DebtDialog(
+    state: FinanceUiState,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, String) -> Unit,
+) {
+    var rate by remember { mutableStateOf("") }
+    var payment by remember { mutableStateOf("") }
+    var dueDay by remember { mutableStateOf("1") }
+    val account = state.accounts.firstOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Debt profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Account: ${account?.name ?: "Create an account first"}")
+                OutlinedTextField(rate, { rate = it }, label = { Text("Annual rate (%)") }, singleLine = true)
+                OutlinedTextField(payment, { payment = it }, label = { Text("Minimum payment") }, singleLine = true)
+                OutlinedTextField(dueDay, { dueDay = it }, label = { Text("Due day") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(account!!.id, rate, payment, dueDay) },
+                enabled = account != null && rate.toBigDecimalOrNull() != null &&
+                    runCatching { Money.parseMajor(payment).minor >= 0 }.getOrDefault(false) &&
+                    dueDay.toIntOrNull() in 1..31,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+    var amount by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                amount, { amount = it }, label = { Text("Amount (EUR)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(amount) },
+                enabled = runCatching { Money.parseMajor(amount).minor >= 0 }.getOrDefault(false),
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, String?) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var target by remember { mutableStateOf("") }
+    var saved by remember { mutableStateOf("0") }
+    var date by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New savings goal") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Goal name") }, singleLine = true)
+                OutlinedTextField(target, { target = it }, label = { Text("Target amount") }, singleLine = true)
+                OutlinedTextField(saved, { saved = it }, label = { Text("Already saved") }, singleLine = true)
+                OutlinedTextField(date, { date = it }, label = { Text("Target date (YYYY-MM-DD, optional)") }, singleLine = true)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name, target, saved, date.ifBlank { null }) },
+                enabled = name.isNotBlank() &&
+                    runCatching { Money.parseMajor(target).minor > 0 }.getOrDefault(false) &&
+                    runCatching { Money.parseMajor(saved).minor >= 0 }.getOrDefault(false),
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddTransactionSheet(
+    state: FinanceUiState,
+    onDismiss: () -> Unit,
+    onSave: (TransactionKind, String, String, String, String, String) -> Unit,
+) {
+    var kind by remember { mutableStateOf(TransactionKind.EXPENSE) }
+    var amount by remember { mutableStateOf("") }
+    var payee by remember { mutableStateOf("") }
+    val account = state.accounts.firstOrNull()
+    var sourceAccountId by remember(state.accounts) { mutableStateOf(account?.id.orEmpty()) }
+    val possibleDestinations = state.accounts.filter { it.id != sourceAccountId }
+    var destinationAccountId by remember(sourceAccountId, possibleDestinations) {
+        mutableStateOf(possibleDestinations.firstOrNull()?.id.orEmpty())
+    }
+    val requiredKind = if (kind == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
+    val categories = state.categories.filter { it.kind == requiredKind }
+    var categoryId by remember(kind, categories) { mutableStateOf(categories.firstOrNull()?.id.orEmpty()) }
+    val validAmount = runCatching { Money.parseMajor(amount).minor > 0 }.getOrDefault(false)
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("Add transaction", style = MaterialTheme.typography.headlineSmall)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text("Expense") })
+                FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text("Income") })
+                FilterChip(kind == TransactionKind.TRANSFER, { kind = TransactionKind.TRANSFER }, { Text("Transfer") })
+            }
+            OutlinedTextField(
+                value = amount,
+                onValueChange = { amount = it },
+                label = { Text("Amount (EUR)") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = payee,
+                onValueChange = { payee = it },
+                label = { Text(if (kind == TransactionKind.INCOME) "Source" else if (kind == TransactionKind.TRANSFER) "Note" else "Payee") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            if (kind == TransactionKind.TRANSFER) {
+                Text("From account", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    state.accounts.forEach { item ->
+                        FilterChip(sourceAccountId == item.id, { sourceAccountId = item.id }, { Text(item.name) })
+                    }
+                }
+                Text("To account", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    possibleDestinations.forEach { item ->
+                        FilterChip(destinationAccountId == item.id, { destinationAccountId = item.id }, { Text(item.name) })
+                    }
+                }
+            } else {
+                Text("Category", style = MaterialTheme.typography.labelLarge)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    categories.take(4).forEach { category ->
+                        FilterChip(categoryId == category.id, { categoryId = category.id }, { Text(category.name) })
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            TextButton(
+                onClick = { onSave(kind, amount, sourceAccountId, destinationAccountId, categoryId, payee) },
+                enabled = validAmount && sourceAccountId.isNotBlank() &&
+                    if (kind == TransactionKind.TRANSFER) destinationAccountId.isNotBlank()
+                    else categoryId.isNotBlank(),
+                modifier = Modifier.align(Alignment.End),
+            ) { Text("Save transaction") }
+        }
+    }
+}
+
+@Composable
+private fun AccountDialog(
+    onDismiss: () -> Unit,
+    onSave: (String, AccountType, String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var opening by remember { mutableStateOf("0") }
+    var type by remember { mutableStateOf(AccountType.CHECKING) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New account") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Account name") }, singleLine = true)
+                OutlinedTextField(
+                    opening, { opening = it }, label = { Text("Opening balance (EUR)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(AccountType.CHECKING, AccountType.SAVINGS, AccountType.CASH).forEach { option ->
+                        FilterChip(type == option, { type = option }, { Text(option.name.lowercase()) })
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name, type, opening) },
+                enabled = name.isNotBlank() && runCatching { Money.parseMajor(opening) }.isSuccess,
+            ) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun ReconcileDialog(
+    accountName: String,
+    currentBalance: Money,
+    onDismiss: () -> Unit,
+    onSave: (String, Boolean) -> Unit,
+) {
+    var statement by remember { mutableStateOf("") }
+    var adjustment by remember { mutableStateOf(true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Reconcile $accountName") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Current app balance: ${currentBalance.formatted()}")
+                OutlinedTextField(
+                    statement, { statement = it }, label = { Text("Statement balance") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
+                )
+                FilterChip(
+                    selected = adjustment,
+                    onClick = { adjustment = !adjustment },
+                    label = { Text("Create adjustment if needed") },
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(statement, adjustment) },
+                enabled = runCatching { Money.parseMajor(statement) }.isSuccess,
+            ) { Text("Reconcile") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
