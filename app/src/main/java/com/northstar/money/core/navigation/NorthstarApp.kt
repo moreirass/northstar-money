@@ -105,7 +105,6 @@ fun NorthstarApp() {
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
     var destination by remember { mutableStateOf(Destination.Home) }
     var showAdd by remember { mutableStateOf(false) }
-    var pendingDeleteTransactionId by remember { mutableStateOf<String?>(null) }
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
     var editingRecurring by remember { mutableStateOf<EditableRecurring?>(null) }
@@ -160,7 +159,31 @@ fun NorthstarApp() {
                     }
                 },
                 onSetCleared = financeViewModel::setTransactionCleared,
-                onDelete = { id -> pendingDeleteTransactionId = id },
+                onDelete = { id ->
+                    scope.launch {
+                        runSuspendCatching {
+                            performTransactionDeleteWithUndo(
+                                delete = { financeViewModel.deleteTransaction(id) },
+                                offerUndo = {
+                                    snackbarHostState.showSnackbar(
+                                        message = "Transaction moved to Recently deleted",
+                                        actionLabel = "Undo",
+                                        duration = SnackbarDuration.Long,
+                                    ) == SnackbarResult.ActionPerformed
+                                },
+                                restore = { financeViewModel.restoreTransaction(id) },
+                            )
+                        }.onSuccess { outcome ->
+                            if (outcome == DeleteUndoOutcome.RESTORE_FAILED) {
+                                snackbarHostState.showSnackbar(
+                                    "Could not restore the transaction. It remains in Recently deleted.",
+                                )
+                            }
+                        }.onFailure {
+                            snackbarHostState.showSnackbar("Could not delete the transaction. Nothing was changed.")
+                        }
+                    }
+                },
             )
             Destination.More -> MoreScreen(
                 state = state,
@@ -243,45 +266,6 @@ fun NorthstarApp() {
                 },
             )
         }
-    }
-
-    pendingDeleteTransactionId?.let { id ->
-        AlertDialog(
-            onDismissRequest = { pendingDeleteTransactionId = null },
-            title = { Text("Move transaction to Recently deleted?") },
-            text = { Text("It will stop affecting balances and reports. You can restore it now or later from More.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        pendingDeleteTransactionId = null
-                        scope.launch {
-                            runSuspendCatching { financeViewModel.deleteTransaction(id) }
-                                .onSuccess {
-                                    val result = snackbarHostState.showSnackbar(
-                                        message = "Transaction moved to Recently deleted",
-                                        actionLabel = "Undo",
-                                        duration = SnackbarDuration.Long,
-                                    )
-                                    if (result == SnackbarResult.ActionPerformed) {
-                                        runSuspendCatching { financeViewModel.restoreTransaction(id) }
-                                            .onFailure {
-                                                snackbarHostState.showSnackbar(
-                                                    "Could not restore the transaction. It remains in Recently deleted.",
-                                                )
-                                            }
-                                    }
-                                }
-                                .onFailure {
-                                    snackbarHostState.showSnackbar("Could not delete the transaction. Nothing was changed.")
-                                }
-                        }
-                    },
-                ) { Text("Move") }
-            },
-            dismissButton = {
-                TextButton(onClick = { pendingDeleteTransactionId = null }) { Text("Cancel") }
-            },
-        )
     }
 
     editingTransaction?.let { transaction ->
@@ -2445,4 +2429,23 @@ private suspend fun <T> runSuspendCatching(block: suspend () -> T): Result<T> = 
     throw error
 } catch (error: Throwable) {
     Result.failure(error)
+}
+
+internal enum class DeleteUndoOutcome { DELETED, RESTORED, RESTORE_FAILED }
+
+internal suspend fun performTransactionDeleteWithUndo(
+    delete: suspend () -> Unit,
+    offerUndo: suspend () -> Boolean,
+    restore: suspend () -> Unit,
+): DeleteUndoOutcome {
+    delete()
+    if (!offerUndo()) return DeleteUndoOutcome.DELETED
+    return try {
+        restore()
+        DeleteUndoOutcome.RESTORED
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Throwable) {
+        DeleteUndoOutcome.RESTORE_FAILED
+    }
 }
