@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import com.northstar.money.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -60,6 +62,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.font.FontWeight
@@ -99,8 +104,14 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text(stringResource(R.string.ui_available_now), style = MaterialTheme.typography.labelLarge)
-            Text(state.summary.balance.formatted(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+            val balanceDescription = stringResource(
+                R.string.accessibility_available_balance,
+                state.summary.balance.formatted(),
+            )
+            Column(Modifier.semantics(mergeDescendants = true) { contentDescription = balanceDescription }) {
+                Text(stringResource(R.string.ui_available_now), style = MaterialTheme.typography.labelLarge)
+                Text(state.summary.balance.formatted(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
+            }
         }
         item {
             Card(Modifier.fillMaxWidth()) {
@@ -113,9 +124,18 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
             }
         }
         item {
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.weight(1f))
-                SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.weight(1f))
+            BoxWithConstraints {
+                if (maxWidth < 420.dp || LocalDensity.current.fontScale >= 1.5f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.fillMaxWidth())
+                        SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.fillMaxWidth())
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.weight(1f))
+                        SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.weight(1f))
+                    }
+                }
             }
         }
         item { Text(stringResource(R.string.ui_recent_activity), style = MaterialTheme.typography.titleLarge) }
@@ -129,7 +149,8 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
 
 @Composable
 internal fun SummaryCard(label: String, money: Money, modifier: Modifier = Modifier) {
-    Card(modifier) {
+    val description = stringResource(R.string.accessibility_summary_amount, label, money.formatted())
+    Card(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(label, style = MaterialTheme.typography.labelLarge)
             Text(money.formatted(), style = MaterialTheme.typography.titleLarge)
@@ -168,18 +189,36 @@ internal fun ActivityScreen(
             Text(stringResource(if (query.isBlank()) R.string.ui_no_transactions_yet else R.string.ui_no_matching_transactions))
         }
         items(visibleTransactions, key = { it.id }) { transaction ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                TransactionRow(transaction, Modifier.weight(1f))
-                FilterChip(
-                    selected = transaction.cleared,
-                    onClick = { onSetCleared(transaction.id, !transaction.cleared) },
-                    label = { Text(stringResource(if (transaction.cleared) R.string.ui_cleared else R.string.ui_pending)) },
-                )
-                IconButton(onClick = { onEdit(transaction.id) }) {
-                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit_named, transaction.payee))
-                }
-                IconButton(onClick = { onDelete(transaction.id) }) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = stringResource(R.string.action_delete_named, transaction.payee))
+            Column(Modifier.fillMaxWidth()) {
+                TransactionRow(transaction, Modifier.fillMaxWidth())
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    FilterChip(
+                        selected = transaction.cleared,
+                        onClick = { onSetCleared(transaction.id, !transaction.cleared) },
+                        label = { Text(stringResource(if (transaction.cleared) R.string.ui_cleared else R.string.ui_pending)) },
+                    )
+                    val editDescription = stringResource(R.string.action_edit_named, transaction.payee)
+                    IconButton(
+                        onClick = { onEdit(transaction.id) },
+                        modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .semantics { contentDescription = editDescription },
+                    ) {
+                        Icon(Icons.Default.Edit, contentDescription = null)
+                    }
+                    val deleteDescription = stringResource(R.string.action_delete_named, transaction.payee)
+                    IconButton(
+                        onClick = { onDelete(transaction.id) },
+                        modifier = Modifier
+                            .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                            .semantics { contentDescription = deleteDescription },
+                    ) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = null)
+                    }
                 }
             }
             HorizontalDivider()
@@ -189,7 +228,19 @@ internal fun ActivityScreen(
 
 @Composable
 internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier) {
-    Row(modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    val stateLabel = stringResource(if (item.cleared) R.string.ui_cleared_lowercase else R.string.ui_uncleared)
+    val description = stringResource(
+        R.string.accessibility_transaction,
+        item.payee,
+        item.categoryName ?: item.kind.name,
+        item.accountName,
+        item.amount.formatted(),
+        stateLabel,
+    )
+    Row(
+        modifier.semantics(mergeDescendants = true) { contentDescription = description }.padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(item.payee, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(
@@ -197,7 +248,7 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
                     R.string.transaction_metadata,
                     item.categoryName ?: item.kind.name,
                     item.accountName,
-                    stringResource(if (item.cleared) R.string.ui_cleared_lowercase else R.string.ui_uncleared),
+                    stateLabel,
                 ),
                 style = MaterialTheme.typography.bodySmall,
             )

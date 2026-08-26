@@ -218,4 +218,7 @@
     <string name="account_cleared_balance">Cleared: %1$s</string>
     <string name="account_type_balance">%1$s • %2$s</string>
     <string name="merge_category_explanation">Past activity will appear under the selected category. %1$s will be archived and the merge can be undone.</string>
+    <string name="accessibility_available_balance">Available balance: %1$s</string>
+    <string name="accessibility_summary_amount">%1$s: %2$s</string>
+    <string name="accessibility_transaction">%1$s, %2$s, %3$s, %4$s, %5$s</string>
 </resources>

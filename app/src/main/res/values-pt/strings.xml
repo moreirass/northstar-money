@@ -218,4 +218,7 @@
     <string name="account_cleared_balance">Compensado: %1$s</string>
     <string name="account_type_balance">%1$s • %2$s</string>
     <string name="merge_category_explanation">A atividade anterior será apresentada na categoria selecionada. %1$s será arquivada e a combinação poderá ser anulada.</string>
+    <string name="accessibility_available_balance">Saldo disponível: %1$s</string>
+    <string name="accessibility_summary_amount">%1$s: %2$s</string>
+    <string name="accessibility_transaction">%1$s, %2$s, %3$s, %4$s, %5$s</string>
 </resources>
