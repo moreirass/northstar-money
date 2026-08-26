@@ -108,20 +108,69 @@ abstract class FinanceDao {
 
     @Query(
         """
-        SELECT c.id AS categoryId, c.name AS categoryName,
-               COALESCE(b.plannedMinor, 0) AS plannedMinor,
-               COALESCE(-SUM(CASE WHEN t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS spentMinor
-        FROM categories c
-        LEFT JOIN budget_allocations b ON b.categoryId = c.id AND b.monthStart = :monthStart
-        LEFT JOIN categories source ON COALESCE(source.mergedIntoCategoryId, source.id) = c.id
-        LEFT JOIN transaction_entries e ON e.categoryId = source.id AND e.currencyCode = :baseCurrencyCode
-        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
-        WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
-        GROUP BY c.id, b.plannedMinor
-        ORDER BY c.sortOrder, c.name
+        WITH budget_values AS (
+            SELECT c.id AS categoryId, c.name AS categoryName, c.sortOrder,
+                   COALESCE((
+                       SELECT SUM(currentAllocation.plannedMinor)
+                       FROM budget_allocations currentAllocation
+                       WHERE currentAllocation.categoryId = c.id
+                         AND currentAllocation.monthStart = :monthStart
+                   ), 0) AS allocatedMinor,
+                   CASE WHEN EXISTS (
+                       SELECT 1
+                       FROM budget_allocations earlierAllocation
+                       JOIN categories earlierCategory ON earlierCategory.id = earlierAllocation.categoryId
+                       WHERE COALESCE(earlierCategory.mergedIntoCategoryId, earlierCategory.id) = c.id
+                         AND earlierAllocation.monthStart < :monthStart
+                   ) THEN
+                       COALESCE((
+                           SELECT SUM(priorAllocation.plannedMinor)
+                           FROM budget_allocations priorAllocation
+                           JOIN categories allocatedCategory ON allocatedCategory.id = priorAllocation.categoryId
+                           WHERE COALESCE(allocatedCategory.mergedIntoCategoryId, allocatedCategory.id) = c.id
+                             AND priorAllocation.monthStart < :monthStart
+                       ), 0) - COALESCE((
+                           SELECT -SUM(entry.amountMinor)
+                           FROM transaction_entries entry
+                           JOIN transactions transactionRecord ON transactionRecord.id = entry.transactionId
+                           JOIN categories spentCategory ON spentCategory.id = entry.categoryId
+                           WHERE COALESCE(spentCategory.mergedIntoCategoryId, spentCategory.id) = c.id
+                             AND entry.currencyCode = :baseCurrencyCode
+                             AND transactionRecord.kind = 'EXPENSE' AND transactionRecord.deletedAt IS NULL
+                             AND transactionRecord.localDate >= (
+                                 SELECT MIN(firstAllocation.monthStart)
+                                 FROM budget_allocations firstAllocation
+                                 JOIN categories firstCategory ON firstCategory.id = firstAllocation.categoryId
+                                 WHERE COALESCE(firstCategory.mergedIntoCategoryId, firstCategory.id) = c.id
+                             )
+                             AND transactionRecord.localDate < :monthStart
+                       ), 0)
+                   ELSE 0 END AS rolloverMinor,
+                   COALESCE((
+                       SELECT -SUM(entry.amountMinor)
+                       FROM transaction_entries entry
+                       JOIN transactions transactionRecord ON transactionRecord.id = entry.transactionId
+                       JOIN categories spentCategory ON spentCategory.id = entry.categoryId
+                       WHERE COALESCE(spentCategory.mergedIntoCategoryId, spentCategory.id) = c.id
+                         AND entry.currencyCode = :baseCurrencyCode
+                         AND transactionRecord.kind = 'EXPENSE' AND transactionRecord.deletedAt IS NULL
+                         AND transactionRecord.localDate >= :monthStart
+                         AND transactionRecord.localDate < :nextMonthStart
+                   ), 0) AS spentMinor
+            FROM categories c
+            WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
+        )
+        SELECT categoryId, categoryName, allocatedMinor, rolloverMinor,
+               allocatedMinor + rolloverMinor AS plannedMinor, spentMinor
+        FROM budget_values
+        ORDER BY sortOrder, categoryName
         """
     )
-    abstract fun observeBudgets(monthStart: String, baseCurrencyCode: String): Flow<List<BudgetRow>>
+    abstract fun observeBudgets(
+        monthStart: String,
+        nextMonthStart: String,
+        baseCurrencyCode: String,
+    ): Flow<List<BudgetRow>>
 
     @Query(
         """

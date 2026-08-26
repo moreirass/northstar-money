@@ -217,6 +217,8 @@ data class GoalContributionRow(
 data class BudgetRow(
     val categoryId: String,
     val categoryName: String,
+    val allocatedMinor: Long,
+    val rolloverMinor: Long,
     val plannedMinor: Long,
     val spentMinor: Long,
 )

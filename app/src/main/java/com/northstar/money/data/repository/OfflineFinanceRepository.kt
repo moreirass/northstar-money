@@ -35,6 +35,8 @@ import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -93,16 +95,31 @@ class OfflineFinanceRepository(
         }
     }
 
-    override fun observeBudgets() = dao.observeBudgets(
-        LocalDate.now().withDayOfMonth(1).toString(),
-        BASE_CURRENCY_CODE,
-    ).map { rows ->
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    override fun observeBudgets() = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(LocalDate.now().withDayOfMonth(1))
+            val now = java.time.ZonedDateTime.now()
+            val nextDay = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
+            kotlinx.coroutines.delay(
+                java.time.Duration.between(now, nextDay).toMillis().coerceAtLeast(1_000L),
+            )
+        }
+    }.distinctUntilChanged().flatMapLatest { month ->
+        dao.observeBudgets(
+            monthStart = month.toString(),
+            nextMonthStart = month.plusMonths(1).toString(),
+            baseCurrencyCode = BASE_CURRENCY_CODE,
+        )
+    }.map { rows ->
         rows.map {
             com.northstar.money.domain.model.BudgetProgress(
-                it.categoryId,
-                it.categoryName,
-                Money(it.plannedMinor, BASE_CURRENCY_CODE),
-                Money(it.spentMinor, BASE_CURRENCY_CODE),
+                categoryId = it.categoryId,
+                categoryName = it.categoryName,
+                planned = Money(it.plannedMinor, BASE_CURRENCY_CODE),
+                spent = Money(it.spentMinor, BASE_CURRENCY_CODE),
+                allocated = Money(it.allocatedMinor, BASE_CURRENCY_CODE),
+                rollover = Money(it.rolloverMinor, BASE_CURRENCY_CODE),
             )
         }
     }

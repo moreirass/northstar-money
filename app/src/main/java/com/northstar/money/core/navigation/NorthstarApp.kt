@@ -492,6 +492,12 @@ private fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudge
                     Column(Modifier.weight(1f)) {
                         Text(budget.categoryName, fontWeight = FontWeight.Medium)
                         Text("${budget.spent.formatted()} / ${budget.planned.formatted()}")
+                        if (budget.rollover.minor != 0L) {
+                            Text(
+                                "Allocated ${budget.allocated.formatted()} • rollover ${budget.rollover.formatted()}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
                     }
                     TextButton(onClick = { editingCategoryId = budget.categoryId }) { Text("Set") }
                 }
@@ -503,7 +509,7 @@ private fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudge
         if (budget != null) {
             AmountDialog(
                 title = "Budget for ${budget.categoryName}",
-                initial = if (budget.planned.minor == 0L) "" else budget.planned.minor.toBigDecimal().movePointLeft(2).toPlainString(),
+                initial = if (budget.allocated.minor == 0L) "" else budget.allocated.minor.toBigDecimal().movePointLeft(2).toPlainString(),
                 onDismiss = { editingCategoryId = null },
                 onSave = { onSetBudget(id, it); editingCategoryId = null },
             )

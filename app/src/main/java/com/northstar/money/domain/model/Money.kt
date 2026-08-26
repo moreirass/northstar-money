@@ -94,6 +94,8 @@ data class BudgetProgress(
     val categoryName: String,
     val planned: Money,
     val spent: Money,
+    val allocated: Money = planned,
+    val rollover: Money = Money(0, planned.currencyCode),
 )
 
 data class SavingsGoal(
