@@ -12,6 +12,7 @@ import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.model.EditableGoal
 import com.northstar.money.domain.model.GoalContribution
+import com.northstar.money.domain.model.DebtProfile
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
@@ -65,6 +66,8 @@ interface FinanceRepository {
     suspend fun deleteRecurring(id: String)
     suspend fun restoreRecurring(id: String)
     suspend fun createDebt(accountId: String, annualRateBasisPoints: Int, minimumPayment: Money, dueDay: Int)
+    suspend fun getDebtForEdit(id: String): DebtProfile
+    suspend fun updateDebt(debt: DebtProfile)
     suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
     suspend fun renameCategory(id: String, name: String)

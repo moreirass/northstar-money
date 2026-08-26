@@ -276,8 +276,17 @@ class FinanceViewModel(
     fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String) {
         launchOperation("save the debt profile") {
             val basisPoints = ratePercent.toBigDecimal().movePointRight(2).intValueExact()
-            repository.createDebt(accountId, basisPoints, Money.parseMajor(minimumPayment), dueDay.toInt())
+            val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
+                "Debt account is missing or archived"
+            }.currencyCode
+            repository.createDebt(accountId, basisPoints, Money.parseMajor(minimumPayment, currency), dueDay.toInt())
         }
+    }
+
+    suspend fun getDebtForEdit(id: String): DebtProfile = repository.getDebtForEdit(id)
+
+    fun updateDebt(debt: DebtProfile) {
+        launchOperation("update the debt profile") { repository.updateDebt(debt) }
     }
 
     fun importCsv(csv: String) {

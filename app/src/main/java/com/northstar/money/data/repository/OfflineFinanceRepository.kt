@@ -599,11 +599,41 @@ class OfflineFinanceRepository(
     ) {
         require(annualRateBasisPoints >= 0 && minimumPayment.minor >= 0 && dueDay in 1..31)
         requireAccountCurrency(accountId, minimumPayment.currencyCode)
-        dao.upsertDebt(
+        dao.insertDebtProfile(
             com.northstar.money.core.database.DebtProfileEntity(
                 UUID.randomUUID().toString(), accountId, annualRateBasisPoints,
                 minimumPayment.minor, dueDay, System.currentTimeMillis(),
             )
+        )
+    }
+
+    override suspend fun getDebtForEdit(id: String): com.northstar.money.domain.model.DebtProfile {
+        val debt = requireNotNull(dao.getDebtProfile(id)) { "Debt profile is missing" }
+        val currency = requireNotNull(dao.getActiveAccountCurrency(debt.accountId)) {
+            "Debt account is missing or archived"
+        }
+        return com.northstar.money.domain.model.DebtProfile(
+            debt.id,
+            debt.accountId,
+            debt.annualRateBasisPoints,
+            Money(debt.minimumPaymentMinor, currency),
+            debt.dueDay,
+        )
+    }
+
+    override suspend fun updateDebt(debt: com.northstar.money.domain.model.DebtProfile) {
+        require(debt.annualRateBasisPoints >= 0 && debt.minimumPayment.minor >= 0 && debt.dueDay in 1..31) {
+            "Rate, minimum payment or due day is invalid"
+        }
+        val stored = requireNotNull(dao.getDebtProfile(debt.id)) { "Debt profile is missing" }
+        require(debt.accountId == stored.accountId) { "Debt account cannot be changed" }
+        requireAccountCurrency(stored.accountId, debt.minimumPayment.currencyCode)
+        dao.updateDebtProfile(
+            stored.copy(
+                annualRateBasisPoints = debt.annualRateBasisPoints,
+                minimumPaymentMinor = debt.minimumPayment.minor,
+                dueDay = debt.dueDay,
+            ),
         )
     }
 

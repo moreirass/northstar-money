@@ -258,6 +258,29 @@ abstract class FinanceDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertDebt(item: DebtProfileEntity)
 
+    @Query("SELECT * FROM debt_profiles WHERE id = :id")
+    abstract suspend fun getDebtProfile(id: String): DebtProfileEntity?
+
+    @Query("SELECT COUNT(*) FROM debt_profiles WHERE accountId = :accountId")
+    protected abstract suspend fun countDebtProfilesForAccount(accountId: String): Int
+
+    @Insert
+    protected abstract suspend fun insertDebtProfileEntity(item: DebtProfileEntity)
+
+    @Update
+    protected abstract suspend fun updateDebtProfileEntity(item: DebtProfileEntity): Int
+
+    @Transaction
+    open suspend fun insertDebtProfile(item: DebtProfileEntity) {
+        require(countDebtProfilesForAccount(item.accountId) == 0) { "Account already has a debt profile" }
+        insertDebtProfileEntity(item)
+    }
+
+    @Transaction
+    open suspend fun updateDebtProfile(item: DebtProfileEntity) {
+        require(updateDebtProfileEntity(item) == 1) { "Debt profile could not be updated" }
+    }
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertAccounts(items: List<AccountEntity>)
 

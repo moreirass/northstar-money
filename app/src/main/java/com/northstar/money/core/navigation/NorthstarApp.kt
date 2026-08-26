@@ -82,6 +82,7 @@ import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.model.EditableGoal
 import com.northstar.money.domain.model.GoalContribution
 import com.northstar.money.domain.model.SavingsGoal
+import com.northstar.money.domain.model.DebtProfile
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
@@ -110,6 +111,7 @@ fun NorthstarApp() {
     var editingRecurring by remember { mutableStateOf<EditableRecurring?>(null) }
     var editingGoal by remember { mutableStateOf<EditableGoal?>(null) }
     var editingGoalContribution by remember { mutableStateOf<GoalContribution?>(null) }
+    var editingDebt by remember { mutableStateOf<DebtProfile?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -212,6 +214,13 @@ fun NorthstarApp() {
                 onDeleteRecurring = financeViewModel::deleteRecurring,
                 onRestoreRecurring = financeViewModel::restoreRecurring,
                 onCreateDebt = financeViewModel::createDebt,
+                onEditDebt = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getDebtForEdit(id) }
+                            .onSuccess { editingDebt = it }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the debt profile.") }
+                    }
+                },
                 onImportCsv = financeViewModel::importCsv,
                 onSetAppLock = financeViewModel::setAppLock,
                 onSetReminders = financeViewModel::setReminders,
@@ -329,6 +338,18 @@ fun NorthstarApp() {
             onSave = {
                 financeViewModel.updateGoalContribution(it)
                 editingGoalContribution = null
+            },
+        )
+    }
+
+    editingDebt?.let { debt ->
+        EditDebtDialog(
+            debt = debt,
+            accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name ?: "Account",
+            onDismiss = { editingDebt = null },
+            onSave = {
+                financeViewModel.updateDebt(it)
+                editingDebt = null
             },
         )
     }
@@ -512,6 +533,7 @@ private fun MoreScreen(
     onDeleteRecurring: (String) -> Unit,
     onRestoreRecurring: (String) -> Unit,
     onCreateDebt: (String, String, String, String) -> Unit,
+    onEditDebt: (String) -> Unit,
     onImportCsv: (String) -> Unit,
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
@@ -943,6 +965,7 @@ private fun MoreScreen(
                 Column(Modifier.padding(16.dp)) {
                     Text(accountName, fontWeight = FontWeight.Medium)
                     Text("${debt.annualRateBasisPoints / 100.0}% APR • minimum ${debt.minimumPayment.formatted()} • due day ${debt.dueDay}")
+                    TextButton(onClick = { onEditDebt(debt.id) }) { Text("Edit") }
                 }
             }
         }
@@ -1719,6 +1742,77 @@ private fun DebtDialog(
                 enabled = account != null && rate.toBigDecimalOrNull() != null &&
                     runCatching { Money.parseMajor(payment).minor >= 0 }.getOrDefault(false) &&
                     dueDay.toIntOrNull() in 1..31,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun EditDebtDialog(
+    debt: DebtProfile,
+    accountName: String,
+    onDismiss: () -> Unit,
+    onSave: (DebtProfile) -> Unit,
+) {
+    val fractionDigits = java.util.Currency.getInstance(debt.minimumPayment.currencyCode).defaultFractionDigits
+    var rate by remember(debt.id) {
+        mutableStateOf(debt.annualRateBasisPoints.toBigDecimal().movePointLeft(2).stripTrailingZeros().toPlainString())
+    }
+    var payment by remember(debt.id) {
+        mutableStateOf(
+            debt.minimumPayment.minor.toBigDecimal().movePointLeft(fractionDigits).toPlainString(),
+        )
+    }
+    var dueDay by remember(debt.id) { mutableStateOf(debt.dueDay.toString()) }
+    val basisPoints = runCatching { rate.toBigDecimal().movePointRight(2).intValueExact() }.getOrNull()
+    val parsedPayment = runCatching {
+        Money.parseMajor(payment, debt.minimumPayment.currencyCode)
+    }.getOrNull()
+    val parsedDueDay = dueDay.toIntOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit debt profile") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Account: $accountName")
+                OutlinedTextField(
+                    rate,
+                    { rate = it },
+                    label = { Text("Annual rate (%)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    payment,
+                    { payment = it },
+                    label = { Text("Minimum payment (${debt.minimumPayment.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    dueDay,
+                    { dueDay = it },
+                    label = { Text("Due day") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        debt.copy(
+                            annualRateBasisPoints = requireNotNull(basisPoints),
+                            minimumPayment = requireNotNull(parsedPayment),
+                            dueDay = requireNotNull(parsedDueDay),
+                        ),
+                    )
+                },
+                enabled = basisPoints?.let { it >= 0 } == true &&
+                    parsedPayment?.minor?.let { it >= 0 } == true && parsedDueDay in 1..31,
             ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
