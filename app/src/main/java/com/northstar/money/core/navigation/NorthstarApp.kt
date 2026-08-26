@@ -125,7 +125,7 @@ fun NorthstarApp() {
         factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
     )
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
-    if (!state.settings.onboardingCompleted) {
+    if (!state.isLoading && !state.loadFailed && !state.settings.onboardingCompleted) {
         OnboardingScreen(onComplete = { financeViewModel.setOnboardingCompleted(true) })
         return
     }
@@ -204,12 +204,20 @@ fun NorthstarApp() {
             modifier = Modifier.weight(1f),
         ) {
             composable(Destination.Home.route) {
-                AdaptiveContentPane(widthClass) { HomeScreen(state, padding) }
+                FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
+                    AdaptiveContentPane(widthClass) { HomeScreen(state, padding) }
+                }
             }
             composable(Destination.Plan.route) {
-                AdaptiveContentPane(widthClass) { PlanScreen(state, padding, financeViewModel::setBudget) }
+                FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
+                    AdaptiveContentPane(widthClass) { PlanScreen(state, padding, financeViewModel::setBudget) }
+                }
             }
-            composable(Destination.Activity.route) { AdaptiveContentPane(widthClass) { ActivityScreen(
+            composable(Destination.Activity.route) { FinanceScreenState(
+                state.isLoading,
+                state.loadFailed,
+                financeViewModel::retryLoading,
+            ) { AdaptiveContentPane(widthClass) { ActivityScreen(
                 state = state,
                 padding = padding,
                 onEdit = { id ->
@@ -249,8 +257,12 @@ fun NorthstarApp() {
                         }
                     }
                 },
-            ) } }
-            composable(Destination.More.route) { AdaptiveContentPane(widthClass) { MoreScreen(
+            ) } } }
+            composable(Destination.More.route) { FinanceScreenState(
+                state.isLoading,
+                state.loadFailed,
+                financeViewModel::retryLoading,
+            ) { AdaptiveContentPane(widthClass) { MoreScreen(
                 state = state,
                 padding = padding,
                 onCreateAccount = financeViewModel::createAccount,
@@ -330,7 +342,7 @@ fun NorthstarApp() {
                             .onFailure { snackbarHostState.showSnackbar(context.getString(R.string.snackbar_restore_transaction_failed)) }
                     }
                 },
-            ) } }
+            ) } } }
         }
         }
     }

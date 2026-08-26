@@ -238,4 +238,10 @@
     <string name="onboarding_skip">Ignorar introdução</string>
     <string name="onboarding_finish">Começar</string>
     <string name="onboarding_reopen">Ver novamente a introdução</string>
+    <string name="state_loading">A carregar o seu plano financeiro…</string>
+    <string name="state_error_title">Não foi possível carregar o seu plano financeiro</string>
+    <string name="state_error_body">Os seus dados não foram alterados. Verifique o dispositivo e tente novamente.</string>
+    <string name="state_retry">Tentar novamente</string>
+    <string name="state_empty_accounts">Ainda não existem contas. Adicione uma conta para começar a criar o seu plano.</string>
+    <string name="state_empty_budgets">Ainda não existem orçamentos. Adicione uma categoria de despesa e defina o respetivo orçamento mensal.</string>
 </resources>

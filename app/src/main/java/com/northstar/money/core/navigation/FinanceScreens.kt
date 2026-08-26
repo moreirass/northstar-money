@@ -144,7 +144,7 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
         }
         item { Text(stringResource(R.string.ui_recent_activity), style = MaterialTheme.typography.titleLarge) }
         if (state.transactions.isEmpty()) {
-            item { Text(stringResource(R.string.ui_add_your_first_transaction_to_see_your_financial_pic)) }
+            item { EmptyStateCard(stringResource(R.string.ui_add_your_first_transaction_to_see_your_financial_pic)) }
         } else {
             items(state.transactions.take(5), key = { it.id }) { TransactionRow(it) }
         }
@@ -257,7 +257,7 @@ internal fun ActivityScreen(
             )
         }
         if (visibleTransactions.isEmpty()) item {
-            Text(stringResource(if (query.isBlank()) R.string.ui_no_transactions_yet else R.string.ui_no_matching_transactions))
+            EmptyStateCard(stringResource(if (query.isBlank()) R.string.ui_no_transactions_yet else R.string.ui_no_matching_transactions))
         }
         items(visibleTransactions, key = { it.id }) { transaction ->
             Column(Modifier.fillMaxWidth()) {
@@ -345,6 +345,9 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
         val totalPlanned = state.budgets.sumOf { it.planned.minor }
         val totalSpent = state.budgets.sumOf { it.spent.minor }
         item { Text(stringResource(R.string.budget_spent_planned, Money(totalSpent).formatted(), Money(totalPlanned).formatted())) }
+        if (state.budgets.isEmpty()) {
+            item { EmptyStateCard(stringResource(R.string.state_empty_budgets)) }
+        }
         items(state.budgets, key = { it.categoryId }) { budget ->
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -622,6 +625,7 @@ internal fun MoreScreen(
                 TextButton(onClick = { showCreate = true }) { Text(stringResource(R.string.ui_add_account)) }
             }
         }
+        if (state.accounts.isEmpty()) item { EmptyStateCard(stringResource(R.string.state_empty_accounts)) }
         item { Text(stringResource(R.string.ui_settings), style = MaterialTheme.typography.titleLarge) }
         item {
             Card(Modifier.fillMaxWidth()) {
@@ -656,7 +660,7 @@ internal fun MoreScreen(
                 TextButton(onClick = { showCategory = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.categories.isEmpty()) item { Text(stringResource(R.string.ui_no_active_categories)) }
+        if (state.categories.isEmpty()) item { EmptyStateCard(stringResource(R.string.ui_no_active_categories)) }
         items(state.categories, key = { "category-${it.id}" }) { category ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -770,7 +774,7 @@ internal fun MoreScreen(
             }
         }
         item { Text(stringResource(R.string.ui_financial_calendar), style = MaterialTheme.typography.titleLarge) }
-        if (state.recurring.isEmpty()) item { Text(stringResource(R.string.ui_no_upcoming_scheduled_events)) }
+        if (state.recurring.isEmpty()) item { EmptyStateCard(stringResource(R.string.ui_no_upcoming_scheduled_events)) }
         items(state.recurring.sortedBy { it.nextLocalDate }, key = { "calendar-${it.id}" }) { item ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Text(item.nextLocalDate, Modifier.weight(0.35f))
@@ -784,7 +788,7 @@ internal fun MoreScreen(
                 TextButton(onClick = { showRecurring = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.recurring.isEmpty()) item { Text(stringResource(R.string.ui_no_recurring_schedules_yet)) }
+        if (state.recurring.isEmpty()) item { EmptyStateCard(stringResource(R.string.ui_no_recurring_schedules_yet)) }
         items(state.recurring, key = { it.id }) { item ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -845,7 +849,7 @@ internal fun MoreScreen(
                 TextButton(onClick = { showDebt = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.debts.isEmpty()) item { Text(stringResource(R.string.ui_no_debt_profiles_yet)) }
+        if (state.debts.isEmpty()) item { EmptyStateCard(stringResource(R.string.ui_no_debt_profiles_yet)) }
         items(state.debts, key = { it.id }) { debt ->
             val accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name
                 ?: stringResource(R.string.fallback_account)
@@ -906,7 +910,7 @@ internal fun MoreScreen(
                 TextButton(onClick = { showGoal = true }) { Text(stringResource(R.string.ui_add_goal)) }
             }
         }
-        if (state.goals.isEmpty()) item { Text(stringResource(R.string.ui_no_savings_goals_yet)) }
+        if (state.goals.isEmpty()) item { EmptyStateCard(stringResource(R.string.ui_no_savings_goals_yet)) }
         items(state.goals, key = { it.id }) { goal ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {

@@ -238,4 +238,10 @@
     <string name="onboarding_skip">Skip introduction</string>
     <string name="onboarding_finish">Get started</string>
     <string name="onboarding_reopen">View introduction again</string>
+    <string name="state_loading">Loading your financial plan…</string>
+    <string name="state_error_title">Your financial plan could not be loaded</string>
+    <string name="state_error_body">Your data was not changed. Check the device and try again.</string>
+    <string name="state_retry">Try again</string>
+    <string name="state_empty_accounts">No accounts yet. Add an account to start building your plan.</string>
+    <string name="state_empty_budgets">No budgets yet. Add an expense category, then set its monthly budget.</string>
 </resources>

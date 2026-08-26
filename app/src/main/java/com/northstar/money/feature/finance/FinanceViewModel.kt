@@ -34,10 +34,17 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import com.northstar.money.R
 
 data class FinanceUiState(
+    val isLoading: Boolean = false,
+    val loadFailed: Boolean = false,
     val accounts: List<Account> = emptyList(),
     val archivedAccounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
@@ -126,7 +133,7 @@ class FinanceViewModel(
         repository.observeDeletedRecurring(),
     ) { active, paused, deleted -> RecurringUiState(active, paused, deleted) }
 
-    val uiState: StateFlow<FinanceUiState> = combine(
+    private val loadedState: Flow<FinanceUiState> = combine(
         planningState,
         recurringState,
         repository.observeDebts(),
@@ -142,7 +149,20 @@ class FinanceViewModel(
             importSummary = summary,
             settings = settings,
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
+    }
+
+    private val refreshRequests = MutableStateFlow(0)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val uiState: StateFlow<FinanceUiState> = refreshRequests.flatMapLatest {
+        loadedState
+            .onStart { emit(FinanceUiState(isLoading = true)) }
+            .catch { emit(FinanceUiState(loadFailed = true)) }
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5_000),
+        FinanceUiState(isLoading = true),
+    )
 
     init {
         launchOperation { repository.seedIfEmpty() }
@@ -365,6 +385,10 @@ class FinanceViewModel(
 
     fun setOnboardingCompleted(completed: Boolean) {
         launchOperation { preferences.setOnboardingCompleted(completed) }
+    }
+
+    fun retryLoading() {
+        refreshRequests.value += 1
     }
 
     fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
