@@ -151,6 +151,53 @@ class NorthstarDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate4To5_preservesTransactionsAndAddsRecoverableDeletion() {
+        helper.createDatabase(DB_4_5, 4).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DB_4_5, 5, true, MIGRATION_4_5).apply {
+            assertBaseDataPreserved()
+            query("SELECT deletedAt FROM transactions WHERE id = 'transaction-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(true, cursor.isNull(0))
+            }
+            execSQL("UPDATE transactions SET deletedAt = 123 WHERE id = 'transaction-1'")
+            query("SELECT deletedAt FROM transactions WHERE id = 'transaction-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(123L, cursor.getLong(0))
+            }
+            close()
+        }
+    }
+
+    @Test
+    fun migrate1To5_runsCompleteMigrationChainWithoutDataLoss() {
+        helper.createDatabase(DB_1_5, 1).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DB_1_5,
+            5,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+        ).apply {
+            assertBaseDataPreserved()
+            query("SELECT deletedAt FROM transactions WHERE id = 'transaction-1'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals(true, cursor.isNull(0))
+            }
+            close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertBaseData() {
         execSQL(
             """
@@ -203,5 +250,7 @@ class NorthstarDatabaseMigrationTest {
         private const val DB_2_3 = "migration-2-3"
         private const val DB_3_4 = "migration-3-4"
         private const val DB_1_4 = "migration-1-4"
+        private const val DB_4_5 = "migration-4-5"
+        private const val DB_1_5 = "migration-1-5"
     }
 }

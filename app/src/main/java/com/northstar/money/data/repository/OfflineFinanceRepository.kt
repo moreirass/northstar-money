@@ -47,18 +47,11 @@ class OfflineFinanceRepository(
 
     override fun observeTransactions(): Flow<List<TransactionItem>> =
         dao.observeTransactions().map { rows ->
-            rows.map {
-                TransactionItem(
-                    id = it.id,
-                    payee = it.payee,
-                    categoryName = it.categoryName,
-                    accountName = it.accountName,
-                    kind = TransactionKind.valueOf(it.kind),
-                    amount = Money(it.amountMinor, it.currencyCode),
-                    localDate = it.localDate,
-                )
-            }
+            rows.map(::transactionRowToDomain)
         }
+
+    override fun observeDeletedTransactions(): Flow<List<TransactionItem>> =
+        dao.observeDeletedTransactions().map { rows -> rows.map(::transactionRowToDomain) }
 
     override fun observeSummary(): Flow<FinanceSummary> {
         val monthStart = LocalDate.now().withDayOfMonth(1).toString()
@@ -136,7 +129,13 @@ class OfflineFinanceRepository(
         )
     }
 
-    override suspend fun deleteTransaction(id: String) = dao.deleteTransaction(id)
+    override suspend fun deleteTransaction(id: String) {
+        require(dao.deleteTransaction(id, System.currentTimeMillis()) == 1) { "Transaction is already deleted or missing" }
+    }
+
+    override suspend fun restoreTransaction(id: String) {
+        require(dao.restoreTransaction(id, System.currentTimeMillis()) == 1) { "Transaction is not available for recovery" }
+    }
 
     override suspend fun createAccount(name: String, type: AccountType, openingBalance: Money) {
         require(name.isNotBlank())
@@ -357,4 +356,14 @@ class OfflineFinanceRepository(
         recoveryStore.save(portableBackupCodec.encrypt(recoveryDocument, recoveryPassword))
         dao.replaceWithSnapshot(snapshot)
     }
+
+    private fun transactionRowToDomain(row: com.northstar.money.core.database.TransactionRow) = TransactionItem(
+        id = row.id,
+        payee = row.payee,
+        categoryName = row.categoryName,
+        accountName = row.accountName,
+        kind = TransactionKind.valueOf(row.kind),
+        amount = Money(row.amountMinor, row.currencyCode),
+        localDate = row.localDate,
+    )
 }

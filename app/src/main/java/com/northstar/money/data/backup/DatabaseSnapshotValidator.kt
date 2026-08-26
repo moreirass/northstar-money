@@ -41,6 +41,7 @@ class DatabaseSnapshotValidator {
         }
         snapshot.transactions.forEach {
             require(it.kind in TRANSACTION_KINDS) { "Backup contains an invalid transaction type" }
+            require(it.deletedAt == null || it.deletedAt >= 0) { "Backup contains an invalid deletion timestamp" }
             requireDate(it.localDate, "transaction")
         }
         snapshot.transactionEntries.forEach {

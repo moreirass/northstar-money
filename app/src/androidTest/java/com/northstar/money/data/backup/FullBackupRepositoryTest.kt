@@ -46,7 +46,7 @@ class FullBackupRepositoryTest {
         dao.insertAccount(AccountEntity("account", "Archived", "CHECKING", "EUR", 100, 99, 1, 2))
         dao.insertCategory(CategoryEntity("category", "Archived", "EXPENSE", 1, 99))
         dao.insertTransaction(
-            TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 3, 4),
+            TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 3, 4, deletedAt = 98),
             TransactionEntryEntity("entry", "transaction", "account", "category", -25, "EUR", false),
         )
         dao.insertReconciliationWithAdjustment(
@@ -79,6 +79,7 @@ class FullBackupRepositoryTest {
         assertEquals(99L, snapshot.accounts.single().archivedAt)
         assertEquals(99L, snapshot.categories.single().archivedAt)
         assertEquals(false, snapshot.recurringSchedules.single().active)
+        assertEquals(98L, snapshot.transactions.single().deletedAt)
     }
 
     @Test

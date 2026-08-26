@@ -34,6 +34,7 @@ data class FinanceUiState(
     val categories: List<Category> = emptyList(),
     val transactions: List<TransactionItem> = emptyList(),
     val summary: FinanceSummary = FinanceSummary(),
+    val deletedTransactions: List<TransactionItem> = emptyList(),
     val budgets: List<BudgetProgress> = emptyList(),
     val goals: List<SavingsGoal> = emptyList(),
     val recurring: List<RecurringItem> = emptyList(),
@@ -65,8 +66,9 @@ class FinanceViewModel(
         coreState,
         repository.observeBudgets(),
         repository.observeGoals(),
-    ) { core, budgets, goals ->
-        core.copy(budgets = budgets, goals = goals)
+        repository.observeDeletedTransactions(),
+    ) { core, budgets, goals, deletedTransactions ->
+        core.copy(budgets = budgets, goals = goals, deletedTransactions = deletedTransactions)
     }
 
     val uiState: StateFlow<FinanceUiState> = combine(
@@ -107,9 +109,9 @@ class FinanceViewModel(
         }
     }
 
-    fun deleteTransaction(id: String) {
-        launchOperation("delete the transaction") { repository.deleteTransaction(id) }
-    }
+    suspend fun deleteTransaction(id: String) = repository.deleteTransaction(id)
+
+    suspend fun restoreTransaction(id: String) = repository.restoreTransaction(id)
 
     fun createAccount(name: String, type: AccountType, openingBalance: String) {
         launchOperation("create the account") {

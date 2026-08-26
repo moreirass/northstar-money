@@ -12,6 +12,7 @@ interface FinanceRepository {
     fun observeAccounts(): Flow<List<Account>>
     fun observeCategories(): Flow<List<Category>>
     fun observeTransactions(): Flow<List<TransactionItem>>
+    fun observeDeletedTransactions(): Flow<List<TransactionItem>>
     fun observeSummary(): Flow<FinanceSummary>
     fun observeBudgets(): Flow<List<com.northstar.money.domain.model.BudgetProgress>>
     fun observeGoals(): Flow<List<com.northstar.money.domain.model.SavingsGoal>>
@@ -38,6 +39,7 @@ interface FinanceRepository {
     suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
     suspend fun deleteTransaction(id: String)
+    suspend fun restoreTransaction(id: String)
     suspend fun createFullBackup(): String
     suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray)
     suspend fun undoLastFullRestore(recoveryPassword: CharArray)

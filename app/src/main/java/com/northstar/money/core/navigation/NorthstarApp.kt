@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -92,6 +93,7 @@ fun NorthstarApp() {
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
     var destination by remember { mutableStateOf(Destination.Home) }
     var showAdd by remember { mutableStateOf(false) }
+    var pendingDeleteTransactionId by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -126,13 +128,7 @@ fun NorthstarApp() {
             Destination.Home -> HomeScreen(state, padding)
             Destination.Plan -> PlanScreen(state, padding, financeViewModel::setBudget)
             Destination.Activity -> ActivityScreen(state, padding) { id ->
-                scope.launch {
-                    val result = snackbarHostState.showSnackbar(
-                        message = "Delete this transaction?",
-                        actionLabel = "Undo",
-                    )
-                    if (result != SnackbarResult.ActionPerformed) financeViewModel.deleteTransaction(id)
-                }
+                pendingDeleteTransactionId = id
             }
             Destination.More -> MoreScreen(
                 state = state,
@@ -149,8 +145,54 @@ fun NorthstarApp() {
                 onCreateFullBackup = financeViewModel::createFullBackup,
                 onRestoreFullBackup = financeViewModel::restoreFullBackup,
                 onUndoFullRestore = financeViewModel::undoLastFullRestore,
+                onRecoverTransaction = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.restoreTransaction(id) }
+                            .onSuccess { snackbarHostState.showSnackbar("Transaction restored") }
+                            .onFailure { snackbarHostState.showSnackbar("Could not restore the transaction. Please try again.") }
+                    }
+                },
             )
         }
+    }
+
+    pendingDeleteTransactionId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { pendingDeleteTransactionId = null },
+            title = { Text("Move transaction to Recently deleted?") },
+            text = { Text("It will stop affecting balances and reports. You can restore it now or later from More.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingDeleteTransactionId = null
+                        scope.launch {
+                            runSuspendCatching { financeViewModel.deleteTransaction(id) }
+                                .onSuccess {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Transaction moved to Recently deleted",
+                                        actionLabel = "Undo",
+                                        duration = SnackbarDuration.Long,
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        runSuspendCatching { financeViewModel.restoreTransaction(id) }
+                                            .onFailure {
+                                                snackbarHostState.showSnackbar(
+                                                    "Could not restore the transaction. It remains in Recently deleted.",
+                                                )
+                                            }
+                                    }
+                                }
+                                .onFailure {
+                                    snackbarHostState.showSnackbar("Could not delete the transaction. Nothing was changed.")
+                                }
+                        }
+                    },
+                ) { Text("Move") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingDeleteTransactionId = null }) { Text("Cancel") }
+            },
+        )
     }
 
     if (showAdd) {
@@ -318,6 +360,7 @@ private fun MoreScreen(
     onCreateFullBackup: suspend () -> String,
     onRestoreFullBackup: suspend (String, CharArray) -> Unit,
     onUndoFullRestore: suspend (CharArray) -> Unit,
+    onRecoverTransaction: (String) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -550,6 +593,26 @@ private fun MoreScreen(
             }
         }
         item { Text(state.categories.joinToString(" • ") { it.name }, style = MaterialTheme.typography.bodySmall) }
+        if (state.deletedTransactions.isNotEmpty()) {
+            item { Text("Recently deleted", style = MaterialTheme.typography.titleLarge) }
+            items(state.deletedTransactions, key = { "deleted-${it.id}" }) { transaction ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(transaction.payee, fontWeight = FontWeight.Medium)
+                            Text(
+                                "${transaction.localDate} • ${transaction.amount.formatted()}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = { onRecoverTransaction(transaction.id) }) { Text("Restore") }
+                    }
+                }
+            }
+        }
         item {
             Column {
                 TextButton(onClick = { importLauncher.launch(arrayOf("text/*", "text/csv")) }) {

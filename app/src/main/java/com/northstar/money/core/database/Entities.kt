@@ -30,7 +30,7 @@ data class CategoryEntity(
 )
 
 @Serializable
-@Entity(tableName = "transactions", indices = [Index("localDate"), Index("createdAt")])
+@Entity(tableName = "transactions", indices = [Index("localDate"), Index("createdAt"), Index("deletedAt")])
 data class TransactionEntity(
     @PrimaryKey val id: String,
     val kind: String,
@@ -39,6 +39,7 @@ data class TransactionEntity(
     val note: String,
     val createdAt: Long,
     val updatedAt: Long,
+    val deletedAt: Long? = null,
 )
 
 @Serializable

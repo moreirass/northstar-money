@@ -12,9 +12,10 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT a.id, a.name, a.type, a.currencyCode,
-               a.openingBalanceMinor + COALESCE(SUM(e.amountMinor), 0) AS balanceMinor
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
+        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         WHERE a.archivedAt IS NULL
         GROUP BY a.id
         ORDER BY a.createdAt
@@ -33,7 +34,7 @@ abstract class FinanceDao {
         JOIN transaction_entries e ON e.transactionId = t.id
         JOIN accounts a ON a.id = e.accountId
         LEFT JOIN categories c ON c.id = e.categoryId
-        WHERE e.rowid = (
+        WHERE t.deletedAt IS NULL AND e.rowid = (
             SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
         )
         ORDER BY t.localDate DESC, t.createdAt DESC
@@ -43,13 +44,29 @@ abstract class FinanceDao {
 
     @Query(
         """
+        SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
+               a.name AS accountName, c.name AS categoryName
+        FROM transactions t
+        JOIN transaction_entries e ON e.transactionId = t.id
+        JOIN accounts a ON a.id = e.accountId
+        LEFT JOIN categories c ON c.id = e.categoryId
+        WHERE t.deletedAt IS NOT NULL AND e.rowid = (
+            SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
+        )
+        ORDER BY t.deletedAt DESC
+        """
+    )
+    abstract fun observeDeletedTransactions(): Flow<List<TransactionRow>>
+
+    @Query(
+        """
         SELECT
           COALESCE((SELECT SUM(openingBalanceMinor) FROM accounts WHERE archivedAt IS NULL), 0)
             + COALESCE(SUM(e.amountMinor), 0) AS balanceMinor,
           COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS incomeMinor,
           COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS expenseMinor
         FROM transaction_entries e
-        JOIN transactions t ON t.id = e.transactionId
+        JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         """
     )
     abstract fun observeSummary(monthStart: String): Flow<SummaryRow>
@@ -62,7 +79,7 @@ abstract class FinanceDao {
         FROM categories c
         LEFT JOIN budget_allocations b ON b.categoryId = c.id AND b.monthStart = :monthStart
         LEFT JOIN transaction_entries e ON e.categoryId = c.id
-        LEFT JOIN transactions t ON t.id = e.transactionId
+        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
         GROUP BY c.id, b.plannedMinor
         ORDER BY c.sortOrder, c.name
@@ -150,9 +167,10 @@ abstract class FinanceDao {
 
     @Query(
         """
-        SELECT a.openingBalanceMinor + COALESCE(SUM(e.amountMinor), 0)
+        SELECT a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0)
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
+        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         WHERE a.id = :accountId
         GROUP BY a.id
         """
@@ -172,8 +190,11 @@ abstract class FinanceDao {
         insertReconciliation(reconciliation)
     }
 
-    @Query("DELETE FROM transactions WHERE id = :id")
-    abstract suspend fun deleteTransaction(id: String)
+    @Query("UPDATE transactions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
+    abstract suspend fun deleteTransaction(id: String, deletedAt: Long): Int
+
+    @Query("UPDATE transactions SET deletedAt = NULL, updatedAt = :restoredAt WHERE id = :id AND deletedAt IS NOT NULL")
+    abstract suspend fun restoreTransaction(id: String, restoredAt: Long): Int
 
     @Query(
         """
