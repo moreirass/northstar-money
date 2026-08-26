@@ -12,6 +12,8 @@ Built with Kotlin and Jetpack Compose. Your financial data stays on the device u
 
 > ⚠️ **Alpha build.** The offline feature set and data-safety foundations are implemented, but release hardening and production distribution are not complete. Keep regular encrypted backups and don't treat this build as the only copy of important financial records.
 
+> 🧪 **About this project.** This is a personal hobby project built for fun and to learn Android development, Kotlin, and Jetpack Compose. Development is done with heavy assistance from AI tools (for code generation, testing, and problem-solving). It is not a professionally audited product — use it at your own discretion, especially with real financial data.
+
 ---
 
 ## Contents
