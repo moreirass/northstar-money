@@ -180,6 +180,17 @@ abstract class FinanceDao {
 
     @Query(
         """
+        SELECT recurring.* FROM recurring_schedules recurring
+        JOIN accounts account ON account.id = recurring.accountId
+        WHERE recurring.active = 1 AND recurring.deletedAt IS NULL
+          AND recurring.nextLocalDate <= :throughLocalDate AND account.archivedAt IS NULL
+        ORDER BY recurring.nextLocalDate, recurring.id
+        """,
+    )
+    abstract suspend fun getDueRecurringSchedules(throughLocalDate: String): List<RecurringScheduleEntity>
+
+    @Query(
+        """
         SELECT d.id, d.accountId, d.annualRateBasisPoints, d.minimumPaymentMinor,
                d.dueDay, d.createdAt, a.currencyCode
         FROM debt_profiles d
@@ -466,6 +477,9 @@ abstract class FinanceDao {
     @Query("SELECT * FROM recurring_schedules WHERE id = :id AND deletedAt IS NULL")
     abstract suspend fun getRecurringForEdit(id: String): RecurringScheduleEntity?
 
+    @Query("SELECT * FROM recurring_schedules WHERE id = :id AND active = 1 AND deletedAt IS NULL")
+    protected abstract suspend fun getActiveRecurringForPosting(id: String): RecurringScheduleEntity?
+
     @Update
     protected abstract suspend fun updateRecurringEntity(recurring: RecurringScheduleEntity): Int
 
@@ -480,6 +494,19 @@ abstract class FinanceDao {
 
     @Query("UPDATE recurring_schedules SET deletedAt = NULL, active = 0 WHERE id = :id AND deletedAt IS NOT NULL")
     protected abstract suspend fun restoreDeletedRecurring(id: String): Int
+
+    @Query(
+        """
+        UPDATE recurring_schedules SET nextLocalDate = :nextLocalDate, categoryId = :categoryId
+        WHERE id = :id AND nextLocalDate = :expectedLocalDate AND active = 1 AND deletedAt IS NULL
+        """,
+    )
+    protected abstract suspend fun advanceRecurringAfterPosting(
+        id: String,
+        expectedLocalDate: String,
+        nextLocalDate: String,
+        categoryId: String,
+    ): Int
 
     @Transaction
     open suspend fun updateRecurring(recurring: RecurringScheduleEntity) {
@@ -504,6 +531,56 @@ abstract class FinanceDao {
     @Transaction
     open suspend fun restoreRecurring(id: String) {
         require(restoreDeletedRecurring(id) == 1) { "Recurring schedule is not available for recovery" }
+    }
+
+    @Transaction
+    open suspend fun postRecurringOccurrence(
+        recurringId: String,
+        occurrenceLocalDate: String,
+        nextLocalDate: String,
+        transactionId: String,
+        entryId: String,
+        createdAt: Long,
+    ): Boolean {
+        val recurring = getActiveRecurringForPosting(recurringId) ?: return false
+        if (recurring.nextLocalDate != occurrenceLocalDate) return false
+        val accountCurrency = getActiveAccountCurrency(recurring.accountId) ?: return false
+        if (accountCurrency != recurring.currencyCode) return false
+        val sourceCategoryId = recurring.categoryId ?: return false
+        val categoryId = getCanonicalActiveCategoryId(sourceCategoryId) ?: return false
+        if (getActiveCategoryKind(categoryId) != recurring.kind) return false
+        if (
+            advanceRecurringAfterPosting(
+                recurring.id,
+                occurrenceLocalDate,
+                nextLocalDate,
+                categoryId,
+            ) != 1
+        ) return false
+
+        insertTransactionEntity(
+            TransactionEntity(
+                id = transactionId,
+                kind = recurring.kind,
+                localDate = occurrenceLocalDate,
+                payee = recurring.name,
+                note = "Automatically posted recurring transaction",
+                createdAt = createdAt,
+                updatedAt = createdAt,
+            ),
+        )
+        insertEntry(
+            TransactionEntryEntity(
+                id = entryId,
+                transactionId = transactionId,
+                accountId = recurring.accountId,
+                categoryId = categoryId,
+                amountMinor = if (recurring.kind == "INCOME") recurring.amountMinor else -recurring.amountMinor,
+                currencyCode = recurring.currencyCode,
+                cleared = false,
+            ),
+        )
+        return true
     }
 
     @Transaction

@@ -9,6 +9,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
@@ -46,15 +48,28 @@ class NorthstarApplication : Application() {
             )
         }
         runCatching {
-            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+            val workManager = WorkManager.getInstance(this)
+            workManager.enqueueUniquePeriodicWork(
                 "financial-review-reminder",
                 ExistingPeriodicWorkPolicy.KEEP,
                 PeriodicWorkRequestBuilder<com.northstar.money.data.worker.ReviewReminderWorker>(
                     24, TimeUnit.HOURS
                 ).build(),
             )
+            workManager.enqueueUniquePeriodicWork(
+                com.northstar.money.data.worker.RecurringPostingWorker.PERIODIC_WORK_NAME,
+                ExistingPeriodicWorkPolicy.KEEP,
+                PeriodicWorkRequestBuilder<com.northstar.money.data.worker.RecurringPostingWorker>(
+                    6, TimeUnit.HOURS,
+                ).build(),
+            )
+            workManager.enqueueUniqueWork(
+                com.northstar.money.data.worker.RecurringPostingWorker.STARTUP_WORK_NAME,
+                ExistingWorkPolicy.REPLACE,
+                OneTimeWorkRequestBuilder<com.northstar.money.data.worker.RecurringPostingWorker>().build(),
+            )
         }.onFailure { error ->
-            android.util.Log.e("NorthstarApplication", "Could not schedule financial review reminder", error)
+            android.util.Log.e("NorthstarApplication", "Could not schedule background financial work", error)
         }
     }
 }

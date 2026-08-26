@@ -65,6 +65,7 @@ interface FinanceRepository {
     suspend fun resumeRecurring(id: String)
     suspend fun deleteRecurring(id: String)
     suspend fun restoreRecurring(id: String)
+    suspend fun postDueRecurringOccurrences(throughLocalDate: String): Int
     suspend fun createDebt(accountId: String, annualRateBasisPoints: Int, minimumPayment: Money, dueDay: Int)
     suspend fun getDebtForEdit(id: String): DebtProfile
     suspend fun updateDebt(debt: DebtProfile)

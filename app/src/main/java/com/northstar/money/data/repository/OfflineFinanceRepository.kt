@@ -591,6 +591,32 @@ class OfflineFinanceRepository(
         dao.restoreRecurring(id)
     }
 
+    override suspend fun postDueRecurringOccurrences(throughLocalDate: String): Int {
+        val throughDate = LocalDate.parse(throughLocalDate)
+        var posted = 0
+        dao.getDueRecurringSchedules(throughDate.toString()).forEach { initial ->
+            var occurrenceDate = LocalDate.parse(initial.nextLocalDate)
+            while (occurrenceDate <= throughDate && posted < MAX_RECURRING_POSTS_PER_RUN) {
+                val nextDate = nextRecurringDate(occurrenceDate, initial.frequency, initial.intervalCount)
+                val occurrenceKey = "${initial.id}:${occurrenceDate}"
+                val transactionId = UUID.nameUUIDFromBytes("transaction:$occurrenceKey".toByteArray()).toString()
+                val entryId = UUID.nameUUIDFromBytes("entry:$occurrenceKey".toByteArray()).toString()
+                val inserted = dao.postRecurringOccurrence(
+                    recurringId = initial.id,
+                    occurrenceLocalDate = occurrenceDate.toString(),
+                    nextLocalDate = nextDate.toString(),
+                    transactionId = transactionId,
+                    entryId = entryId,
+                    createdAt = System.currentTimeMillis(),
+                )
+                if (!inserted) return@forEach
+                posted += 1
+                occurrenceDate = nextDate
+            }
+        }
+        return posted
+    }
+
     override suspend fun createDebt(
         accountId: String,
         annualRateBasisPoints: Int,
@@ -797,6 +823,14 @@ class OfflineFinanceRepository(
             row.note,
         )
 
+    private fun nextRecurringDate(date: LocalDate, frequency: String, intervalCount: Int): LocalDate =
+        when (frequency) {
+            "WEEKLY" -> date.plusWeeks(intervalCount.toLong())
+            "MONTHLY" -> date.plusMonths(intervalCount.toLong())
+            "YEARLY" -> date.plusYears(intervalCount.toLong())
+            else -> error("Unsupported recurring frequency")
+        }
+
     private suspend fun requireAccountCurrency(accountId: String, currencyCode: String) {
         val accountCurrency = requireNotNull(dao.getActiveAccountCurrency(accountId)) {
             "Account is missing or archived"
@@ -810,5 +844,6 @@ class OfflineFinanceRepository(
         private const val BASE_CURRENCY_CODE = "EUR"
         private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
         private val GOAL_STATUSES = setOf("ACTIVE", "PAUSED", "COMPLETED")
+        private const val MAX_RECURRING_POSTS_PER_RUN = 10_000
     }
 }
