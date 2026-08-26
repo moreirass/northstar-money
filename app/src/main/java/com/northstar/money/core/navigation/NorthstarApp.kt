@@ -65,6 +65,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -88,11 +92,11 @@ import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
 import com.northstar.money.data.backup.SecureBackupCodec
 
-private enum class Destination(val label: String, val icon: ImageVector) {
-    Home("Home", Icons.Default.Home),
-    Plan("Plan", Icons.Default.Assessment),
-    Activity("Activity", Icons.AutoMirrored.Filled.ReceiptLong),
-    More("More", Icons.Default.MoreHoriz),
+internal enum class Destination(val route: String, val label: String, val icon: ImageVector) {
+    Home("home", "Home", Icons.Default.Home),
+    Plan("plan", "Plan", Icons.Default.Assessment),
+    Activity("activity", "Activity", Icons.AutoMirrored.Filled.ReceiptLong),
+    More("more", "More", Icons.Default.MoreHoriz),
 }
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -102,7 +106,10 @@ fun NorthstarApp() {
         factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
     )
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
-    var destination by remember { mutableStateOf(Destination.Home) }
+    val navController = rememberNavController()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val destination = Destination.entries.firstOrNull { it.route == backStackEntry?.destination?.route }
+        ?: Destination.Home
     var showAdd by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
@@ -132,7 +139,13 @@ fun NorthstarApp() {
                 Destination.entries.forEach { item ->
                     NavigationBarItem(
                         selected = destination == item,
-                        onClick = { destination = item },
+                        onClick = {
+                            navController.navigate(item.route) {
+                                popUpTo(Destination.Home.route) { saveState = true }
+                                launchSingleTop = true
+                                restoreState = true
+                            }
+                        },
                         icon = { Icon(item.icon, contentDescription = null) },
                         label = { Text(item.label) },
                     )
@@ -140,10 +153,13 @@ fun NorthstarApp() {
             }
         },
     ) { padding ->
-        when (destination) {
-            Destination.Home -> HomeScreen(state, padding)
-            Destination.Plan -> PlanScreen(state, padding, financeViewModel::setBudget)
-            Destination.Activity -> ActivityScreen(
+        NavHost(
+            navController = navController,
+            startDestination = Destination.Home.route,
+        ) {
+            composable(Destination.Home.route) { HomeScreen(state, padding) }
+            composable(Destination.Plan.route) { PlanScreen(state, padding, financeViewModel::setBudget) }
+            composable(Destination.Activity.route) { ActivityScreen(
                 state = state,
                 padding = padding,
                 onEdit = { id ->
@@ -183,8 +199,8 @@ fun NorthstarApp() {
                         }
                     }
                 },
-            )
-            Destination.More -> MoreScreen(
+            ) }
+            composable(Destination.More.route) { MoreScreen(
                 state = state,
                 padding = padding,
                 onCreateAccount = financeViewModel::createAccount,
@@ -263,7 +279,7 @@ fun NorthstarApp() {
                             .onFailure { snackbarHostState.showSnackbar("Could not restore the transaction. Please try again.") }
                     }
                 },
-            )
+            ) }
         }
     }
 
