@@ -25,6 +25,21 @@ abstract class FinanceDao {
     )
     abstract fun observeAccounts(): Flow<List<AccountBalanceRow>>
 
+    @Query(
+        """
+        SELECT a.id, a.name, a.type, a.currencyCode,
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor
+        FROM accounts a
+        LEFT JOIN transaction_entries e ON e.accountId = a.id
+        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
+            AND e.currencyCode = a.currencyCode
+        WHERE a.archivedAt IS NOT NULL
+        GROUP BY a.id
+        ORDER BY a.createdAt
+        """,
+    )
+    abstract fun observeArchivedAccounts(): Flow<List<AccountBalanceRow>>
+
     @Query("SELECT * FROM categories WHERE archivedAt IS NULL ORDER BY kind, sortOrder, name")
     abstract fun observeCategories(): Flow<List<CategoryEntity>>
 
@@ -111,7 +126,14 @@ abstract class FinanceDao {
     @Query("SELECT * FROM goals WHERE status = 'ACTIVE' ORDER BY createdAt")
     abstract fun observeGoals(): Flow<List<GoalEntity>>
 
-    @Query("SELECT * FROM recurring_schedules WHERE active = 1 ORDER BY nextLocalDate")
+    @Query(
+        """
+        SELECT r.* FROM recurring_schedules r
+        JOIN accounts a ON a.id = r.accountId
+        WHERE r.active = 1 AND a.archivedAt IS NULL
+        ORDER BY r.nextLocalDate
+        """,
+    )
     abstract fun observeRecurring(): Flow<List<RecurringScheduleEntity>>
 
     @Query(
@@ -120,6 +142,7 @@ abstract class FinanceDao {
                d.dueDay, d.createdAt, a.currencyCode
         FROM debt_profiles d
         JOIN accounts a ON a.id = d.accountId
+        WHERE a.archivedAt IS NULL
         ORDER BY d.createdAt
         """
     )
@@ -209,6 +232,33 @@ abstract class FinanceDao {
 
     @Query("SELECT currencyCode FROM accounts WHERE id = :accountId AND archivedAt IS NULL")
     abstract suspend fun getActiveAccountCurrency(accountId: String): String?
+
+    @Query("SELECT * FROM accounts WHERE id = :accountId AND archivedAt IS NULL")
+    abstract suspend fun getActiveAccount(accountId: String): AccountEntity?
+
+    @Update
+    protected abstract suspend fun updateAccountEntity(account: AccountEntity): Int
+
+    @Query("UPDATE accounts SET archivedAt = :archivedAt, updatedAt = :archivedAt WHERE id = :accountId AND archivedAt IS NULL")
+    protected abstract suspend fun archiveActiveAccount(accountId: String, archivedAt: Long): Int
+
+    @Query("UPDATE accounts SET archivedAt = NULL, updatedAt = :restoredAt WHERE id = :accountId AND archivedAt IS NOT NULL")
+    protected abstract suspend fun restoreArchivedAccount(accountId: String, restoredAt: Long): Int
+
+    @Transaction
+    open suspend fun updateAccount(account: AccountEntity) {
+        require(updateAccountEntity(account) == 1) { "Account could not be updated" }
+    }
+
+    @Transaction
+    open suspend fun archiveAccount(accountId: String, archivedAt: Long) {
+        require(archiveActiveAccount(accountId, archivedAt) == 1) { "Account is missing or already archived" }
+    }
+
+    @Transaction
+    open suspend fun restoreAccount(accountId: String, restoredAt: Long) {
+        require(restoreArchivedAccount(accountId, restoredAt) == 1) { "Account is missing or active" }
+    }
 
     @Query("SELECT kind FROM categories WHERE id = :categoryId AND archivedAt IS NULL")
     abstract suspend fun getActiveCategoryKind(categoryId: String): String?

@@ -77,6 +77,7 @@ import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
+import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
@@ -101,6 +102,7 @@ fun NorthstarApp() {
     var showAdd by remember { mutableStateOf(false) }
     var pendingDeleteTransactionId by remember { mutableStateOf<String?>(null) }
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
+    var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -154,6 +156,19 @@ fun NorthstarApp() {
                 state = state,
                 padding = padding,
                 onCreateAccount = financeViewModel::createAccount,
+                onEditAccount = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getAccountForEdit(id) }
+                            .onSuccess { editingAccount = it }
+                            .onFailure {
+                                snackbarHostState.showSnackbar(
+                                    it.message ?: "Could not open the account for editing.",
+                                )
+                            }
+                    }
+                },
+                onArchiveAccount = financeViewModel::archiveAccount,
+                onRestoreAccount = financeViewModel::restoreAccount,
                 onReconcile = financeViewModel::reconcile,
                 onCreateGoal = financeViewModel::createGoal,
                 onCreateRecurring = financeViewModel::createRecurring,
@@ -228,6 +243,17 @@ fun NorthstarApp() {
             onSave = {
                 financeViewModel.updateTransaction(it)
                 editingTransaction = null
+            },
+        )
+    }
+
+    editingAccount?.let { account ->
+        EditAccountDialog(
+            account = account,
+            onDismiss = { editingAccount = null },
+            onSave = {
+                financeViewModel.updateAccount(it)
+                editingAccount = null
             },
         )
     }
@@ -394,6 +420,9 @@ private fun MoreScreen(
     state: FinanceUiState,
     padding: PaddingValues,
     onCreateAccount: (String, AccountType, String) -> Unit,
+    onEditAccount: (String) -> Unit,
+    onArchiveAccount: (String) -> Unit,
+    onRestoreAccount: (String) -> Unit,
     onReconcile: (String, String, Boolean) -> Unit,
     onCreateGoal: (String, String, String, String?) -> Unit,
     onCreateRecurring: (String, TransactionKind, String, String, String?, String, String) -> Unit,
@@ -603,6 +632,7 @@ private fun MoreScreen(
     var renameCategoryId by remember { mutableStateOf<String?>(null) }
     var archiveCategoryId by remember { mutableStateOf<String?>(null) }
     var mergeCategoryId by remember { mutableStateOf<String?>(null) }
+    var archiveAccountId by remember { mutableStateOf<String?>(null) }
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(20.dp),
@@ -799,7 +829,31 @@ private fun MoreScreen(
                         }
                         Text(account.balance.formatted(), fontWeight = FontWeight.SemiBold)
                     }
-                    TextButton(onClick = { reconcileAccountId = account.id }) { Text("Reconcile") }
+                    Row {
+                        TextButton(onClick = { reconcileAccountId = account.id }) { Text("Reconcile") }
+                        TextButton(onClick = { onEditAccount(account.id) }) { Text("Edit") }
+                        TextButton(onClick = { archiveAccountId = account.id }) { Text("Archive") }
+                    }
+                }
+            }
+        }
+        if (state.archivedAccounts.isNotEmpty()) {
+            item { Text("Archived accounts", style = MaterialTheme.typography.titleMedium) }
+            items(state.archivedAccounts, key = { "archived-account-${it.id}" }) { account ->
+                Card(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(account.name, fontWeight = FontWeight.Medium)
+                            Text(
+                                "${account.type.name.lowercase()} • ${account.balance.formatted()}",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        }
+                        TextButton(onClick = { onRestoreAccount(account.id) }) { Text("Restore") }
+                    }
                 }
             }
         }
@@ -971,6 +1025,29 @@ private fun MoreScreen(
                     onMergeCategory(sourceId, targetId)
                     mergeCategoryId = null
                 },
+            )
+        }
+    }
+    archiveAccountId?.let { id ->
+        val account = state.accounts.firstOrNull { it.id == id }
+        if (account != null) {
+            AlertDialog(
+                onDismissRequest = { archiveAccountId = null },
+                title = { Text("Archive ${account.name}?") },
+                text = {
+                    Text(
+                        "The account and its history remain stored. It will stop contributing to active totals, forecasts, recurrences and debts until restored.",
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            onArchiveAccount(id)
+                            archiveAccountId = null
+                        },
+                    ) { Text("Archive") }
+                },
+                dismissButton = { TextButton(onClick = { archiveAccountId = null }) { Text("Cancel") } },
             )
         }
     }
@@ -1443,6 +1520,66 @@ private fun AddTransactionSheet(
             ) { Text("Save transaction") }
         }
     }
+}
+
+@Composable
+private fun EditAccountDialog(
+    account: EditableAccount,
+    onDismiss: () -> Unit,
+    onSave: (EditableAccount) -> Unit,
+) {
+    val fractionDigits = java.util.Currency.getInstance(account.openingBalance.currencyCode).defaultFractionDigits
+    var name by remember(account.id) { mutableStateOf(account.name) }
+    var type by remember(account.id) { mutableStateOf(account.type) }
+    var openingBalance by remember(account.id) {
+        mutableStateOf(
+            account.openingBalance.minor.toBigDecimal().movePointLeft(fractionDigits).toPlainString(),
+        )
+    }
+    val parsedBalance = runCatching {
+        Money.parseMajor(openingBalance, account.openingBalance.currencyCode)
+    }.getOrNull()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit account") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(name, { name = it }, label = { Text("Account name") }, singleLine = true)
+                Text("Type")
+                Row(
+                    Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    AccountType.entries.forEach { option ->
+                        FilterChip(type == option, { type = option }, { Text(option.name.lowercase()) })
+                    }
+                }
+                OutlinedTextField(
+                    openingBalance,
+                    { openingBalance = it },
+                    label = { Text("Opening balance (${account.openingBalance.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                Text("Currency is fixed after account creation.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        account.copy(
+                            name = name,
+                            type = type,
+                            openingBalance = requireNotNull(parsedBalance),
+                        ),
+                    )
+                },
+                enabled = name.isNotBlank() && parsedBalance != null,
+            ) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 @Composable

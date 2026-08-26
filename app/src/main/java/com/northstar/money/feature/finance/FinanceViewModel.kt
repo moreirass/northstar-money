@@ -20,6 +20,7 @@ import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
+import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 
 data class FinanceUiState(
     val accounts: List<Account> = emptyList(),
+    val archivedAccounts: List<Account> = emptyList(),
     val categories: List<Category> = emptyList(),
     val archivedCategories: List<ArchivedCategory> = emptyList(),
     val transactions: List<TransactionItem> = emptyList(),
@@ -61,9 +63,11 @@ class FinanceViewModel(
         repository.observeCategories(),
         repository.observeTransactions(),
         repository.observeSummary(),
-    ) { accounts, categories, transactions, summary ->
+        repository.observeArchivedAccounts(),
+    ) { accounts, categories, transactions, summary, archivedAccounts ->
         FinanceUiState(
             accounts = accounts,
+            archivedAccounts = archivedAccounts,
             categories = categories,
             transactions = transactions,
             summary = summary,
@@ -137,6 +141,20 @@ class FinanceViewModel(
         launchOperation("create the account") {
             repository.createAccount(name, type, Money.parseMajor(openingBalance.ifBlank { "0" }))
         }
+    }
+
+    suspend fun getAccountForEdit(id: String): EditableAccount = repository.getAccountForEdit(id)
+
+    fun updateAccount(account: EditableAccount) {
+        launchOperation("update the account") { repository.updateAccount(account) }
+    }
+
+    fun archiveAccount(id: String) {
+        launchOperation("archive the account") { repository.archiveAccount(id) }
+    }
+
+    fun restoreAccount(id: String) {
+        launchOperation("restore the account") { repository.restoreAccount(id) }
     }
 
     fun transfer(amount: String, sourceId: String, destinationId: String, note: String) {

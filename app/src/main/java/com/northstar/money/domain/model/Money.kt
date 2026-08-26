@@ -44,6 +44,13 @@ data class Account(
     val balance: Money,
 )
 
+data class EditableAccount(
+    val id: String,
+    val name: String,
+    val type: AccountType,
+    val openingBalance: Money,
+)
+
 data class Category(val id: String, val name: String, val kind: CategoryKind)
 
 data class ArchivedCategory(

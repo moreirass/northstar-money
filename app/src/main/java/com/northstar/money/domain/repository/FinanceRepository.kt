@@ -8,10 +8,12 @@ import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
+import com.northstar.money.domain.model.EditableAccount
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
     fun observeAccounts(): Flow<List<Account>>
+    fun observeArchivedAccounts(): Flow<List<Account>>
     fun observeCategories(): Flow<List<Category>>
     fun observeArchivedCategories(): Flow<List<ArchivedCategory>>
     fun observeTransactions(): Flow<List<TransactionItem>>
@@ -30,6 +32,10 @@ interface FinanceRepository {
         payee: String,
     )
     suspend fun createAccount(name: String, type: com.northstar.money.domain.model.AccountType, openingBalance: Money)
+    suspend fun getAccountForEdit(id: String): EditableAccount
+    suspend fun updateAccount(account: EditableAccount)
+    suspend fun archiveAccount(id: String)
+    suspend fun restoreAccount(id: String)
     suspend fun transfer(amount: Money, sourceAccountId: String, destinationAccountId: String, note: String)
     suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean)
     suspend fun setBudget(categoryId: String, planned: Money)

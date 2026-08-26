@@ -16,6 +16,7 @@ import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.model.EditableTransaction
+import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
@@ -42,6 +43,10 @@ class OfflineFinanceRepository(
     private val restoreMutex = Mutex()
 
     override fun observeAccounts(): Flow<List<Account>> = dao.observeAccounts().map { rows ->
+        rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
+    }
+
+    override fun observeArchivedAccounts(): Flow<List<Account>> = dao.observeArchivedAccounts().map { rows ->
         rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
     }
 
@@ -286,6 +291,38 @@ class OfflineFinanceRepository(
                 updatedAt = now,
             )
         )
+    }
+
+    override suspend fun getAccountForEdit(id: String): EditableAccount {
+        val account = requireNotNull(dao.getActiveAccount(id)) { "Account is missing or archived" }
+        return EditableAccount(
+            id = account.id,
+            name = account.name,
+            type = AccountType.valueOf(account.type),
+            openingBalance = Money(account.openingBalanceMinor, account.currencyCode),
+        )
+    }
+
+    override suspend fun updateAccount(account: EditableAccount) {
+        require(account.name.isNotBlank()) { "Account name is required" }
+        val stored = requireNotNull(dao.getActiveAccount(account.id)) { "Account is missing or archived" }
+        require(account.openingBalance.currencyCode == stored.currencyCode) { "Account currency cannot be changed" }
+        dao.updateAccount(
+            stored.copy(
+                name = account.name.trim(),
+                type = account.type.name,
+                openingBalanceMinor = account.openingBalance.minor,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    }
+
+    override suspend fun archiveAccount(id: String) {
+        dao.archiveAccount(id, System.currentTimeMillis())
+    }
+
+    override suspend fun restoreAccount(id: String) {
+        dao.restoreAccount(id, System.currentTimeMillis())
     }
 
     override suspend fun transfer(
