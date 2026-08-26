@@ -36,7 +36,7 @@
     <string name="ui_existing_transactions_keep_their_category_you_can_re">Existing transactions keep their category. You can restore it from Archived categories.</string>
     <string name="ui_it_will_stop_affecting_forecasts_you_can_restore_it">It will stop affecting forecasts. You can restore it later from Recently deleted recurrences.</string>
     <string name="ui_delete_contribution">Delete contribution?</string>
-    <string name="ui_use_12_128_characters_losing_this_password_makes_the">Use 12â€“128 characters. Losing this password makes the backup unrecoverable.</string>
+    <string name="ui_use_12_128_characters_losing_this_password_makes_the">Use 12–128 characters. Losing this password makes the backup unrecoverable.</string>
     <string name="ui_password">Password</string>
     <string name="ui_confirm_password">Confirm password</string>
     <string name="ui_new_category">New category</string>

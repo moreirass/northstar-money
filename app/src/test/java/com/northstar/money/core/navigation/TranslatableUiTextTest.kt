@@ -5,6 +5,7 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.Assert.assertEquals
 
 class TranslatableUiTextTest {
     @Test
@@ -40,6 +41,29 @@ class TranslatableUiTextTest {
 
         assertTrue("Expected the complete UI string catalog", strings.length >= 140)
     }
+
+    @Test
+    fun portugueseCatalogHasTheSameKeysAndFormatArguments() {
+        val appDir = findAppDirectory()
+        val base = readStrings(File(appDir, "src/main/res/values/strings.xml"))
+        val portuguese = readStrings(File(appDir, "src/main/res/values-pt/strings.xml"))
+
+        assertEquals(base.keys, portuguese.keys)
+        base.forEach { (key, value) ->
+            assertEquals("Format arguments differ for $key", formatArguments(value), formatArguments(portuguese.getValue(key)))
+        }
+    }
+
+    private fun readStrings(file: File): Map<String, String> {
+        val nodes = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(file).getElementsByTagName("string")
+        return (0 until nodes.length).associate { index ->
+            val node = nodes.item(index)
+            node.attributes.getNamedItem("name").nodeValue to node.textContent
+        }
+    }
+
+    private fun formatArguments(value: String): List<String> =
+        Regex("%\\d+\\$[a-zA-Z]").findAll(value).map { it.value }.sorted().toList()
 
     private fun findAppDirectory(): File {
         val current = File(System.getProperty("user.dir"))
