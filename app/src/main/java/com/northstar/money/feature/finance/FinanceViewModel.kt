@@ -169,6 +169,12 @@ class FinanceViewModel(
 
     suspend fun createFullBackup(): String = repository.createFullBackup()
 
+    suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray) =
+        repository.restoreFullBackup(backup, recoveryPassword)
+
+    suspend fun undoLastFullRestore(recoveryPassword: CharArray) =
+        repository.undoLastFullRestore(recoveryPassword)
+
     private fun calculateForecast(balance: Money, schedules: List<RecurringItem>): CashFlowForecast {
         val today = LocalDate.now()
         val end = today.plusDays(30)

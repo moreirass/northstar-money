@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.repository.OfflineFinanceRepository
+import com.northstar.money.data.backup.FileRestoreRecoveryStore
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
@@ -21,7 +22,12 @@ class NorthstarApplication : Application() {
             .build()
     }
 
-    val financeRepository by lazy { OfflineFinanceRepository(database.financeDao()) }
+    val financeRepository by lazy {
+        OfflineFinanceRepository(
+            dao = database.financeDao(),
+            restoreRecoveryStore = FileRestoreRecoveryStore(this),
+        )
+    }
     val userPreferences by lazy { com.northstar.money.core.datastore.UserPreferences(this) }
 
     override fun onCreate() {

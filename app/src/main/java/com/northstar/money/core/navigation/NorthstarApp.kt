@@ -139,6 +139,8 @@ fun NorthstarApp() {
                 onSetReminders = financeViewModel::setReminders,
                 onCreateCategory = financeViewModel::createCategory,
                 onCreateFullBackup = financeViewModel::createFullBackup,
+                onRestoreFullBackup = financeViewModel::restoreFullBackup,
+                onUndoFullRestore = financeViewModel::undoLastFullRestore,
             )
         }
     }
@@ -306,6 +308,8 @@ private fun MoreScreen(
     onSetReminders: (Boolean) -> Unit,
     onCreateCategory: (String, CategoryKind) -> Unit,
     onCreateFullBackup: suspend () -> String,
+    onRestoreFullBackup: suspend (String, CharArray) -> Unit,
+    onUndoFullRestore: suspend (CharArray) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -366,6 +370,10 @@ private fun MoreScreen(
     var pendingBackupPassword by remember { mutableStateOf<CharArray?>(null) }
     var showRestorePasswordDialog by remember { mutableStateOf(false) }
     var pendingRestoreUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showRestoreConfirmation by remember { mutableStateOf(false) }
+    var pendingRestoreDocument by remember { mutableStateOf<String?>(null) }
+    var pendingRestorePassword by remember { mutableStateOf<CharArray?>(null) }
+    var showUndoRestorePasswordDialog by remember { mutableStateOf(false) }
     val backupLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
@@ -412,31 +420,73 @@ private fun MoreScreen(
     fun decryptSelectedBackup(password: CharArray) {
         val uri = pendingRestoreUri ?: return
         scope.launch {
-            runCatching {
+            val result = runCatching {
                 withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
                         backupCodec.decrypt(input.readBytes(), password)
                     }
                 }
-            }.onSuccess { decrypted ->
+            }
+            result.onSuccess { decrypted ->
                 if (decrypted.trimStart().startsWith("{")) {
-                    android.widget.Toast.makeText(
-                        context,
-                        "Complete backup detected; use the full restore flow",
-                        android.widget.Toast.LENGTH_LONG,
-                    ).show()
+                    pendingRestoreDocument = decrypted
+                    pendingRestorePassword = password
+                    showRestoreConfirmation = true
                 } else {
                     onImportCsv(decrypted)
+                    password.fill('\u0000')
                 }
             }.onFailure { error ->
-                        android.widget.Toast.makeText(
-                            context,
-                            "Backup could not be read: ${error.message ?: "unknown error"}",
-                            android.widget.Toast.LENGTH_LONG,
-                        ).show()
+                password.fill('\u0000')
+                android.widget.Toast.makeText(
+                    context,
+                    "Backup could not be read: ${error.message ?: "unknown error"}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+            pendingRestoreUri = null
+        }
+    }
+    fun performFullRestore() {
+        val document = pendingRestoreDocument ?: return
+        val password = pendingRestorePassword ?: return
+        pendingRestoreDocument = null
+        pendingRestorePassword = null
+        showRestoreConfirmation = false
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { onRestoreFullBackup(document, password) }
+            }.onSuccess {
+                android.widget.Toast.makeText(
+                    context,
+                    "Full backup restored. Undo is available on this screen.",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }.onFailure { error ->
+                android.widget.Toast.makeText(
+                    context,
+                    "Nothing was changed: ${error.message ?: "restore failed"}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
             }.also {
                 password.fill('\u0000')
-                pendingRestoreUri = null
+            }
+        }
+    }
+    fun undoFullRestore(password: CharArray) {
+        scope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) { onUndoFullRestore(password) }
+            }.onSuccess {
+                android.widget.Toast.makeText(context, "Previous data restored", android.widget.Toast.LENGTH_LONG).show()
+            }.onFailure { error ->
+                android.widget.Toast.makeText(
+                    context,
+                    "Undo failed: ${error.message ?: "unknown error"}",
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }.also {
+                password.fill('\u0000')
             }
         }
     }
@@ -508,6 +558,9 @@ private fun MoreScreen(
                 }
                 TextButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                     Text("Restore password-protected backup")
+                }
+                TextButton(onClick = { showUndoRestorePasswordDialog = true }) {
+                    Text("Undo last full restore")
                 }
                 state.importMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
@@ -620,6 +673,48 @@ private fun MoreScreen(
             onConfirm = { password ->
                 showRestorePasswordDialog = false
                 decryptSelectedBackup(password)
+            },
+        )
+    }
+    if (showRestoreConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                pendingRestorePassword?.fill('\u0000')
+                pendingRestorePassword = null
+                pendingRestoreDocument = null
+                showRestoreConfirmation = false
+            },
+            title = { Text("Replace all financial data?") },
+            text = {
+                Text(
+                    "All current accounts, transactions, budgets, goals and schedules will be replaced. " +
+                        "An encrypted recovery copy will be saved on this device before anything changes.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { performFullRestore() }) { Text("Replace data") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        pendingRestorePassword?.fill('\u0000')
+                        pendingRestorePassword = null
+                        pendingRestoreDocument = null
+                        showRestoreConfirmation = false
+                    },
+                ) { Text("Cancel") }
+            },
+        )
+    }
+    if (showUndoRestorePasswordDialog) {
+        BackupPasswordDialog(
+            title = "Undo last restore",
+            confirmLabel = "Undo",
+            requireConfirmation = false,
+            onDismiss = { showUndoRestorePasswordDialog = false },
+            onConfirm = { password ->
+                showUndoRestorePasswordDialog = false
+                undoFullRestore(password)
             },
         )
     }

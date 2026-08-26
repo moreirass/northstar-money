@@ -39,4 +39,6 @@ interface FinanceRepository {
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
     suspend fun deleteTransaction(id: String)
     suspend fun createFullBackup(): String
+    suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray)
+    suspend fun undoLastFullRestore(recoveryPassword: CharArray)
 }

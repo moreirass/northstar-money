@@ -16,16 +16,26 @@ import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
+import com.northstar.money.data.backup.DatabaseSnapshotValidator
+import com.northstar.money.data.backup.PortableBackupCodec
+import com.northstar.money.data.backup.RestoreRecoveryStore
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class OfflineFinanceRepository(
     private val dao: FinanceDao,
     private val backupCodec: FullBackupJsonCodec = FullBackupJsonCodec(),
+    private val restoreRecoveryStore: RestoreRecoveryStore? = null,
+    private val portableBackupCodec: PortableBackupCodec = PortableBackupCodec(),
+    private val snapshotValidator: DatabaseSnapshotValidator = DatabaseSnapshotValidator(),
 ) : FinanceRepository {
+    private val restoreMutex = Mutex()
+
     override fun observeAccounts(): Flow<List<Account>> = dao.observeAccounts().map { rows ->
         rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
     }
@@ -91,19 +101,17 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun seedIfEmpty() {
-        if (dao.observeAccounts().first().isEmpty()) {
-            val now = System.currentTimeMillis()
-            dao.insertAccounts(
-                listOf(AccountEntity("main-account", "Main account", "CHECKING", "EUR", 0, createdAt = now, updatedAt = now))
-            )
-        }
-        if (dao.observeCategories().first().isEmpty()) {
-            val expenseNames = listOf("Housing", "Groceries", "Transport", "Dining", "Health", "Shopping", "Other")
-            val categories = expenseNames.mapIndexed { index, name ->
-                CategoryEntity("expense-${name.lowercase()}", name, "EXPENSE", index)
-            } + CategoryEntity("income-salary", "Salary", "INCOME", 0)
-            dao.insertCategories(categories)
-        }
+        val now = System.currentTimeMillis()
+        val expenseNames = listOf("Housing", "Groceries", "Transport", "Dining", "Health", "Shopping", "Other")
+        val categories = expenseNames.mapIndexed { index, name ->
+            CategoryEntity("expense-${name.lowercase()}", name, "EXPENSE", index)
+        } + CategoryEntity("income-salary", "Salary", "INCOME", 0)
+        dao.seedIfEmpty(
+            defaultAccounts = listOf(
+                AccountEntity("main-account", "Main account", "CHECKING", "EUR", 0, createdAt = now, updatedAt = now),
+            ),
+            defaultCategories = categories,
+        )
     }
 
     override suspend fun addTransaction(
@@ -316,4 +324,32 @@ class OfflineFinanceRepository(
         snapshot = dao.exportSnapshot(),
         databaseVersion = NorthstarDatabase.VERSION,
     )
+
+    override suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray) = restoreMutex.withLock {
+        restoreFullBackupLocked(backup, recoveryPassword)
+    }
+
+    override suspend fun undoLastFullRestore(recoveryPassword: CharArray) = restoreMutex.withLock {
+        val recoveryStore = requireNotNull(restoreRecoveryStore) { "Restore recovery storage is unavailable" }
+        val encryptedRecovery = requireNotNull(recoveryStore.load()) { "No restore recovery is available" }
+        val recoveryDocument = portableBackupCodec.decrypt(encryptedRecovery, recoveryPassword)
+        restoreFullBackupLocked(recoveryDocument, recoveryPassword)
+    }
+
+    private suspend fun restoreFullBackupLocked(backup: String, recoveryPassword: CharArray) {
+        val document = backupCodec.decode(backup)
+        require(document.databaseVersion <= NorthstarDatabase.VERSION) {
+            "Backup requires a newer Northstar Money database version"
+        }
+        val snapshot = document.toSnapshot()
+        snapshotValidator.validate(snapshot)
+
+        val recoveryStore = requireNotNull(restoreRecoveryStore) { "Restore recovery storage is unavailable" }
+        val recoveryDocument = backupCodec.encode(
+            snapshot = dao.exportSnapshot(),
+            databaseVersion = NorthstarDatabase.VERSION,
+        )
+        recoveryStore.save(portableBackupCodec.encrypt(recoveryDocument, recoveryPassword))
+        dao.replaceWithSnapshot(snapshot)
+    }
 }

@@ -100,6 +100,21 @@ abstract class FinanceDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertCategories(items: List<CategoryEntity>)
 
+    @Query("SELECT COUNT(*) FROM accounts")
+    protected abstract suspend fun countAccounts(): Int
+
+    @Query("SELECT COUNT(*) FROM categories")
+    protected abstract suspend fun countCategories(): Int
+
+    @Transaction
+    open suspend fun seedIfEmpty(
+        defaultAccounts: List<AccountEntity>,
+        defaultCategories: List<CategoryEntity>,
+    ) {
+        if (countAccounts() == 0) insertAccounts(defaultAccounts)
+        if (countCategories() == 0) insertCategories(defaultCategories)
+    }
+
     @Insert
     abstract suspend fun insertCategory(item: CategoryEntity)
 
@@ -202,6 +217,60 @@ abstract class FinanceDao {
     @Query("SELECT * FROM debt_profiles ORDER BY id")
     protected abstract suspend fun getAllDebtProfilesForBackup(): List<DebtProfileEntity>
 
+    @Query("DELETE FROM reconciliations")
+    protected abstract suspend fun deleteAllReconciliations()
+
+    @Query("DELETE FROM budget_allocations")
+    protected abstract suspend fun deleteAllBudgetAllocations()
+
+    @Query("DELETE FROM recurring_schedules")
+    protected abstract suspend fun deleteAllRecurringSchedules()
+
+    @Query("DELETE FROM debt_profiles")
+    protected abstract suspend fun deleteAllDebtProfiles()
+
+    @Query("DELETE FROM transaction_entries")
+    protected abstract suspend fun deleteAllTransactionEntries()
+
+    @Query("DELETE FROM transactions")
+    protected abstract suspend fun deleteAllTransactions()
+
+    @Query("DELETE FROM goals")
+    protected abstract suspend fun deleteAllGoals()
+
+    @Query("DELETE FROM categories")
+    protected abstract suspend fun deleteAllCategories()
+
+    @Query("DELETE FROM accounts")
+    protected abstract suspend fun deleteAllAccounts()
+
+    @Insert
+    protected abstract suspend fun restoreAccounts(items: List<AccountEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreCategories(items: List<CategoryEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreTransactions(items: List<TransactionEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreTransactionEntries(items: List<TransactionEntryEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreReconciliations(items: List<ReconciliationEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreBudgetAllocations(items: List<BudgetAllocationEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreGoals(items: List<GoalEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreRecurringSchedules(items: List<RecurringScheduleEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreDebtProfiles(items: List<DebtProfileEntity>)
+
     @Transaction
     open suspend fun exportSnapshot(): DatabaseSnapshot = DatabaseSnapshot(
         accounts = getAllAccountsForBackup(),
@@ -214,4 +283,27 @@ abstract class FinanceDao {
         recurringSchedules = getAllRecurringSchedulesForBackup(),
         debtProfiles = getAllDebtProfilesForBackup(),
     )
+
+    @Transaction
+    open suspend fun replaceWithSnapshot(snapshot: DatabaseSnapshot) {
+        deleteAllReconciliations()
+        deleteAllBudgetAllocations()
+        deleteAllRecurringSchedules()
+        deleteAllDebtProfiles()
+        deleteAllTransactionEntries()
+        deleteAllTransactions()
+        deleteAllGoals()
+        deleteAllCategories()
+        deleteAllAccounts()
+
+        restoreAccounts(snapshot.accounts)
+        restoreCategories(snapshot.categories)
+        restoreTransactions(snapshot.transactions)
+        restoreTransactionEntries(snapshot.transactionEntries)
+        restoreReconciliations(snapshot.reconciliations)
+        restoreBudgetAllocations(snapshot.budgetAllocations)
+        restoreGoals(snapshot.goals)
+        restoreRecurringSchedules(snapshot.recurringSchedules)
+        restoreDebtProfiles(snapshot.debtProfiles)
+    }
 }
