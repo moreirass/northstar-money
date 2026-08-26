@@ -19,6 +19,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.northstar.money.core.designsystem.NorthstarTheme
 import com.northstar.money.core.navigation.NorthstarApp
@@ -42,7 +43,7 @@ class MainActivity : FragmentActivity() {
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
-                showSecurityError("Northstar could not verify the app-lock setting. Your financial data remains locked.")
+                showSecurityError(getString(R.string.security_settings_unavailable))
             }
         }
     }
@@ -59,7 +60,7 @@ class MainActivity : FragmentActivity() {
         val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
             BiometricManager.Authenticators.DEVICE_CREDENTIAL
         if (BiometricManager.from(this).canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
-            showSecurityError("Device authentication is unavailable. Set up a secure screen lock, then retry.")
+            showSecurityError(getString(R.string.security_auth_unavailable))
             return
         }
         val prompt = BiometricPrompt(
@@ -71,14 +72,14 @@ class MainActivity : FragmentActivity() {
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
-                    showSecurityError("Authentication was not completed. Your financial data remains locked.")
+                    showSecurityError(getString(R.string.security_auth_incomplete))
                 }
             },
         )
         prompt.authenticate(
             BiometricPrompt.PromptInfo.Builder()
-                .setTitle("Unlock Northstar")
-                .setSubtitle("Use biometrics or your device credential")
+                .setTitle(getString(R.string.security_unlock_title))
+                .setSubtitle(getString(R.string.security_unlock_subtitle))
                 .setAllowedAuthenticators(authenticators)
                 .build()
         )
@@ -93,9 +94,9 @@ class MainActivity : FragmentActivity() {
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("Northstar is locked", style = MaterialTheme.typography.headlineSmall)
+                        Text(stringResource(R.string.ui_northstar_is_locked), style = MaterialTheme.typography.headlineSmall)
                         Text(message, modifier = Modifier.padding(vertical = 16.dp))
-                        Button(onClick = ::recreate) { Text("Retry") }
+                        Button(onClick = ::recreate) { Text(stringResource(R.string.ui_retry)) }
                     }
                 }
             }

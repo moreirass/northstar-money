@@ -1,5 +1,7 @@
 package com.northstar.money.core.navigation
 
+import android.annotation.SuppressLint
+import com.northstar.money.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,6 +56,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -96,28 +99,28 @@ internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Text("Available now", style = MaterialTheme.typography.labelLarge)
+            Text(stringResource(R.string.ui_available_now), style = MaterialTheme.typography.labelLarge)
             Text(state.summary.balance.formatted(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
         }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("30-day forecast", style = MaterialTheme.typography.titleMedium)
-                    Text("Projected: ${state.forecast.projectedBalance.formatted()}")
-                    Text("Lowest: ${state.forecast.lowestBalance.formatted()} on ${state.forecast.lowestDate}")
-                    Text("${state.forecast.scheduledEvents} scheduled events included", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.ui_30_day_forecast), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.forecast_projected, state.forecast.projectedBalance.formatted()))
+                    Text(stringResource(R.string.forecast_lowest, state.forecast.lowestBalance.formatted(), state.forecast.lowestDate))
+                    Text(stringResource(R.string.forecast_scheduled_events, state.forecast.scheduledEvents), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                SummaryCard("Income", state.summary.incomeThisMonth, Modifier.weight(1f))
-                SummaryCard("Spent", state.summary.expensesThisMonth, Modifier.weight(1f))
+                SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.weight(1f))
+                SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.weight(1f))
             }
         }
-        item { Text("Recent activity", style = MaterialTheme.typography.titleLarge) }
+        item { Text(stringResource(R.string.ui_recent_activity), style = MaterialTheme.typography.titleLarge) }
         if (state.transactions.isEmpty()) {
-            item { Text("Add your first transaction to see your financial picture.") }
+            item { Text(stringResource(R.string.ui_add_your_first_transaction_to_see_your_financial_pic)) }
         } else {
             items(state.transactions.take(5), key = { it.id }) { TransactionRow(it) }
         }
@@ -156,25 +159,27 @@ internal fun ActivityScreen(
             OutlinedTextField(
                 value = query,
                 onValueChange = { query = it },
-                label = { Text("Search transactions") },
+                label = { Text(stringResource(R.string.ui_search_transactions)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             )
         }
-        if (visibleTransactions.isEmpty()) item { Text(if (query.isBlank()) "No transactions yet." else "No matching transactions.") }
+        if (visibleTransactions.isEmpty()) item {
+            Text(stringResource(if (query.isBlank()) R.string.ui_no_transactions_yet else R.string.ui_no_matching_transactions))
+        }
         items(visibleTransactions, key = { it.id }) { transaction ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TransactionRow(transaction, Modifier.weight(1f))
                 FilterChip(
                     selected = transaction.cleared,
                     onClick = { onSetCleared(transaction.id, !transaction.cleared) },
-                    label = { Text(if (transaction.cleared) "Cleared" else "Pending") },
+                    label = { Text(stringResource(if (transaction.cleared) R.string.ui_cleared else R.string.ui_pending)) },
                 )
                 IconButton(onClick = { onEdit(transaction.id) }) {
-                    Icon(Icons.Default.Edit, contentDescription = "Edit ${transaction.payee}")
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.action_edit_named, transaction.payee))
                 }
                 IconButton(onClick = { onDelete(transaction.id) }) {
-                    Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${transaction.payee}")
+                    Icon(Icons.Default.DeleteOutline, contentDescription = stringResource(R.string.action_delete_named, transaction.payee))
                 }
             }
             HorizontalDivider()
@@ -188,7 +193,12 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
         Column(Modifier.weight(1f)) {
             Text(item.payee, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
             Text(
-                "${item.categoryName ?: item.kind.name} • ${item.accountName} • ${if (item.cleared) "cleared" else "uncleared"}",
+                stringResource(
+                    R.string.transaction_metadata,
+                    item.categoryName ?: item.kind.name,
+                    item.accountName,
+                    stringResource(if (item.cleared) R.string.ui_cleared_lowercase else R.string.ui_uncleared),
+                ),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -209,24 +219,24 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        item { Text("Monthly plan", style = MaterialTheme.typography.headlineMedium) }
+        item { Text(stringResource(R.string.ui_monthly_plan), style = MaterialTheme.typography.headlineMedium) }
         val totalPlanned = state.budgets.sumOf { it.planned.minor }
         val totalSpent = state.budgets.sumOf { it.spent.minor }
-        item { Text("${Money(totalSpent).formatted()} spent of ${Money(totalPlanned).formatted()} planned") }
+        item { Text(stringResource(R.string.budget_spent_planned, Money(totalSpent).formatted(), Money(totalPlanned).formatted())) }
         items(state.budgets, key = { it.categoryId }) { budget ->
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(budget.categoryName, fontWeight = FontWeight.Medium)
-                        Text("${budget.spent.formatted()} / ${budget.planned.formatted()}")
+                        Text(stringResource(R.string.money_pair, budget.spent.formatted(), budget.planned.formatted()))
                         if (budget.rollover.minor != 0L) {
                             Text(
-                                "Allocated ${budget.allocated.formatted()} • rollover ${budget.rollover.formatted()}",
+                                stringResource(R.string.budget_allocated_rollover, budget.allocated.formatted(), budget.rollover.formatted()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
                     }
-                    TextButton(onClick = { editingCategoryId = budget.categoryId }) { Text("Set") }
+                    TextButton(onClick = { editingCategoryId = budget.categoryId }) { Text(stringResource(R.string.ui_set)) }
                 }
             }
         }
@@ -245,6 +255,7 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
 }
 
 @Composable
+@SuppressLint("LocalContextGetResourceValueCall")
 internal fun MoreScreen(
     state: FinanceUiState,
     padding: PaddingValues,
@@ -316,16 +327,16 @@ internal fun MoreScreen(
             val document = android.graphics.pdf.PdfDocument()
             val page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
             val paint = android.graphics.Paint().apply { textSize = 18f; isAntiAlias = true }
-            page.canvas.drawText("Northstar monthly summary", 48f, 64f, paint)
+            page.canvas.drawText(context.getString(R.string.ui_northstar_monthly_summary), 48f, 64f, paint)
             paint.textSize = 14f
-            page.canvas.drawText("Balance: ${state.summary.balance.formatted()}", 48f, 100f, paint)
-            page.canvas.drawText("Income: ${state.summary.incomeThisMonth.formatted()}", 48f, 126f, paint)
-            page.canvas.drawText("Expenses: ${state.summary.expensesThisMonth.formatted()}", 48f, 152f, paint)
-            page.canvas.drawText("30-day projection: ${state.forecast.projectedBalance.formatted()}", 48f, 178f, paint)
+            page.canvas.drawText(context.getString(R.string.report_balance, state.summary.balance.formatted()), 48f, 100f, paint)
+            page.canvas.drawText(context.getString(R.string.report_income, state.summary.incomeThisMonth.formatted()), 48f, 126f, paint)
+            page.canvas.drawText(context.getString(R.string.report_expenses, state.summary.expensesThisMonth.formatted()), 48f, 152f, paint)
+            page.canvas.drawText(context.getString(R.string.report_projection, state.forecast.projectedBalance.formatted()), 48f, 178f, paint)
             var y = 220f
             state.budgets.take(15).forEach { budget ->
                 page.canvas.drawText(
-                    "${budget.categoryName}: ${budget.spent.formatted()} / ${budget.planned.formatted()}",
+                    context.getString(R.string.report_budget_line, budget.categoryName, budget.spent.formatted(), budget.planned.formatted()),
                     48f, y, paint,
                 )
                 y += 22f
@@ -360,13 +371,13 @@ internal fun MoreScreen(
                 }.onSuccess {
                     android.widget.Toast.makeText(
                         context,
-                        "Complete database backup created",
+                        context.getString(R.string.backup_created),
                         android.widget.Toast.LENGTH_SHORT,
                     ).show()
                 }.onFailure { error ->
                     android.widget.Toast.makeText(
                         context,
-                        "Backup failed: ${error.message ?: "unknown error"}",
+                        context.getString(R.string.backup_failed, error.message ?: context.getString(R.string.unknown_error)),
                         android.widget.Toast.LENGTH_LONG,
                     ).show()
                 }.also {
@@ -410,7 +421,7 @@ internal fun MoreScreen(
                 password.fill('\u0000')
                 android.widget.Toast.makeText(
                     context,
-                    "Backup could not be read: ${error.message ?: "unknown error"}",
+                    context.getString(R.string.backup_read_failed, error.message ?: context.getString(R.string.unknown_error)),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }
@@ -429,13 +440,13 @@ internal fun MoreScreen(
             }.onSuccess {
                 android.widget.Toast.makeText(
                     context,
-                    "Full backup restored. Undo is available on this screen.",
+                    context.getString(R.string.backup_restored),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }.onFailure { error ->
                 android.widget.Toast.makeText(
                     context,
-                    "Nothing was changed: ${error.message ?: "restore failed"}",
+                    context.getString(R.string.restore_unchanged, error.message ?: context.getString(R.string.restore_failed)),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }.also {
@@ -448,11 +459,11 @@ internal fun MoreScreen(
             runSuspendCatching {
                 withContext(Dispatchers.IO) { onUndoFullRestore(password) }
             }.onSuccess {
-                android.widget.Toast.makeText(context, "Previous data restored", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(context, context.getString(R.string.toast_previous_data_restored), android.widget.Toast.LENGTH_LONG).show()
             }.onFailure { error ->
                 android.widget.Toast.makeText(
                     context,
-                    "Undo failed: ${error.message ?: "unknown error"}",
+                    context.getString(R.string.restore_undo_failed, error.message ?: context.getString(R.string.unknown_error)),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
             }.also {
@@ -483,18 +494,18 @@ internal fun MoreScreen(
     ) {
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Accounts", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showCreate = true }) { Text("Add account") }
+                Text(stringResource(R.string.ui_accounts), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCreate = true }) { Text(stringResource(R.string.ui_add_account)) }
             }
         }
-        item { Text("Settings", style = MaterialTheme.typography.titleLarge) }
+        item { Text(stringResource(R.string.ui_settings), style = MaterialTheme.typography.titleLarge) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
                         selected = state.settings.appLockEnabled,
                         onClick = { onSetAppLock(!state.settings.appLockEnabled) },
-                        label = { Text("Biometric/device-credential lock") },
+                        label = { Text(stringResource(R.string.ui_biometric_device_credential_lock)) },
                     )
                     FilterChip(
                         selected = state.settings.remindersEnabled,
@@ -506,19 +517,19 @@ internal fun MoreScreen(
                                 onSetReminders(enabled)
                             }
                         },
-                        label = { Text("Daily financial review reminders") },
+                        label = { Text(stringResource(R.string.ui_daily_financial_review_reminders)) },
                     )
-                    Text("App lock applies the next time Northstar starts.", style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.ui_app_lock_applies_the_next_time_northstar_starts), style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Categories", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showCategory = true }) { Text("Add") }
+                Text(stringResource(R.string.ui_categories), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showCategory = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.categories.isEmpty()) item { Text("No active categories.") }
+        if (state.categories.isEmpty()) item { Text(stringResource(R.string.ui_no_active_categories)) }
         items(state.categories, key = { "category-${it.id}" }) { category ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -527,19 +538,19 @@ internal fun MoreScreen(
                             Text(category.name, fontWeight = FontWeight.Medium)
                             Text(category.kind.name.lowercase(), style = MaterialTheme.typography.bodySmall)
                         }
-                        TextButton(onClick = { renameCategoryId = category.id }) { Text("Rename") }
+                        TextButton(onClick = { renameCategoryId = category.id }) { Text(stringResource(R.string.ui_rename)) }
                     }
                     Row {
-                        TextButton(onClick = { archiveCategoryId = category.id }) { Text("Archive") }
+                        TextButton(onClick = { archiveCategoryId = category.id }) { Text(stringResource(R.string.ui_archive)) }
                         if (state.categories.any { it.id != category.id && it.kind == category.kind }) {
-                            TextButton(onClick = { mergeCategoryId = category.id }) { Text("Merge") }
+                            TextButton(onClick = { mergeCategoryId = category.id }) { Text(stringResource(R.string.ui_merge)) }
                         }
                     }
                 }
             }
         }
         if (state.archivedCategories.isNotEmpty()) {
-            item { Text("Archived categories", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_archived_categories), style = MaterialTheme.typography.titleMedium) }
             items(state.archivedCategories, key = { "archived-category-${it.id}" }) { category ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -549,7 +560,9 @@ internal fun MoreScreen(
                         Column(Modifier.weight(1f)) {
                             Text(category.name, fontWeight = FontWeight.Medium)
                             Text(
-                                category.mergedIntoCategoryName?.let { "Merged into $it" } ?: "Archived",
+                                category.mergedIntoCategoryName?.let {
+                                    stringResource(R.string.category_merged_into, it)
+                                } ?: stringResource(R.string.category_archived),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
@@ -561,13 +574,15 @@ internal fun MoreScreen(
                                     onUndoCategoryMerge(category.id)
                                 }
                             },
-                        ) { Text(if (category.mergedIntoCategoryId == null) "Restore" else "Undo merge") }
+                        ) {
+                            Text(stringResource(if (category.mergedIntoCategoryId == null) R.string.ui_restore else R.string.action_undo_merge))
+                        }
                     }
                 }
             }
         }
         if (state.deletedTransactions.isNotEmpty()) {
-            item { Text("Recently deleted", style = MaterialTheme.typography.titleLarge) }
+            item { Text(stringResource(R.string.ui_recently_deleted), style = MaterialTheme.typography.titleLarge) }
             items(state.deletedTransactions, key = { "deleted-${it.id}" }) { transaction ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -577,11 +592,11 @@ internal fun MoreScreen(
                         Column(Modifier.weight(1f)) {
                             Text(transaction.payee, fontWeight = FontWeight.Medium)
                             Text(
-                                "${transaction.localDate} • ${transaction.amount.formatted()}",
+                                stringResource(R.string.transaction_date_amount, transaction.localDate, transaction.amount.formatted()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        TextButton(onClick = { onRecoverTransaction(transaction.id) }) { Text("Restore") }
+                        TextButton(onClick = { onRecoverTransaction(transaction.id) }) { Text(stringResource(R.string.ui_restore)) }
                     }
                 }
             }
@@ -589,40 +604,45 @@ internal fun MoreScreen(
         item {
             Column {
                 TextButton(onClick = { importLauncher.launch(arrayOf("text/*", "text/csv")) }) {
-                    Text("Import transactions from CSV")
+                    Text(stringResource(R.string.ui_import_transactions_from_csv))
                 }
                 TextButton(onClick = { exportLauncher.launch("northstar-transactions.csv") }) {
-                    Text("Export transactions to CSV")
+                    Text(stringResource(R.string.ui_export_transactions_to_csv))
                 }
                 TextButton(onClick = { pdfLauncher.launch("northstar-monthly-summary.pdf") }) {
-                    Text("Export monthly report to PDF")
+                    Text(stringResource(R.string.ui_export_monthly_report_to_pdf))
                 }
                 TextButton(onClick = { showBackupPasswordDialog = true }) {
-                    Text("Create password-protected full backup")
+                    Text(stringResource(R.string.ui_create_password_protected_full_backup))
                 }
                 TextButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
-                    Text("Restore password-protected backup")
+                    Text(stringResource(R.string.ui_restore_password_protected_backup))
                 }
                 TextButton(onClick = { showUndoRestorePasswordDialog = true }) {
-                    Text("Undo last full restore")
+                    Text(stringResource(R.string.ui_undo_last_full_restore))
                 }
-                state.importMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                state.importSummary?.let {
+                    Text(
+                        stringResource(R.string.import_result, it.imported, it.skippedDuplicates, it.errors),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
             }
         }
-        item { Text("Reports", style = MaterialTheme.typography.titleLarge) }
+        item { Text(stringResource(R.string.ui_reports), style = MaterialTheme.typography.titleLarge) }
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     val net = state.summary.incomeThisMonth.minor - state.summary.expensesThisMonth.minor
-                    Text("Income versus expenses", fontWeight = FontWeight.Medium)
-                    Text("Income ${state.summary.incomeThisMonth.formatted()}")
-                    Text("Expenses ${state.summary.expensesThisMonth.formatted()}")
-                    Text("Net ${Money(net).formatted()}", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.ui_income_versus_expenses), fontWeight = FontWeight.Medium)
+                    Text(stringResource(R.string.report_income_value, state.summary.incomeThisMonth.formatted()))
+                    Text(stringResource(R.string.report_expenses_value, state.summary.expensesThisMonth.formatted()))
+                    Text(stringResource(R.string.report_net_value, Money(net).formatted()), fontWeight = FontWeight.SemiBold)
                 }
             }
         }
-        item { Text("Financial calendar", style = MaterialTheme.typography.titleLarge) }
-        if (state.recurring.isEmpty()) item { Text("No upcoming scheduled events.") }
+        item { Text(stringResource(R.string.ui_financial_calendar), style = MaterialTheme.typography.titleLarge) }
+        if (state.recurring.isEmpty()) item { Text(stringResource(R.string.ui_no_upcoming_scheduled_events)) }
         items(state.recurring.sortedBy { it.nextLocalDate }, key = { "calendar-${it.id}" }) { item ->
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
                 Text(item.nextLocalDate, Modifier.weight(0.35f))
@@ -632,44 +652,50 @@ internal fun MoreScreen(
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Recurring", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showRecurring = true }) { Text("Add") }
+                Text(stringResource(R.string.ui_recurring), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showRecurring = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.recurring.isEmpty()) item { Text("No recurring schedules yet.") }
+        if (state.recurring.isEmpty()) item { Text(stringResource(R.string.ui_no_recurring_schedules_yet)) }
         items(state.recurring, key = { it.id }) { item ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(item.name, fontWeight = FontWeight.Medium)
                     Text(
-                        "${item.amount.formatted()} • every ${item.intervalCount} ${item.frequency.lowercase()} period(s) • next ${item.nextLocalDate}",
+                        stringResource(
+                            R.string.recurrence_schedule_summary,
+                            item.amount.formatted(),
+                            item.intervalCount,
+                            item.frequency.lowercase(),
+                            item.nextLocalDate,
+                        ),
                     )
                     Row {
-                        TextButton(onClick = { onEditRecurring(item.id) }) { Text("Edit") }
-                        TextButton(onClick = { onPauseRecurring(item.id) }) { Text("Pause") }
-                        TextButton(onClick = { deleteRecurringId = item.id }) { Text("Delete") }
+                        TextButton(onClick = { onEditRecurring(item.id) }) { Text(stringResource(R.string.ui_edit)) }
+                        TextButton(onClick = { onPauseRecurring(item.id) }) { Text(stringResource(R.string.ui_pause)) }
+                        TextButton(onClick = { deleteRecurringId = item.id }) { Text(stringResource(R.string.ui_delete)) }
                     }
                 }
             }
         }
         if (state.pausedRecurring.isNotEmpty()) {
-            item { Text("Paused recurrences", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_paused_recurrences), style = MaterialTheme.typography.titleMedium) }
             items(state.pausedRecurring, key = { "paused-${it.id}" }) { item ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(item.name, fontWeight = FontWeight.Medium)
-                        Text("${item.amount.formatted()} • next ${item.nextLocalDate}")
+                        Text(stringResource(R.string.recurrence_next, item.amount.formatted(), item.nextLocalDate))
                         Row {
-                            TextButton(onClick = { onEditRecurring(item.id) }) { Text("Edit") }
-                            TextButton(onClick = { onResumeRecurring(item.id) }) { Text("Resume") }
-                            TextButton(onClick = { deleteRecurringId = item.id }) { Text("Delete") }
+                            TextButton(onClick = { onEditRecurring(item.id) }) { Text(stringResource(R.string.ui_edit)) }
+                            TextButton(onClick = { onResumeRecurring(item.id) }) { Text(stringResource(R.string.ui_resume)) }
+                            TextButton(onClick = { deleteRecurringId = item.id }) { Text(stringResource(R.string.ui_delete)) }
                         }
                     }
                 }
             }
         }
         if (state.deletedRecurring.isNotEmpty()) {
-            item { Text("Recently deleted recurrences", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_recently_deleted_recurrences), style = MaterialTheme.typography.titleMedium) }
             items(state.deletedRecurring, key = { "deleted-recurring-${it.id}" }) { item ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -678,27 +704,28 @@ internal fun MoreScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(item.name, fontWeight = FontWeight.Medium)
-                            Text("Restores paused for review", style = MaterialTheme.typography.bodySmall)
+                            Text(stringResource(R.string.ui_restores_paused_for_review), style = MaterialTheme.typography.bodySmall)
                         }
-                        TextButton(onClick = { onRestoreRecurring(item.id) }) { Text("Restore") }
+                        TextButton(onClick = { onRestoreRecurring(item.id) }) { Text(stringResource(R.string.ui_restore)) }
                     }
                 }
             }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Debts", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showDebt = true }) { Text("Add") }
+                Text(stringResource(R.string.ui_debts), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showDebt = true }) { Text(stringResource(R.string.ui_add)) }
             }
         }
-        if (state.debts.isEmpty()) item { Text("No debt profiles yet.") }
+        if (state.debts.isEmpty()) item { Text(stringResource(R.string.ui_no_debt_profiles_yet)) }
         items(state.debts, key = { it.id }) { debt ->
-            val accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name ?: "Account"
+            val accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name
+                ?: stringResource(R.string.fallback_account)
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text(accountName, fontWeight = FontWeight.Medium)
-                    Text("${debt.annualRateBasisPoints / 100.0}% APR • minimum ${debt.minimumPayment.formatted()} • due day ${debt.dueDay}")
-                    TextButton(onClick = { onEditDebt(debt.id) }) { Text("Edit") }
+                    Text(stringResource(R.string.debt_summary, debt.annualRateBasisPoints / 100.0, debt.minimumPayment.formatted(), debt.dueDay))
+                    TextButton(onClick = { onEditDebt(debt.id) }) { Text(stringResource(R.string.ui_edit)) }
                 }
             }
         }
@@ -709,24 +736,24 @@ internal fun MoreScreen(
                         Icon(Icons.Default.AccountBalance, contentDescription = null)
                         Column(Modifier.padding(start = 12.dp).weight(1f)) {
                             Text(account.name, fontWeight = FontWeight.Medium)
-                            Text("${account.type.name.lowercase()} • ${account.currencyCode}")
+                            Text(stringResource(R.string.account_type_currency, account.type.name.lowercase(), account.currencyCode))
                         }
                         Text(account.balance.formatted(), fontWeight = FontWeight.SemiBold)
                     }
                     Text(
-                        "Cleared: ${account.clearedBalance.formatted()}",
+                        stringResource(R.string.account_cleared_balance, account.clearedBalance.formatted()),
                         style = MaterialTheme.typography.bodySmall,
                     )
                     Row {
-                        TextButton(onClick = { reconcileAccountId = account.id }) { Text("Reconcile") }
-                        TextButton(onClick = { onEditAccount(account.id) }) { Text("Edit") }
-                        TextButton(onClick = { archiveAccountId = account.id }) { Text("Archive") }
+                        TextButton(onClick = { reconcileAccountId = account.id }) { Text(stringResource(R.string.ui_reconcile)) }
+                        TextButton(onClick = { onEditAccount(account.id) }) { Text(stringResource(R.string.ui_edit)) }
+                        TextButton(onClick = { archiveAccountId = account.id }) { Text(stringResource(R.string.ui_archive)) }
                     }
                 }
             }
         }
         if (state.archivedAccounts.isNotEmpty()) {
-            item { Text("Archived accounts", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_archived_accounts), style = MaterialTheme.typography.titleMedium) }
             items(state.archivedAccounts, key = { "archived-account-${it.id}" }) { account ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -736,53 +763,53 @@ internal fun MoreScreen(
                         Column(Modifier.weight(1f)) {
                             Text(account.name, fontWeight = FontWeight.Medium)
                             Text(
-                                "${account.type.name.lowercase()} • ${account.balance.formatted()}",
+                                stringResource(R.string.account_type_balance, account.type.name.lowercase(), account.balance.formatted()),
                                 style = MaterialTheme.typography.bodySmall,
                             )
                         }
-                        TextButton(onClick = { onRestoreAccount(account.id) }) { Text("Restore") }
+                        TextButton(onClick = { onRestoreAccount(account.id) }) { Text(stringResource(R.string.ui_restore)) }
                     }
                 }
             }
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Savings goals", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = { showGoal = true }) { Text("Add goal") }
+                Text(stringResource(R.string.ui_savings_goals), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                TextButton(onClick = { showGoal = true }) { Text(stringResource(R.string.ui_add_goal)) }
             }
         }
-        if (state.goals.isEmpty()) item { Text("No savings goals yet.") }
+        if (state.goals.isEmpty()) item { Text(stringResource(R.string.ui_no_savings_goals_yet)) }
         items(state.goals, key = { it.id }) { goal ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(goal.name, fontWeight = FontWeight.Medium)
-                    Text("${goal.saved.formatted()} of ${goal.target.formatted()}")
+                    Text(stringResource(R.string.goal_progress, goal.saved.formatted(), goal.target.formatted()))
                     Text(goal.status.lowercase(), style = MaterialTheme.typography.bodySmall)
                     Row {
-                        TextButton(onClick = { onEditGoal(goal.id) }) { Text("Edit") }
-                        TextButton(onClick = { contributionGoalId = goal.id }) { Text("Add contribution") }
+                        TextButton(onClick = { onEditGoal(goal.id) }) { Text(stringResource(R.string.ui_edit)) }
+                        TextButton(onClick = { contributionGoalId = goal.id }) { Text(stringResource(R.string.ui_add_contribution)) }
                     }
                 }
             }
         }
         if (state.goalContributions.isNotEmpty()) {
-            item { Text("Goal contributions", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_goal_contributions), style = MaterialTheme.typography.titleMedium) }
             items(state.goalContributions, key = { "contribution-${it.id}" }) { contribution ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(contribution.goalName, fontWeight = FontWeight.Medium)
-                        Text("${contribution.amount.formatted()} • ${contribution.localDate}")
+                        Text(stringResource(R.string.amount_date, contribution.amount.formatted(), contribution.localDate))
                         if (contribution.note.isNotBlank()) Text(contribution.note, style = MaterialTheme.typography.bodySmall)
                         Row {
-                            TextButton(onClick = { onEditGoalContribution(contribution.id) }) { Text("Edit") }
-                            TextButton(onClick = { deleteContributionId = contribution.id }) { Text("Delete") }
+                            TextButton(onClick = { onEditGoalContribution(contribution.id) }) { Text(stringResource(R.string.ui_edit)) }
+                            TextButton(onClick = { deleteContributionId = contribution.id }) { Text(stringResource(R.string.ui_delete)) }
                         }
                     }
                 }
             }
         }
         if (state.deletedGoalContributions.isNotEmpty()) {
-            item { Text("Recently deleted contributions", style = MaterialTheme.typography.titleMedium) }
+            item { Text(stringResource(R.string.ui_recently_deleted_contributions), style = MaterialTheme.typography.titleMedium) }
             items(state.deletedGoalContributions, key = { "deleted-contribution-${it.id}" }) { contribution ->
                 Card(Modifier.fillMaxWidth()) {
                     Row(
@@ -791,9 +818,9 @@ internal fun MoreScreen(
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(contribution.goalName, fontWeight = FontWeight.Medium)
-                            Text("${contribution.amount.formatted()} • ${contribution.localDate}")
+                            Text(stringResource(R.string.amount_date, contribution.amount.formatted(), contribution.localDate))
                         }
-                        TextButton(onClick = { onRestoreGoalContribution(contribution.id) }) { Text("Restore") }
+                        TextButton(onClick = { onRestoreGoalContribution(contribution.id) }) { Text(stringResource(R.string.ui_restore)) }
                     }
                 }
             }
@@ -801,8 +828,8 @@ internal fun MoreScreen(
     }
     if (showBackupPasswordDialog) {
         BackupPasswordDialog(
-            title = "Protect backup",
-            confirmLabel = "Choose file",
+            title = stringResource(R.string.backup_protect_title),
+            confirmLabel = stringResource(R.string.backup_choose_file),
             requireConfirmation = true,
             onDismiss = { showBackupPasswordDialog = false },
             onConfirm = { password ->
@@ -814,8 +841,8 @@ internal fun MoreScreen(
     }
     if (showRestorePasswordDialog) {
         BackupPasswordDialog(
-            title = "Unlock backup",
-            confirmLabel = "Unlock",
+            title = stringResource(R.string.backup_unlock_title),
+            confirmLabel = stringResource(R.string.action_unlock),
             requireConfirmation = false,
             onDismiss = {
                 showRestorePasswordDialog = false
@@ -835,15 +862,12 @@ internal fun MoreScreen(
                 pendingRestoreDocument = null
                 showRestoreConfirmation = false
             },
-            title = { Text("Replace all financial data?") },
+            title = { Text(stringResource(R.string.ui_replace_all_financial_data)) },
             text = {
-                Text(
-                    "All current accounts, transactions, budgets, goals and schedules will be replaced. " +
-                        "An encrypted recovery copy will be saved on this device before anything changes.",
-                )
+                Text(stringResource(R.string.backup_replace_warning))
             },
             confirmButton = {
-                TextButton(onClick = { performFullRestore() }) { Text("Replace data") }
+                TextButton(onClick = { performFullRestore() }) { Text(stringResource(R.string.ui_replace_data)) }
             },
             dismissButton = {
                 TextButton(
@@ -853,14 +877,14 @@ internal fun MoreScreen(
                         pendingRestoreDocument = null
                         showRestoreConfirmation = false
                     },
-                ) { Text("Cancel") }
+                ) { Text(stringResource(R.string.ui_cancel)) }
             },
         )
     }
     if (showUndoRestorePasswordDialog) {
         BackupPasswordDialog(
-            title = "Undo last restore",
-            confirmLabel = "Undo",
+            title = stringResource(R.string.backup_undo_title),
+            confirmLabel = stringResource(R.string.action_undo),
             requireConfirmation = false,
             onDismiss = { showUndoRestorePasswordDialog = false },
             onConfirm = { password ->
@@ -926,17 +950,17 @@ internal fun MoreScreen(
         if (category != null) {
             AlertDialog(
                 onDismissRequest = { archiveCategoryId = null },
-                title = { Text("Archive ${category.name}?") },
-                text = { Text("Existing transactions keep their category. You can restore it from Archived categories.") },
+                title = { Text(stringResource(R.string.confirm_archive_named, category.name)) },
+                text = { Text(stringResource(R.string.ui_existing_transactions_keep_their_category_you_can_re)) },
                 confirmButton = {
                     TextButton(
                         onClick = {
                             onArchiveCategory(id)
                             archiveCategoryId = null
                         },
-                    ) { Text("Archive") }
+                    ) { Text(stringResource(R.string.ui_archive)) }
                 },
-                dismissButton = { TextButton(onClick = { archiveCategoryId = null }) { Text("Cancel") } },
+                dismissButton = { TextButton(onClick = { archiveCategoryId = null }) { Text(stringResource(R.string.ui_cancel)) } },
             )
         }
     }
@@ -959,11 +983,9 @@ internal fun MoreScreen(
         if (account != null) {
             AlertDialog(
                 onDismissRequest = { archiveAccountId = null },
-                title = { Text("Archive ${account.name}?") },
+                title = { Text(stringResource(R.string.confirm_archive_named, account.name)) },
                 text = {
-                    Text(
-                        "The account and its history remain stored. It will stop contributing to active totals, forecasts, recurrences and debts until restored.",
-                    )
+                    Text(stringResource(R.string.archive_account_explanation))
                 },
                 confirmButton = {
                     TextButton(
@@ -971,9 +993,9 @@ internal fun MoreScreen(
                             onArchiveAccount(id)
                             archiveAccountId = null
                         },
-                    ) { Text("Archive") }
+                    ) { Text(stringResource(R.string.ui_archive)) }
                 },
-                dismissButton = { TextButton(onClick = { archiveAccountId = null }) { Text("Cancel") } },
+                dismissButton = { TextButton(onClick = { archiveAccountId = null }) { Text(stringResource(R.string.ui_cancel)) } },
             )
         }
     }
@@ -982,9 +1004,9 @@ internal fun MoreScreen(
         if (item != null) {
             AlertDialog(
                 onDismissRequest = { deleteRecurringId = null },
-                title = { Text("Delete ${item.name}?") },
+                title = { Text(stringResource(R.string.confirm_delete_named, item.name)) },
                 text = {
-                    Text("It will stop affecting forecasts. You can restore it later from Recently deleted recurrences.")
+                    Text(stringResource(R.string.ui_it_will_stop_affecting_forecasts_you_can_restore_it))
                 },
                 confirmButton = {
                     TextButton(
@@ -992,9 +1014,9 @@ internal fun MoreScreen(
                             onDeleteRecurring(id)
                             deleteRecurringId = null
                         },
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.ui_delete)) }
                 },
-                dismissButton = { TextButton(onClick = { deleteRecurringId = null }) { Text("Cancel") } },
+                dismissButton = { TextButton(onClick = { deleteRecurringId = null }) { Text(stringResource(R.string.ui_cancel)) } },
             )
         }
     }
@@ -1016,9 +1038,9 @@ internal fun MoreScreen(
         if (contribution != null) {
             AlertDialog(
                 onDismissRequest = { deleteContributionId = null },
-                title = { Text("Delete contribution?") },
+                title = { Text(stringResource(R.string.ui_delete_contribution)) },
                 text = {
-                    Text("${contribution.amount.formatted()} will stop counting toward ${contribution.goalName}. You can restore it later.")
+                    Text(stringResource(R.string.confirm_delete_contribution, contribution.amount.formatted(), contribution.goalName))
                 },
                 confirmButton = {
                     TextButton(
@@ -1026,9 +1048,9 @@ internal fun MoreScreen(
                             onDeleteGoalContribution(id)
                             deleteContributionId = null
                         },
-                    ) { Text("Delete") }
+                    ) { Text(stringResource(R.string.ui_delete)) }
                 },
-                dismissButton = { TextButton(onClick = { deleteContributionId = null }) { Text("Cancel") } },
+                dismissButton = { TextButton(onClick = { deleteContributionId = null }) { Text(stringResource(R.string.ui_cancel)) } },
             )
         }
     }
@@ -1058,4 +1080,3 @@ internal fun MoreScreen(
         }
     }
 }
-

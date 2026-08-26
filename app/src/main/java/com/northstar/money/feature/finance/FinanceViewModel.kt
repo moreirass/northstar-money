@@ -1,5 +1,6 @@
 package com.northstar.money.feature.finance
 
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -34,6 +35,7 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import com.northstar.money.R
 
 data class FinanceUiState(
     val accounts: List<Account> = emptyList(),
@@ -52,11 +54,13 @@ data class FinanceUiState(
     val deletedRecurring: List<RecurringItem> = emptyList(),
     val debts: List<DebtProfile> = emptyList(),
     val forecast: CashFlowForecast = CashFlowForecast(Money(0), Money(0), LocalDate.now().toString(), 0),
-    val importMessage: String? = null,
+    val importSummary: CsvImportSummary? = null,
     val settings: AppSettings = AppSettings(),
 )
 
-data class FinanceUiEvent(val message: String)
+data class FinanceUiEvent(@StringRes val messageRes: Int)
+
+data class CsvImportSummary(val imported: Int, val skippedDuplicates: Int, val errors: Int)
 
 private data class RecurringUiState(
     val active: List<RecurringItem>,
@@ -74,7 +78,7 @@ class FinanceViewModel(
     private val repository: FinanceRepository,
     private val preferences: UserPreferences,
 ) : ViewModel() {
-    private val importMessage = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val importSummary = kotlinx.coroutines.flow.MutableStateFlow<CsvImportSummary?>(null)
     private val eventChannel = Channel<FinanceUiEvent>(Channel.BUFFERED)
     val events: Flow<FinanceUiEvent> = eventChannel.receiveAsFlow()
     private val coreState = combine(
@@ -126,22 +130,22 @@ class FinanceViewModel(
         planningState,
         recurringState,
         repository.observeDebts(),
-        importMessage,
+        importSummary,
         preferences.settings,
-    ) { state, recurringState, debts, message, settings ->
+    ) { state, recurringState, debts, summary, settings ->
         state.copy(
             recurring = recurringState.active,
             pausedRecurring = recurringState.paused,
             deletedRecurring = recurringState.deleted,
             debts = debts,
             forecast = calculateForecast(state.summary.balance, recurringState.active),
-            importMessage = message,
+            importSummary = summary,
             settings = settings,
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FinanceUiState())
 
     init {
-        launchOperation("prepare your financial data") { repository.seedIfEmpty() }
+        launchOperation { repository.seedIfEmpty() }
     }
 
     fun addTransaction(
@@ -151,7 +155,7 @@ class FinanceViewModel(
         categoryId: String,
         payee: String,
     ) {
-        launchOperation("save the transaction") {
+        launchOperation {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Transaction account is missing or archived"
             }.currencyCode
@@ -172,17 +176,17 @@ class FinanceViewModel(
     suspend fun getTransactionForEdit(id: String): EditableTransaction = repository.getTransactionForEdit(id)
 
     fun updateTransaction(transaction: EditableTransaction) {
-        launchOperation("update the transaction") { repository.updateTransaction(transaction) }
+        launchOperation { repository.updateTransaction(transaction) }
     }
 
     fun setTransactionCleared(id: String, cleared: Boolean) {
-        launchOperation(if (cleared) "mark the transaction cleared" else "mark the transaction uncleared") {
+        launchOperation {
             repository.setTransactionCleared(id, cleared)
         }
     }
 
     fun createAccount(name: String, type: AccountType, openingBalance: String, currencyCode: String) {
-        launchOperation("create the account") {
+        launchOperation {
             repository.createAccount(
                 name,
                 type,
@@ -194,15 +198,15 @@ class FinanceViewModel(
     suspend fun getAccountForEdit(id: String): EditableAccount = repository.getAccountForEdit(id)
 
     fun updateAccount(account: EditableAccount) {
-        launchOperation("update the account") { repository.updateAccount(account) }
+        launchOperation { repository.updateAccount(account) }
     }
 
     fun archiveAccount(id: String) {
-        launchOperation("archive the account") { repository.archiveAccount(id) }
+        launchOperation { repository.archiveAccount(id) }
     }
 
     fun restoreAccount(id: String) {
-        launchOperation("restore the account") { repository.restoreAccount(id) }
+        launchOperation { repository.restoreAccount(id) }
     }
 
     fun transfer(
@@ -212,7 +216,7 @@ class FinanceViewModel(
         destinationId: String,
         note: String,
     ) {
-        launchOperation("save the transfer") {
+        launchOperation {
             val sourceCurrency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == sourceId }) {
                 "Transfer source account is missing or archived"
             }.currencyCode
@@ -235,7 +239,7 @@ class FinanceViewModel(
         statementBalance: String,
         createAdjustment: Boolean,
     ) {
-        launchOperation("reconcile the account") {
+        launchOperation {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Reconciliation account is missing or archived"
             }.currencyCode
@@ -249,11 +253,11 @@ class FinanceViewModel(
     }
 
     fun setBudget(categoryId: String, planned: String) {
-        launchOperation("save the budget") { repository.setBudget(categoryId, Money.parseMajor(planned)) }
+        launchOperation { repository.setBudget(categoryId, Money.parseMajor(planned)) }
     }
 
     fun createGoal(name: String, target: String, saved: String, targetDate: String?) {
-        launchOperation("create the goal") {
+        launchOperation {
             repository.createGoal(name, Money.parseMajor(target), Money.parseMajor(saved.ifBlank { "0" }), targetDate)
         }
     }
@@ -261,11 +265,11 @@ class FinanceViewModel(
     suspend fun getGoalForEdit(id: String): EditableGoal = repository.getGoalForEdit(id)
 
     fun updateGoal(goal: EditableGoal) {
-        launchOperation("update the savings goal") { repository.updateGoal(goal) }
+        launchOperation { repository.updateGoal(goal) }
     }
 
     fun addGoalContribution(goalId: String, amount: String, localDate: String, note: String) {
-        launchOperation("add the goal contribution") {
+        launchOperation {
             val currency = uiState.value.goals.firstOrNull { it.id == goalId }?.target?.currencyCode ?: "EUR"
             repository.addGoalContribution(goalId, Money.parseMajor(amount, currency), localDate, note)
         }
@@ -275,22 +279,22 @@ class FinanceViewModel(
         repository.getGoalContributionForEdit(id)
 
     fun updateGoalContribution(contribution: GoalContribution) {
-        launchOperation("update the goal contribution") { repository.updateGoalContribution(contribution) }
+        launchOperation { repository.updateGoalContribution(contribution) }
     }
 
     fun deleteGoalContribution(id: String) {
-        launchOperation("delete the goal contribution") { repository.deleteGoalContribution(id) }
+        launchOperation { repository.deleteGoalContribution(id) }
     }
 
     fun restoreGoalContribution(id: String) {
-        launchOperation("restore the goal contribution") { repository.restoreGoalContribution(id) }
+        launchOperation { repository.restoreGoalContribution(id) }
     }
 
     fun createRecurring(
         name: String, kind: TransactionKind, amount: String, accountId: String,
         categoryId: String?, frequency: String, nextDate: String,
     ) {
-        launchOperation("create the recurring item") {
+        launchOperation {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Recurring account is missing or archived"
             }.currencyCode
@@ -309,27 +313,27 @@ class FinanceViewModel(
     suspend fun getRecurringForEdit(id: String): EditableRecurring = repository.getRecurringForEdit(id)
 
     fun updateRecurring(recurring: EditableRecurring) {
-        launchOperation("update the recurring item") { repository.updateRecurring(recurring) }
+        launchOperation { repository.updateRecurring(recurring) }
     }
 
     fun pauseRecurring(id: String) {
-        launchOperation("pause the recurring item") { repository.pauseRecurring(id) }
+        launchOperation { repository.pauseRecurring(id) }
     }
 
     fun resumeRecurring(id: String) {
-        launchOperation("resume the recurring item") { repository.resumeRecurring(id) }
+        launchOperation { repository.resumeRecurring(id) }
     }
 
     fun deleteRecurring(id: String) {
-        launchOperation("delete the recurring item") { repository.deleteRecurring(id) }
+        launchOperation { repository.deleteRecurring(id) }
     }
 
     fun restoreRecurring(id: String) {
-        launchOperation("restore the recurring item") { repository.restoreRecurring(id) }
+        launchOperation { repository.restoreRecurring(id) }
     }
 
     fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String) {
-        launchOperation("save the debt profile") {
+        launchOperation {
             val basisPoints = ratePercent.toBigDecimal().movePointRight(2).intValueExact()
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Debt account is missing or archived"
@@ -341,47 +345,46 @@ class FinanceViewModel(
     suspend fun getDebtForEdit(id: String): DebtProfile = repository.getDebtForEdit(id)
 
     fun updateDebt(debt: DebtProfile) {
-        launchOperation("update the debt profile") { repository.updateDebt(debt) }
+        launchOperation { repository.updateDebt(debt) }
     }
 
     fun importCsv(csv: String) {
-        launchOperation("import the CSV file") {
+        launchOperation {
             val result = repository.importCsv(csv)
-            importMessage.value =
-                "Imported ${result.imported}; skipped ${result.skippedDuplicates} duplicates; ${result.errors} errors"
+            importSummary.value = CsvImportSummary(result.imported, result.skippedDuplicates, result.errors)
         }
     }
 
     fun setAppLock(enabled: Boolean) {
-        launchOperation("update app lock") { preferences.setAppLock(enabled) }
+        launchOperation { preferences.setAppLock(enabled) }
     }
 
     fun setReminders(enabled: Boolean) {
-        launchOperation("update reminders") { preferences.setReminders(enabled) }
+        launchOperation { preferences.setReminders(enabled) }
     }
 
     fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
-        launchOperation("create the category") { repository.createCategory(name, kind) }
+        launchOperation { repository.createCategory(name, kind) }
     }
 
     fun renameCategory(id: String, name: String) {
-        launchOperation("rename the category") { repository.renameCategory(id, name) }
+        launchOperation { repository.renameCategory(id, name) }
     }
 
     fun archiveCategory(id: String) {
-        launchOperation("archive the category") { repository.archiveCategory(id) }
+        launchOperation { repository.archiveCategory(id) }
     }
 
     fun restoreCategory(id: String) {
-        launchOperation("restore the category") { repository.restoreCategory(id) }
+        launchOperation { repository.restoreCategory(id) }
     }
 
     fun mergeCategory(sourceId: String, targetId: String) {
-        launchOperation("merge the category") { repository.mergeCategory(sourceId, targetId) }
+        launchOperation { repository.mergeCategory(sourceId, targetId) }
     }
 
     fun undoCategoryMerge(id: String) {
-        launchOperation("undo the category merge") { repository.undoCategoryMerge(id) }
+        launchOperation { repository.undoCategoryMerge(id) }
     }
 
     suspend fun createFullBackup(): String = repository.createFullBackup()
@@ -392,9 +395,15 @@ class FinanceViewModel(
     suspend fun undoLastFullRestore(recoveryPassword: CharArray) =
         repository.undoLastFullRestore(recoveryPassword)
 
-    private fun launchOperation(label: String, operation: suspend () -> Unit) {
+    private fun launchOperation(operation: suspend () -> Unit) {
         viewModelScope.launch {
-            reportOperationFailure(label, { eventChannel.send(FinanceUiEvent(it)) }, operation)
+            try {
+                operation()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Throwable) {
+                eventChannel.send(FinanceUiEvent(R.string.operation_failed_generic))
+            }
         }
     }
 

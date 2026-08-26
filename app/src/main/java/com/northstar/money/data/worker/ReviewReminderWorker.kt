@@ -1,5 +1,6 @@
 package com.northstar.money.data.worker
 
+import com.northstar.money.R
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -25,8 +26,8 @@ class ReviewReminderWorker(context: Context, params: WorkerParameters) : Corouti
             ) {
                 val notification = NotificationCompat.Builder(applicationContext, "upcoming")
                     .setSmallIcon(com.northstar.money.R.drawable.ic_launcher_foreground)
-                    .setContentTitle("Review your financial plan")
-                    .setContentText("Check upcoming bills, budgets, and your 30-day forecast.")
+                    .setContentTitle(applicationContext.getString(R.string.notification_review_title))
+                    .setContentText(applicationContext.getString(R.string.notification_review_text))
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                     .setAutoCancel(true)
                     .build()

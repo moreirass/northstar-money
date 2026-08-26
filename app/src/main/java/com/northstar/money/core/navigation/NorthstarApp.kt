@@ -1,5 +1,8 @@
 package com.northstar.money.core.navigation
 
+import android.annotation.SuppressLint
+import com.northstar.money.R
+import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -62,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.text.font.FontWeight
@@ -97,11 +101,11 @@ import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
 import com.northstar.money.data.backup.SecureBackupCodec
 
-internal enum class Destination(val route: String, val label: String, val icon: ImageVector) {
-    Home("home", "Home", Icons.Default.Home),
-    Plan("plan", "Plan", Icons.Default.Assessment),
-    Activity("activity", "Activity", Icons.AutoMirrored.Filled.ReceiptLong),
-    More("more", "More", Icons.Default.MoreHoriz),
+internal enum class Destination(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
+    Home("home", R.string.nav_home, Icons.Default.Home),
+    Plan("plan", R.string.nav_plan, Icons.Default.Assessment),
+    Activity("activity", R.string.nav_activity, Icons.AutoMirrored.Filled.ReceiptLong),
+    More("more", R.string.nav_more, Icons.Default.MoreHoriz),
 }
 
 internal enum class WindowWidthClass { COMPACT, MEDIUM, EXPANDED }
@@ -112,9 +116,11 @@ internal fun classifyWindowWidth(widthDp: Int): WindowWidthClass = when {
     else -> WindowWidthClass.EXPANDED
 }
 @OptIn(ExperimentalMaterial3Api::class)
+@SuppressLint("LocalContextGetResourceValueCall")
 @Composable
 fun NorthstarApp() {
-    val application = LocalContext.current.applicationContext as NorthstarApplication
+    val context = LocalContext.current
+    val application = context.applicationContext as NorthstarApplication
     val financeViewModel: FinanceViewModel = viewModel(
         factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
     )
@@ -135,7 +141,7 @@ fun NorthstarApp() {
 
     LaunchedEffect(financeViewModel, snackbarHostState) {
         financeViewModel.events.collect { event ->
-            snackbarHostState.showSnackbar(event.message)
+            snackbarHostState.showSnackbar(context.getString(event.messageRes))
         }
     }
 
@@ -143,11 +149,11 @@ fun NorthstarApp() {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
     val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
-        topBar = { TopAppBar(title = { Text(destination.label) }) },
+        topBar = { TopAppBar(title = { Text(stringResource(destination.labelRes)) }) },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAdd = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add transaction")
+                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_transaction))
             }
         },
         bottomBar = {
@@ -163,7 +169,7 @@ fun NorthstarApp() {
                             }
                         },
                         icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(item.label) },
+                        label = { Text(stringResource(item.labelRes)) },
                     )
                 }
             }
@@ -183,7 +189,7 @@ fun NorthstarApp() {
                             }
                         },
                         icon = { Icon(item.icon, contentDescription = null) },
-                        label = { Text(item.label) },
+                        label = { Text(stringResource(item.labelRes)) },
                     )
                 }
             }
@@ -208,7 +214,7 @@ fun NorthstarApp() {
                             .onSuccess { editingTransaction = it }
                             .onFailure {
                                 snackbarHostState.showSnackbar(
-                                    it.message ?: "Could not open the transaction for editing.",
+                                    it.message ?: context.getString(R.string.snackbar_could_not_open_transaction),
                                 )
                             }
                     }
@@ -221,8 +227,8 @@ fun NorthstarApp() {
                                 delete = { financeViewModel.deleteTransaction(id) },
                                 offerUndo = {
                                     snackbarHostState.showSnackbar(
-                                        message = "Transaction moved to Recently deleted",
-                                        actionLabel = "Undo",
+                                        message = context.getString(R.string.snackbar_transaction_deleted),
+                                        actionLabel = context.getString(R.string.action_undo),
                                         duration = SnackbarDuration.Long,
                                     ) == SnackbarResult.ActionPerformed
                                 },
@@ -231,11 +237,11 @@ fun NorthstarApp() {
                         }.onSuccess { outcome ->
                             if (outcome == DeleteUndoOutcome.RESTORE_FAILED) {
                                 snackbarHostState.showSnackbar(
-                                    "Could not restore the transaction. It remains in Recently deleted.",
+                                    context.getString(R.string.snackbar_restore_failed_deleted),
                                 )
                             }
                         }.onFailure {
-                            snackbarHostState.showSnackbar("Could not delete the transaction. Nothing was changed.")
+                            snackbarHostState.showSnackbar(context.getString(R.string.snackbar_delete_failed))
                         }
                     }
                 },
@@ -250,7 +256,7 @@ fun NorthstarApp() {
                             .onSuccess { editingAccount = it }
                             .onFailure {
                                 snackbarHostState.showSnackbar(
-                                    it.message ?: "Could not open the account for editing.",
+                                    it.message ?: context.getString(R.string.snackbar_could_not_open_account),
                                 )
                             }
                     }
@@ -263,7 +269,7 @@ fun NorthstarApp() {
                     scope.launch {
                         runSuspendCatching { financeViewModel.getGoalForEdit(id) }
                             .onSuccess { editingGoal = it }
-                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the savings goal.") }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: context.getString(R.string.snackbar_could_not_edit_goal)) }
                     }
                 },
                 onAddGoalContribution = financeViewModel::addGoalContribution,
@@ -271,7 +277,7 @@ fun NorthstarApp() {
                     scope.launch {
                         runSuspendCatching { financeViewModel.getGoalContributionForEdit(id) }
                             .onSuccess { editingGoalContribution = it }
-                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the contribution.") }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: context.getString(R.string.snackbar_could_not_edit_contribution)) }
                     }
                 },
                 onDeleteGoalContribution = financeViewModel::deleteGoalContribution,
@@ -283,7 +289,7 @@ fun NorthstarApp() {
                             .onSuccess { editingRecurring = it }
                             .onFailure {
                                 snackbarHostState.showSnackbar(
-                                    it.message ?: "Could not open the recurring item for editing.",
+                                    it.message ?: context.getString(R.string.snackbar_could_not_open_recurrence),
                                 )
                             }
                     }
@@ -297,7 +303,7 @@ fun NorthstarApp() {
                     scope.launch {
                         runSuspendCatching { financeViewModel.getDebtForEdit(id) }
                             .onSuccess { editingDebt = it }
-                            .onFailure { snackbarHostState.showSnackbar(it.message ?: "Could not edit the debt profile.") }
+                            .onFailure { snackbarHostState.showSnackbar(it.message ?: context.getString(R.string.snackbar_could_not_edit_debt)) }
                     }
                 },
                 onImportCsv = financeViewModel::importCsv,
@@ -315,8 +321,8 @@ fun NorthstarApp() {
                 onRecoverTransaction = { id ->
                     scope.launch {
                         runSuspendCatching { financeViewModel.restoreTransaction(id) }
-                            .onSuccess { snackbarHostState.showSnackbar("Transaction restored") }
-                            .onFailure { snackbarHostState.showSnackbar("Could not restore the transaction. Please try again.") }
+                            .onSuccess { snackbarHostState.showSnackbar(context.getString(R.string.snackbar_transaction_restored)) }
+                            .onFailure { snackbarHostState.showSnackbar(context.getString(R.string.snackbar_restore_transaction_failed)) }
                     }
                 },
             ) } }
@@ -373,7 +379,7 @@ fun NorthstarApp() {
 
     editingGoalContribution?.let { contribution ->
         GoalContributionDialog(
-            title = "Edit contribution",
+            title = stringResource(R.string.dialog_edit_contribution),
             contribution = contribution,
             goals = state.goals,
             onDismiss = { editingGoalContribution = null },
@@ -387,7 +393,8 @@ fun NorthstarApp() {
     editingDebt?.let { debt ->
         EditDebtDialog(
             debt = debt,
-            accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name ?: "Account",
+            accountName = state.accounts.firstOrNull { it.id == debt.accountId }?.name
+                ?: stringResource(R.string.fallback_account),
             onDismiss = { editingDebt = null },
             onSave = {
                 financeViewModel.updateDebt(it)

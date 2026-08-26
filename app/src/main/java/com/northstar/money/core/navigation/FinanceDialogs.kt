@@ -1,5 +1,6 @@
 package com.northstar.money.core.navigation
 
+import com.northstar.money.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,6 +55,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -107,11 +109,11 @@ internal fun BackupPasswordDialog(
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Use 12–128 characters. Losing this password makes the backup unrecoverable.")
+                Text(stringResource(R.string.ui_use_12_128_characters_losing_this_password_makes_the))
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.ui_password)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                 )
@@ -119,7 +121,7 @@ internal fun BackupPasswordDialog(
                     OutlinedTextField(
                         value = confirmation,
                         onValueChange = { confirmation = it },
-                        label = { Text("Confirm password") },
+                        label = { Text(stringResource(R.string.ui_confirm_password)) },
                         singleLine = true,
                         visualTransformation = PasswordVisualTransformation(),
                         isError = confirmation.isNotEmpty() && !passwordsMatch,
@@ -133,7 +135,7 @@ internal fun BackupPasswordDialog(
                 enabled = lengthIsValid && passwordsMatch,
             ) { Text(confirmLabel) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -143,10 +145,10 @@ internal fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind
     var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New category") },
+        title = { Text(stringResource(R.string.ui_new_category)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Category name") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_category_name)) }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     CategoryKind.entries.forEach { option ->
                         FilterChip(kind == option, { kind = option }, { Text(option.name.lowercase()) })
@@ -155,9 +157,9 @@ internal fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text("Create") }
+            TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.ui_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -170,19 +172,19 @@ internal fun RenameCategoryDialog(
     var name by remember(currentName) { mutableStateOf(currentName) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Rename category") },
+        title = { Text(stringResource(R.string.ui_rename_category)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Category name") },
+                label = { Text(stringResource(R.string.ui_category_name)) },
                 singleLine = true,
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text("Rename") }
+            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.ui_rename)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -196,15 +198,13 @@ internal fun MergeCategoryDialog(
     var targetId by remember(targets) { mutableStateOf(targets.firstOrNull()?.id) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Merge $sourceName") },
+        title = { Text(stringResource(R.string.dialog_merge_named, sourceName)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text(
-                    "Past activity will appear under the selected category. $sourceName will be archived and the merge can be undone.",
-                )
+                Text(stringResource(R.string.merge_category_explanation, sourceName))
                 targets.forEach { target ->
                     FilterChip(
                         selected = target.id == targetId,
@@ -218,9 +218,9 @@ internal fun MergeCategoryDialog(
             TextButton(
                 onClick = { targetId?.let(onMerge) },
                 enabled = targetId != null,
-            ) { Text("Merge") }
+            ) { Text(stringResource(R.string.ui_merge)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -266,7 +266,7 @@ internal fun EditTransactionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit ${transaction.kind.name.lowercase()}") },
+        title = { Text(stringResource(R.string.dialog_edit_kind, transaction.kind.name.lowercase())) },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
@@ -275,7 +275,7 @@ internal fun EditTransactionDialog(
                 OutlinedTextField(
                     amount,
                     { amount = it },
-                    label = { Text("Amount (${transaction.amount.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_amount_currency, transaction.amount.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
@@ -285,15 +285,15 @@ internal fun EditTransactionDialog(
                     OutlinedTextField(
                         destinationAmount,
                         { destinationAmount = it },
-                        label = { Text("Received amount (${initialDestinationAmount.currencyCode})") },
+                        label = { Text(stringResource(R.string.field_received_amount_currency, initialDestinationAmount.currencyCode)) },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         singleLine = true,
                     )
                 }
-                OutlinedTextField(localDate, { localDate = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
-                OutlinedTextField(payee, { payee = it }, label = { Text("Payee") }, singleLine = true)
-                OutlinedTextField(note, { note = it }, label = { Text("Note") })
-                Text(if (transaction.kind == TransactionKind.TRANSFER) "From account" else "Account")
+                OutlinedTextField(localDate, { localDate = it }, label = { Text(stringResource(R.string.ui_date_yyyy_mm_dd)) }, singleLine = true)
+                OutlinedTextField(payee, { payee = it }, label = { Text(stringResource(R.string.ui_payee)) }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text(stringResource(R.string.ui_note)) })
+                Text(stringResource(if (transaction.kind == TransactionKind.TRANSFER) R.string.field_from_account else R.string.ui_account))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     accounts.forEach { account ->
                         FilterChip(
@@ -304,7 +304,7 @@ internal fun EditTransactionDialog(
                     }
                 }
                 if (transaction.kind == TransactionKind.TRANSFER) {
-                    Text("To account")
+                    Text(stringResource(R.string.ui_to_account))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         destinationAccounts.filter { it.id != accountId }.forEach { account ->
                             FilterChip(
@@ -315,7 +315,7 @@ internal fun EditTransactionDialog(
                         }
                     }
                 } else {
-                    Text("Category")
+                    Text(stringResource(R.string.ui_category))
                     Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         categories.forEach { category ->
                             FilterChip(
@@ -347,9 +347,9 @@ internal fun EditTransactionDialog(
                     )
                 },
                 enabled = valid,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -383,13 +383,13 @@ internal fun EditRecurringDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit recurrence") },
+        title = { Text(stringResource(R.string.ui_edit_recurrence)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_name)) }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf(TransactionKind.EXPENSE, TransactionKind.INCOME).forEach { option ->
                         FilterChip(
@@ -399,46 +399,53 @@ internal fun EditRecurringDialog(
                                 val targetKind = if (option == TransactionKind.INCOME) CategoryKind.INCOME else CategoryKind.EXPENSE
                                 categoryId = state.categories.firstOrNull { it.kind == targetKind }?.id
                             },
-                            label = { Text(option.name.lowercase()) },
+                            label = {
+                                Text(stringResource(if (option == TransactionKind.INCOME) R.string.ui_income else R.string.ui_expense))
+                            },
                         )
                     }
                 }
                 OutlinedTextField(
                     amount,
                     { amount = it },
-                    label = { Text("Amount (${recurring.amount.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_amount_currency, recurring.amount.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                Text("Account")
+                Text(stringResource(R.string.ui_account))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     accounts.forEach { account ->
                         FilterChip(account.id == accountId, { accountId = account.id }, { Text(account.name) })
                     }
                 }
-                Text("Category")
+                Text(stringResource(R.string.ui_category))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     categories.forEach { category ->
                         FilterChip(category.id == categoryId, { categoryId = category.id }, { Text(category.name) })
                     }
                 }
-                Text("Frequency")
+                Text(stringResource(R.string.ui_frequency))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("WEEKLY", "MONTHLY", "YEARLY").forEach { option ->
-                        FilterChip(frequency == option, { frequency = option }, { Text(option.lowercase()) })
+                        val labelRes = when (option) {
+                            "WEEKLY" -> R.string.frequency_weekly
+                            "YEARLY" -> R.string.frequency_yearly
+                            else -> R.string.frequency_monthly
+                        }
+                        FilterChip(frequency == option, { frequency = option }, { Text(stringResource(labelRes)) })
                     }
                 }
                 OutlinedTextField(
                     intervalCount,
                     { intervalCount = it },
-                    label = { Text("Every N periods") },
+                    label = { Text(stringResource(R.string.ui_every_n_periods)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     nextDate,
                     { nextDate = it },
-                    label = { Text("Next date (YYYY-MM-DD)") },
+                    label = { Text(stringResource(R.string.ui_next_date_yyyy_mm_dd)) },
                     singleLine = true,
                 )
             }
@@ -460,9 +467,9 @@ internal fun EditRecurringDialog(
                     )
                 },
                 enabled = valid,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -488,31 +495,36 @@ internal fun RecurringDialog(
     }.getOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Recurring transaction") },
+        title = { Text(stringResource(R.string.ui_recurring_transaction)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_name)) }, singleLine = true)
                 OutlinedTextField(
                     amount,
                     { amount = it },
-                    label = { Text("Amount (${account?.currencyCode ?: "—"})") },
+                    label = { Text(stringResource(R.string.field_amount_currency, account?.currencyCode ?: "—")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                OutlinedTextField(date, { date = it }, label = { Text("Next date (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(date, { date = it }, label = { Text(stringResource(R.string.ui_next_date_yyyy_mm_dd)) }, singleLine = true)
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text("Expense") })
-                    FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text("Income") })
+                    FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text(stringResource(R.string.ui_expense)) })
+                    FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text(stringResource(R.string.ui_income)) })
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("WEEKLY", "MONTHLY", "YEARLY").forEach {
-                        FilterChip(frequency == it, { frequency = it }, { Text(it.lowercase()) })
+                        val labelRes = when (it) {
+                            "WEEKLY" -> R.string.frequency_weekly
+                            "YEARLY" -> R.string.frequency_yearly
+                            else -> R.string.frequency_monthly
+                        }
+                        FilterChip(frequency == it, { frequency = it }, { Text(stringResource(labelRes)) })
                     }
                 }
-                Text("Account", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_account), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -521,7 +533,7 @@ internal fun RecurringDialog(
                         FilterChip(accountId == option.id, { accountId = option.id }, { Text(option.name) })
                     }
                 }
-                Text("Category", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_category), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -538,9 +550,9 @@ internal fun RecurringDialog(
                 enabled = name.isNotBlank() && account != null && categories.any { it.id == categoryId } &&
                     parsedAmount?.minor?.let { it > 0 } == true &&
                     runCatching { java.time.LocalDate.parse(date) }.isSuccess,
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.ui_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -561,14 +573,14 @@ internal fun DebtDialog(
     }.getOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Debt profile") },
+        title = { Text(stringResource(R.string.ui_debt_profile)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Account", style = MaterialTheme.typography.labelLarge)
-                if (accounts.isEmpty()) Text("Create an account without a debt profile first")
+                Text(stringResource(R.string.ui_account), style = MaterialTheme.typography.labelLarge)
+                if (accounts.isEmpty()) Text(stringResource(R.string.ui_create_an_account_without_a_debt_profile_first))
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -577,15 +589,15 @@ internal fun DebtDialog(
                         FilterChip(accountId == option.id, { accountId = option.id }, { Text(option.name) })
                     }
                 }
-                OutlinedTextField(rate, { rate = it }, label = { Text("Annual rate (%)") }, singleLine = true)
+                OutlinedTextField(rate, { rate = it }, label = { Text(stringResource(R.string.ui_annual_rate)) }, singleLine = true)
                 OutlinedTextField(
                     payment,
                     { payment = it },
-                    label = { Text("Minimum payment (${account?.currencyCode ?: "—"})") },
+                    label = { Text(stringResource(R.string.field_minimum_payment_currency, account?.currencyCode ?: "—")) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                OutlinedTextField(dueDay, { dueDay = it }, label = { Text("Due day") }, singleLine = true)
+                OutlinedTextField(dueDay, { dueDay = it }, label = { Text(stringResource(R.string.ui_due_day)) }, singleLine = true)
             }
         },
         confirmButton = {
@@ -594,9 +606,9 @@ internal fun DebtDialog(
                 enabled = account != null && rate.toBigDecimalOrNull() != null &&
                     parsedPayment?.minor?.let { it >= 0 } == true &&
                     dueDay.toIntOrNull() in 1..31,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -625,28 +637,28 @@ internal fun EditDebtDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit debt profile") },
+        title = { Text(stringResource(R.string.ui_edit_debt_profile)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Account: $accountName")
+                Text(stringResource(R.string.account_named, accountName))
                 OutlinedTextField(
                     rate,
                     { rate = it },
-                    label = { Text("Annual rate (%)") },
+                    label = { Text(stringResource(R.string.ui_annual_rate)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     payment,
                     { payment = it },
-                    label = { Text("Minimum payment (${debt.minimumPayment.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_minimum_payment_currency, debt.minimumPayment.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     dueDay,
                     { dueDay = it },
-                    label = { Text("Due day") },
+                    label = { Text(stringResource(R.string.ui_due_day)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
                 )
@@ -665,9 +677,9 @@ internal fun EditDebtDialog(
                 },
                 enabled = basisPoints?.let { it >= 0 } == true &&
                     parsedPayment?.minor?.let { it >= 0 } == true && parsedDueDay in 1..31,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -679,7 +691,7 @@ internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit,
         title = { Text(title) },
         text = {
             OutlinedTextField(
-                amount, { amount = it }, label = { Text("Amount (EUR)") },
+                amount, { amount = it }, label = { Text(stringResource(R.string.ui_amount_eur)) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
             )
         },
@@ -687,9 +699,9 @@ internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit,
             TextButton(
                 onClick = { onSave(amount) },
                 enabled = runCatching { Money.parseMajor(amount).minor >= 0 }.getOrDefault(false),
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -701,13 +713,13 @@ internal fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, 
     var date by remember { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New savings goal") },
+        title = { Text(stringResource(R.string.ui_new_savings_goal)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Goal name") }, singleLine = true)
-                OutlinedTextField(target, { target = it }, label = { Text("Target amount") }, singleLine = true)
-                OutlinedTextField(saved, { saved = it }, label = { Text("Already saved") }, singleLine = true)
-                OutlinedTextField(date, { date = it }, label = { Text("Target date (YYYY-MM-DD, optional)") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_goal_name)) }, singleLine = true)
+                OutlinedTextField(target, { target = it }, label = { Text(stringResource(R.string.ui_target_amount)) }, singleLine = true)
+                OutlinedTextField(saved, { saved = it }, label = { Text(stringResource(R.string.ui_already_saved)) }, singleLine = true)
+                OutlinedTextField(date, { date = it }, label = { Text(stringResource(R.string.ui_target_date_yyyy_mm_dd_optional)) }, singleLine = true)
             }
         },
         confirmButton = {
@@ -717,9 +729,9 @@ internal fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, 
                     runCatching { Money.parseMajor(target).minor > 0 }.getOrDefault(false) &&
                     runCatching { Money.parseMajor(saved).minor >= 0 }.getOrDefault(false) &&
                     (date.isBlank() || runCatching { java.time.LocalDate.parse(date) }.isSuccess),
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.ui_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -741,34 +753,37 @@ internal fun EditGoalDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit savings goal") },
+        title = { Text(stringResource(R.string.ui_edit_savings_goal)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                OutlinedTextField(name, { name = it }, label = { Text("Goal name") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_goal_name)) }, singleLine = true)
                 OutlinedTextField(
                     target,
                     { target = it },
-                    label = { Text("Target amount (${goal.target.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_target_amount_currency, goal.target.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
                 OutlinedTextField(
                     date,
                     { date = it },
-                    label = { Text("Target date (YYYY-MM-DD, optional)") },
+                    label = { Text(stringResource(R.string.ui_target_date_yyyy_mm_dd_optional)) },
                     singleLine = true,
                 )
-                Text("Status", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_status), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    listOf("ACTIVE" to "Active", "PAUSED" to "Paused", "COMPLETED" to "Completed")
-                        .forEach { (value, label) ->
-                            FilterChip(status == value, { status = value }, { Text(label) })
+                    listOf(
+                        "ACTIVE" to R.string.status_active,
+                        "PAUSED" to R.string.status_paused,
+                        "COMPLETED" to R.string.status_completed,
+                    ).forEach { (value, labelRes) ->
+                            FilterChip(status == value, { status = value }, { Text(stringResource(labelRes)) })
                         }
                 }
             }
@@ -786,9 +801,9 @@ internal fun EditGoalDialog(
                     )
                 },
                 enabled = name.isNotBlank() && parsedTarget?.minor?.let { it > 0 } == true && validDate,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -806,28 +821,28 @@ internal fun AddGoalContributionDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add contribution") },
+        title = { Text(stringResource(R.string.ui_add_contribution)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(goal.name, fontWeight = FontWeight.Medium)
                 OutlinedTextField(
                     amount,
                     { amount = it },
-                    label = { Text("Amount (${goal.target.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_amount_currency, goal.target.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
-                OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") })
+                OutlinedTextField(date, { date = it }, label = { Text(stringResource(R.string.ui_date_yyyy_mm_dd)) }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text(stringResource(R.string.ui_note_optional)) })
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { onSave(amount, date.trim(), note.trim()) },
                 enabled = parsedAmount?.minor?.let { it > 0 } == true && validDate && note.length <= 500,
-            ) { Text("Add") }
+            ) { Text(stringResource(R.string.ui_add)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -859,7 +874,7 @@ internal fun GoalContributionDialog(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                Text("Goal", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_goal), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -871,12 +886,12 @@ internal fun GoalContributionDialog(
                 OutlinedTextField(
                     amount,
                     { amount = it },
-                    label = { Text("Amount (${contribution.amount.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_amount_currency, contribution.amount.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                OutlinedTextField(date, { date = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
-                OutlinedTextField(note, { note = it }, label = { Text("Note (optional)") })
+                OutlinedTextField(date, { date = it }, label = { Text(stringResource(R.string.ui_date_yyyy_mm_dd)) }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text(stringResource(R.string.ui_note_optional)) })
             }
         },
         confirmButton = {
@@ -894,9 +909,9 @@ internal fun GoalContributionDialog(
                 },
                 enabled = selectedGoal != null && parsedAmount?.minor?.let { it > 0 } == true &&
                     validDate && note.length <= 500,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -937,16 +952,16 @@ internal fun AddTransactionSheet(
                 .padding(horizontal = 24.dp).padding(bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Text("Add transaction", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.ui_add_transaction), style = MaterialTheme.typography.headlineSmall)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text("Expense") })
-                FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text("Income") })
-                FilterChip(kind == TransactionKind.TRANSFER, { kind = TransactionKind.TRANSFER }, { Text("Transfer") })
+                FilterChip(kind == TransactionKind.EXPENSE, { kind = TransactionKind.EXPENSE }, { Text(stringResource(R.string.ui_expense)) })
+                FilterChip(kind == TransactionKind.INCOME, { kind = TransactionKind.INCOME }, { Text(stringResource(R.string.ui_income)) })
+                FilterChip(kind == TransactionKind.TRANSFER, { kind = TransactionKind.TRANSFER }, { Text(stringResource(R.string.ui_transfer)) })
             }
             OutlinedTextField(
                 value = amount,
                 onValueChange = { amount = it },
-                label = { Text("Amount (${sourceAccount?.currencyCode ?: "—"})") },
+                label = { Text(stringResource(R.string.field_amount_currency, sourceAccount?.currencyCode ?: "—")) },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
@@ -955,8 +970,8 @@ internal fun AddTransactionSheet(
                 OutlinedTextField(
                     value = destinationAmount,
                     onValueChange = { destinationAmount = it },
-                    label = { Text("Received amount (${destinationAccount.currencyCode})") },
-                    supportingText = { Text("Enter the amount credited by the destination account") },
+                    label = { Text(stringResource(R.string.field_received_amount_currency, destinationAccount.currencyCode)) },
+                    supportingText = { Text(stringResource(R.string.ui_enter_the_amount_credited_by_the_destination_account)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -965,12 +980,20 @@ internal fun AddTransactionSheet(
             OutlinedTextField(
                 value = payee,
                 onValueChange = { payee = it },
-                label = { Text(if (kind == TransactionKind.INCOME) "Source" else if (kind == TransactionKind.TRANSFER) "Note" else "Payee") },
+                label = {
+                    Text(
+                        stringResource(
+                            if (kind == TransactionKind.INCOME) R.string.field_source
+                            else if (kind == TransactionKind.TRANSFER) R.string.field_note
+                            else R.string.field_payee,
+                        ),
+                    )
+                },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                if (kind == TransactionKind.TRANSFER) "From account" else "Account",
+                stringResource(if (kind == TransactionKind.TRANSFER) R.string.field_from_account else R.string.ui_account),
                 style = MaterialTheme.typography.labelLarge,
             )
             Row(
@@ -982,7 +1005,7 @@ internal fun AddTransactionSheet(
                 }
             }
             if (kind == TransactionKind.TRANSFER) {
-                Text("To account", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_to_account), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -992,7 +1015,7 @@ internal fun AddTransactionSheet(
                     }
                 }
             } else {
-                Text("Category", style = MaterialTheme.typography.labelLarge)
+                Text(stringResource(R.string.ui_category), style = MaterialTheme.typography.labelLarge)
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1021,7 +1044,7 @@ internal fun AddTransactionSheet(
                     }
                     else categoryId.isNotBlank(),
                 modifier = Modifier.align(Alignment.End),
-            ) { Text("Save transaction") }
+            ) { Text(stringResource(R.string.ui_save_transaction)) }
         }
     }
 }
@@ -1045,11 +1068,11 @@ internal fun EditAccountDialog(
     }.getOrNull()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit account") },
+        title = { Text(stringResource(R.string.ui_edit_account)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Account name") }, singleLine = true)
-                Text("Type")
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_account_name)) }, singleLine = true)
+                Text(stringResource(R.string.ui_type))
                 Row(
                     Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1061,11 +1084,11 @@ internal fun EditAccountDialog(
                 OutlinedTextField(
                     openingBalance,
                     { openingBalance = it },
-                    label = { Text("Opening balance (${account.openingBalance.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_opening_balance_currency, account.openingBalance.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                 )
-                Text("Currency is fixed after account creation.", style = MaterialTheme.typography.bodySmall)
+                Text(stringResource(R.string.ui_currency_is_fixed_after_account_creation), style = MaterialTheme.typography.bodySmall)
             }
         },
         confirmButton = {
@@ -1080,9 +1103,9 @@ internal fun EditAccountDialog(
                     )
                 },
                 enabled = name.isNotBlank() && parsedBalance != null,
-            ) { Text("Save") }
+            ) { Text(stringResource(R.string.ui_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -1099,22 +1122,22 @@ internal fun AccountDialog(
     val validCurrency = runCatching { java.util.Currency.getInstance(normalizedCurrency) }.isSuccess
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("New account") },
+        title = { Text(stringResource(R.string.ui_new_account)) },
         text = {
             Column(
                 Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                OutlinedTextField(name, { name = it }, label = { Text("Account name") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.ui_account_name)) }, singleLine = true)
                 OutlinedTextField(
-                    opening, { opening = it }, label = { Text("Opening balance ($normalizedCurrency)") },
+                    opening, { opening = it }, label = { Text(stringResource(R.string.field_opening_balance_currency, normalizedCurrency)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
                 )
                 OutlinedTextField(
                     currencyCode,
                     { currencyCode = it.take(3).uppercase() },
-                    label = { Text("Currency (ISO 4217)") },
-                    supportingText = { if (!validCurrency) Text("Enter a valid 3-letter currency code") },
+                    label = { Text(stringResource(R.string.ui_currency_iso_4217)) },
+                    supportingText = { if (!validCurrency) Text(stringResource(R.string.ui_enter_a_valid_3_letter_currency_code)) },
                     singleLine = true,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1129,9 +1152,9 @@ internal fun AccountDialog(
                 onClick = { onSave(name, type, opening, normalizedCurrency) },
                 enabled = name.isNotBlank() && validCurrency &&
                     runCatching { Money.parseMajor(opening, normalizedCurrency) }.isSuccess,
-            ) { Text("Create") }
+            ) { Text(stringResource(R.string.ui_create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
 
@@ -1148,28 +1171,28 @@ internal fun ReconcileDialog(
     var adjustment by remember { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Reconcile $accountName") },
+        title = { Text(stringResource(R.string.dialog_reconcile_named, accountName)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Current total balance: ${currentBalance.formatted()}")
-                Text("Current cleared balance: ${clearedBalance.formatted()}")
-                Text("Only cleared transactions on or before the statement date are compared.")
+                Text(stringResource(R.string.current_total_balance, currentBalance.formatted()))
+                Text(stringResource(R.string.current_cleared_balance, clearedBalance.formatted()))
+                Text(stringResource(R.string.ui_only_cleared_transactions_on_or_before_the_statement))
                 OutlinedTextField(
                     statementDate,
                     { statementDate = it },
-                    label = { Text("Statement date (YYYY-MM-DD)") },
+                    label = { Text(stringResource(R.string.ui_statement_date_yyyy_mm_dd)) },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     statement,
                     { statement = it },
-                    label = { Text("Statement balance (${currentBalance.currencyCode})") },
+                    label = { Text(stringResource(R.string.field_statement_balance_currency, currentBalance.currencyCode)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), singleLine = true,
                 )
                 FilterChip(
                     selected = adjustment,
                     onClick = { adjustment = !adjustment },
-                    label = { Text("Create adjustment if needed") },
+                    label = { Text(stringResource(R.string.ui_create_adjustment_if_needed)) },
                 )
             }
         },
@@ -1179,9 +1202,8 @@ internal fun ReconcileDialog(
                 enabled = runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess &&
                     runCatching { java.time.LocalDate.parse(statementDate) }.getOrNull()
                         ?.let { !it.isAfter(java.time.LocalDate.now()) } == true,
-            ) { Text("Reconcile") }
+            ) { Text(stringResource(R.string.ui_reconcile)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
 }
-
