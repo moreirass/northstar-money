@@ -56,6 +56,18 @@ data class TransactionItem(
     val localDate: String,
 )
 
+data class EditableTransaction(
+    val id: String,
+    val kind: TransactionKind,
+    val localDate: String,
+    val payee: String,
+    val note: String,
+    val amount: Money,
+    val accountId: String,
+    val categoryId: String?,
+    val destinationAccountId: String? = null,
+)
+
 data class FinanceSummary(
     val balance: Money = Money(0),
     val incomeThisMonth: Money = Money(0),

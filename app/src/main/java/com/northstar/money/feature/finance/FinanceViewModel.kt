@@ -18,6 +18,7 @@ import com.northstar.money.core.datastore.UserPreferences
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
+import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -112,6 +113,12 @@ class FinanceViewModel(
     suspend fun deleteTransaction(id: String) = repository.deleteTransaction(id)
 
     suspend fun restoreTransaction(id: String) = repository.restoreTransaction(id)
+
+    suspend fun getTransactionForEdit(id: String): EditableTransaction = repository.getTransactionForEdit(id)
+
+    fun updateTransaction(transaction: EditableTransaction) {
+        launchOperation("update the transaction") { repository.updateTransaction(transaction) }
+    }
 
     fun createAccount(name: String, type: AccountType, openingBalance: String) {
         launchOperation("create the account") {

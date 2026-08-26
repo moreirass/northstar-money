@@ -9,6 +9,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -18,6 +21,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.DeleteOutline
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material3.Card
@@ -71,6 +75,7 @@ import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
+import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
@@ -94,6 +99,7 @@ fun NorthstarApp() {
     var destination by remember { mutableStateOf(Destination.Home) }
     var showAdd by remember { mutableStateOf(false) }
     var pendingDeleteTransactionId by remember { mutableStateOf<String?>(null) }
+    var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
 
@@ -127,9 +133,22 @@ fun NorthstarApp() {
         when (destination) {
             Destination.Home -> HomeScreen(state, padding)
             Destination.Plan -> PlanScreen(state, padding, financeViewModel::setBudget)
-            Destination.Activity -> ActivityScreen(state, padding) { id ->
-                pendingDeleteTransactionId = id
-            }
+            Destination.Activity -> ActivityScreen(
+                state = state,
+                padding = padding,
+                onEdit = { id ->
+                    scope.launch {
+                        runSuspendCatching { financeViewModel.getTransactionForEdit(id) }
+                            .onSuccess { editingTransaction = it }
+                            .onFailure {
+                                snackbarHostState.showSnackbar(
+                                    it.message ?: "Could not open the transaction for editing.",
+                                )
+                            }
+                    }
+                },
+                onDelete = { id -> pendingDeleteTransactionId = id },
+            )
             Destination.More -> MoreScreen(
                 state = state,
                 padding = padding,
@@ -191,6 +210,18 @@ fun NorthstarApp() {
             },
             dismissButton = {
                 TextButton(onClick = { pendingDeleteTransactionId = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    editingTransaction?.let { transaction ->
+        EditTransactionDialog(
+            transaction = transaction,
+            state = state,
+            onDismiss = { editingTransaction = null },
+            onSave = {
+                financeViewModel.updateTransaction(it)
+                editingTransaction = null
             },
         )
     }
@@ -258,7 +289,12 @@ private fun SummaryCard(label: String, money: Money, modifier: Modifier = Modifi
 }
 
 @Composable
-private fun ActivityScreen(state: FinanceUiState, padding: PaddingValues, onDelete: (String) -> Unit) {
+private fun ActivityScreen(
+    state: FinanceUiState,
+    padding: PaddingValues,
+    onEdit: (String) -> Unit,
+    onDelete: (String) -> Unit,
+) {
     var query by remember { mutableStateOf("") }
     val visibleTransactions = state.transactions.filter {
         query.isBlank() || it.payee.contains(query, ignoreCase = true) ||
@@ -282,6 +318,9 @@ private fun ActivityScreen(state: FinanceUiState, padding: PaddingValues, onDele
         items(visibleTransactions, key = { it.id }) { transaction ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TransactionRow(transaction, Modifier.weight(1f))
+                IconButton(onClick = { onEdit(transaction.id) }) {
+                    Icon(Icons.Default.Edit, contentDescription = "Edit ${transaction.payee}")
+                }
                 IconButton(onClick = { onDelete(transaction.id) }) {
                     Icon(Icons.Default.DeleteOutline, contentDescription = "Delete ${transaction.payee}")
                 }
@@ -921,6 +960,108 @@ private fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind)
         },
         confirmButton = {
             TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun EditTransactionDialog(
+    transaction: EditableTransaction,
+    state: FinanceUiState,
+    onDismiss: () -> Unit,
+    onSave: (EditableTransaction) -> Unit,
+) {
+    var amount by remember { mutableStateOf(transaction.amount.minor.toBigDecimal().movePointLeft(2).toPlainString()) }
+    var localDate by remember { mutableStateOf(transaction.localDate) }
+    var payee by remember { mutableStateOf(transaction.payee) }
+    var note by remember { mutableStateOf(transaction.note) }
+    var accountId by remember { mutableStateOf(transaction.accountId) }
+    var categoryId by remember { mutableStateOf(transaction.categoryId) }
+    var destinationAccountId by remember { mutableStateOf(transaction.destinationAccountId) }
+    val accounts = state.accounts.filter { it.currencyCode == transaction.amount.currencyCode }
+    val categories = state.categories.filter { it.kind.name == transaction.kind.name }
+    val parsedAmount = runCatching { Money.parseMajor(amount, transaction.amount.currencyCode) }.getOrNull()
+    val valid = parsedAmount?.minor?.let { it > 0 } == true &&
+        runCatching { java.time.LocalDate.parse(localDate) }.isSuccess &&
+        accounts.any { it.id == accountId } &&
+        if (transaction.kind == TransactionKind.TRANSFER) {
+            destinationAccountId != null && destinationAccountId != accountId &&
+                accounts.any { it.id == destinationAccountId }
+        } else {
+            categoryId != null && categories.any { it.id == categoryId }
+        }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit ${transaction.kind.name.lowercase()}") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    amount,
+                    { amount = it },
+                    label = { Text("Amount (${transaction.amount.currencyCode})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(localDate, { localDate = it }, label = { Text("Date (YYYY-MM-DD)") }, singleLine = true)
+                OutlinedTextField(payee, { payee = it }, label = { Text("Payee") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, label = { Text("Note") })
+                Text(if (transaction.kind == TransactionKind.TRANSFER) "From account" else "Account")
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    accounts.forEach { account ->
+                        FilterChip(
+                            selected = account.id == accountId,
+                            onClick = { accountId = account.id },
+                            label = { Text(account.name) },
+                        )
+                    }
+                }
+                if (transaction.kind == TransactionKind.TRANSFER) {
+                    Text("To account")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        accounts.filter { it.id != accountId }.forEach { account ->
+                            FilterChip(
+                                selected = account.id == destinationAccountId,
+                                onClick = { destinationAccountId = account.id },
+                                label = { Text(account.name) },
+                            )
+                        }
+                    }
+                } else {
+                    Text("Category")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        categories.forEach { category ->
+                            FilterChip(
+                                selected = category.id == categoryId,
+                                onClick = { categoryId = category.id },
+                                label = { Text(category.name) },
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    onSave(
+                        transaction.copy(
+                            localDate = localDate,
+                            payee = payee,
+                            note = note,
+                            amount = requireNotNull(parsedAmount),
+                            accountId = accountId,
+                            categoryId = categoryId,
+                            destinationAccountId = destinationAccountId,
+                        ),
+                    )
+                },
+                enabled = valid,
+            ) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

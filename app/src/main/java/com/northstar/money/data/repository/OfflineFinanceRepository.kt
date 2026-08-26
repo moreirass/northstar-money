@@ -14,6 +14,7 @@ import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
+import com.northstar.money.domain.model.EditableTransaction
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
@@ -152,6 +153,109 @@ class OfflineFinanceRepository(
 
     override suspend fun restoreTransaction(id: String) {
         require(dao.restoreTransaction(id, System.currentTimeMillis()) == 1) { "Transaction is not available for recovery" }
+    }
+
+    override suspend fun getTransactionForEdit(id: String): EditableTransaction {
+        val stored = dao.getTransactionForEdit(id)
+        require(!stored.isReconciliationAdjustment) { "Reconciliation adjustments cannot be edited directly" }
+        val kind = TransactionKind.valueOf(stored.transaction.kind)
+        return if (kind == TransactionKind.TRANSFER) {
+            require(stored.entries.size == 2) { "Transfer must contain exactly two entries" }
+            val source = stored.entries.singleOrNull { it.amountMinor < 0 }
+            val destination = stored.entries.singleOrNull { it.amountMinor > 0 }
+            requireNotNull(source) { "Transfer source is invalid" }
+            requireNotNull(destination) { "Transfer destination is invalid" }
+            require(
+                source.currencyCode == destination.currencyCode &&
+                    Math.addExact(source.amountMinor, destination.amountMinor) == 0L,
+            ) { "Cross-currency or unbalanced transfer cannot be edited yet" }
+            EditableTransaction(
+                id = id,
+                kind = kind,
+                localDate = stored.transaction.localDate,
+                payee = stored.transaction.payee,
+                note = stored.transaction.note,
+                amount = Money(Math.negateExact(source.amountMinor), source.currencyCode),
+                accountId = source.accountId,
+                categoryId = null,
+                destinationAccountId = destination.accountId,
+            )
+        } else {
+            require(stored.entries.size == 1) { "Income and expense transactions must contain one entry" }
+            val entry = stored.entries.single()
+            val positiveAmount = if (entry.amountMinor < 0) Math.negateExact(entry.amountMinor) else entry.amountMinor
+            require(positiveAmount > 0) { "Transaction amount is invalid" }
+            EditableTransaction(
+                id = id,
+                kind = kind,
+                localDate = stored.transaction.localDate,
+                payee = stored.transaction.payee,
+                note = stored.transaction.note,
+                amount = Money(positiveAmount, entry.currencyCode),
+                accountId = entry.accountId,
+                categoryId = entry.categoryId,
+            )
+        }
+    }
+
+    override suspend fun updateTransaction(transaction: EditableTransaction) {
+        val stored = dao.getTransactionForEdit(transaction.id)
+        require(!stored.isReconciliationAdjustment) { "Reconciliation adjustments cannot be edited directly" }
+        require(stored.transaction.kind == transaction.kind.name) { "Transaction type cannot be changed" }
+        require(transaction.amount.minor > 0) { "Amount must be positive" }
+        val localDate = LocalDate.parse(transaction.localDate).toString()
+        val updatedAt = System.currentTimeMillis()
+        val updatedTransaction = stored.transaction.copy(
+            localDate = localDate,
+            payee = transaction.payee.trim().ifBlank {
+                if (transaction.kind == TransactionKind.TRANSFER) "Transfer" else transaction.kind.name.lowercase().replaceFirstChar(Char::uppercase)
+            },
+            note = transaction.note.trim(),
+            updatedAt = updatedAt,
+        )
+        val updatedEntries = if (transaction.kind == TransactionKind.TRANSFER) {
+            require(stored.entries.size == 2) { "Transfer must contain exactly two entries" }
+            val destinationAccountId = requireNotNull(transaction.destinationAccountId) { "Destination account is required" }
+            require(transaction.accountId != destinationAccountId) { "Transfer accounts must be different" }
+            requireAccountCurrency(transaction.accountId, transaction.amount.currencyCode)
+            requireAccountCurrency(destinationAccountId, transaction.amount.currencyCode)
+            val source = requireNotNull(stored.entries.singleOrNull { it.amountMinor < 0 }) { "Transfer source is invalid" }
+            val destination = requireNotNull(stored.entries.singleOrNull { it.amountMinor > 0 }) { "Transfer destination is invalid" }
+            listOf(
+                source.copy(
+                    accountId = transaction.accountId,
+                    categoryId = null,
+                    amountMinor = Math.negateExact(transaction.amount.minor),
+                    currencyCode = transaction.amount.currencyCode,
+                ),
+                destination.copy(
+                    accountId = destinationAccountId,
+                    categoryId = null,
+                    amountMinor = transaction.amount.minor,
+                    currencyCode = transaction.amount.currencyCode,
+                ),
+            )
+        } else {
+            require(stored.entries.size == 1) { "Income and expense transactions must contain one entry" }
+            val categoryId = requireNotNull(transaction.categoryId) { "Category is required" }
+            requireAccountCurrency(transaction.accountId, transaction.amount.currencyCode)
+            require(dao.getActiveCategoryKind(categoryId) == transaction.kind.name) {
+                "Category does not match the transaction type"
+            }
+            listOf(
+                stored.entries.single().copy(
+                    accountId = transaction.accountId,
+                    categoryId = categoryId,
+                    amountMinor = if (transaction.kind == TransactionKind.EXPENSE) {
+                        Math.negateExact(transaction.amount.minor)
+                    } else {
+                        transaction.amount.minor
+                    },
+                    currencyCode = transaction.amount.currencyCode,
+                ),
+            )
+        }
+        dao.updateTransaction(updatedTransaction, updatedEntries)
     }
 
     override suspend fun createAccount(name: String, type: AccountType, openingBalance: Money) {

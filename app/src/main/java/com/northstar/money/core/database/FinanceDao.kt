@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -194,6 +195,9 @@ abstract class FinanceDao {
     @Query("SELECT currencyCode FROM accounts WHERE id = :accountId AND archivedAt IS NULL")
     abstract suspend fun getActiveAccountCurrency(accountId: String): String?
 
+    @Query("SELECT kind FROM categories WHERE id = :categoryId AND archivedAt IS NULL")
+    abstract suspend fun getActiveCategoryKind(categoryId: String): String?
+
     @Transaction
     open suspend fun insertReconciliationWithAdjustment(
         reconciliation: ReconciliationEntity,
@@ -212,6 +216,42 @@ abstract class FinanceDao {
 
     @Query("UPDATE transactions SET deletedAt = NULL, updatedAt = :restoredAt WHERE id = :id AND deletedAt IS NOT NULL")
     abstract suspend fun restoreTransaction(id: String, restoredAt: Long): Int
+
+    @Query("SELECT * FROM transactions WHERE id = :id AND deletedAt IS NULL")
+    protected abstract suspend fun getActiveTransaction(id: String): TransactionEntity?
+
+    @Query("SELECT * FROM transaction_entries WHERE transactionId = :transactionId ORDER BY rowid")
+    protected abstract suspend fun getTransactionEntries(transactionId: String): List<TransactionEntryEntity>
+
+    @Query("SELECT COUNT(*) FROM reconciliations WHERE adjustmentTransactionId = :transactionId")
+    protected abstract suspend fun countReconciliationReferences(transactionId: String): Int
+
+    @Update
+    protected abstract suspend fun updateTransactionEntity(transaction: TransactionEntity): Int
+
+    @Update
+    protected abstract suspend fun updateTransactionEntries(entries: List<TransactionEntryEntity>): Int
+
+    @Transaction
+    open suspend fun getTransactionForEdit(id: String): StoredTransaction {
+        val transaction = requireNotNull(getActiveTransaction(id)) { "Transaction is missing or deleted" }
+        return StoredTransaction(
+            transaction = transaction,
+            entries = getTransactionEntries(id),
+            isReconciliationAdjustment = countReconciliationReferences(id) > 0,
+        )
+    }
+
+    @Transaction
+    open suspend fun updateTransaction(
+        transaction: TransactionEntity,
+        entries: List<TransactionEntryEntity>,
+    ) {
+        require(updateTransactionEntity(transaction) == 1) { "Transaction could not be updated" }
+        require(entries.isNotEmpty() && updateTransactionEntries(entries) == entries.size) {
+            "Transaction entries could not be updated"
+        }
+    }
 
     @Query(
         """

@@ -6,6 +6,7 @@ import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
+import com.northstar.money.domain.model.EditableTransaction
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
@@ -40,6 +41,8 @@ interface FinanceRepository {
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
     suspend fun deleteTransaction(id: String)
     suspend fun restoreTransaction(id: String)
+    suspend fun getTransactionForEdit(id: String): EditableTransaction
+    suspend fun updateTransaction(transaction: EditableTransaction)
     suspend fun createFullBackup(): String
     suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray)
     suspend fun undoLastFullRestore(recoveryPassword: CharArray)
