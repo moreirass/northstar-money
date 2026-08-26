@@ -21,6 +21,8 @@ class DatabaseSnapshotValidator {
         val categoryIds = snapshot.categories.mapTo(mutableSetOf()) { it.id }
         val categoriesById = snapshot.categories.associateBy { it.id }
         val transactionIds = snapshot.transactions.mapTo(mutableSetOf()) { it.id }
+        val transactionsById = snapshot.transactions.associateBy { it.id }
+        val entriesByTransaction = snapshot.transactionEntries.groupBy { it.transactionId }
         val goalsById = snapshot.goals.associateBy { it.id }
 
         require(snapshot.categories.distinctBy { it.kind to it.name }.size == snapshot.categories.size) {
@@ -70,7 +72,6 @@ class DatabaseSnapshotValidator {
         require(snapshot.transactionEntries.groupBy { it.transactionId }.keys.containsAll(transactionIds)) {
             "Backup contains a transaction without entries"
         }
-        val entriesByTransaction = snapshot.transactionEntries.groupBy { it.transactionId }
         snapshot.transactions.forEach { transaction ->
             val entries = entriesByTransaction.getValue(transaction.id)
             when (transaction.kind) {
@@ -95,6 +96,19 @@ class DatabaseSnapshotValidator {
                 "Backup contains an invalid reconciliation reference"
             }
             requireDate(it.statementLocalDate, "reconciliation")
+            require(Math.subtractExact(it.statementBalanceMinor, it.calculatedBalanceMinor) == it.differenceMinor) {
+                "Backup contains inconsistent reconciliation amounts"
+            }
+            it.adjustmentTransactionId?.let { adjustmentId ->
+                val adjustment = transactionsById.getValue(adjustmentId)
+                val adjustmentEntries = entriesByTransaction.getValue(adjustmentId)
+                require(
+                    adjustment.deletedAt == null && adjustment.localDate == it.statementLocalDate &&
+                        adjustmentEntries.size == 1 && adjustmentEntries.single().accountId == it.accountId &&
+                        adjustmentEntries.single().amountMinor == it.differenceMinor &&
+                        adjustmentEntries.single().cleared,
+                ) { "Backup contains an invalid reconciliation adjustment" }
+            }
         }
         snapshot.budgetAllocations.forEach {
             require(it.categoryId in categoryIds && it.plannedMinor >= 0) { "Backup contains an invalid budget allocation" }

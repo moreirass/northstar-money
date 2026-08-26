@@ -105,6 +105,7 @@ data class TransactionRow(
     val currencyCode: String,
     val accountName: String,
     val categoryName: String?,
+    val cleared: Boolean,
 )
 
 data class SummaryRow(
@@ -119,6 +120,7 @@ data class AccountBalanceRow(
     val type: String,
     val currencyCode: String,
     val balanceMinor: Long,
+    val clearedBalanceMinor: Long = balanceMinor,
 )
 
 @Serializable

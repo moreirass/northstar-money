@@ -175,6 +175,12 @@ class FinanceViewModel(
         launchOperation("update the transaction") { repository.updateTransaction(transaction) }
     }
 
+    fun setTransactionCleared(id: String, cleared: Boolean) {
+        launchOperation(if (cleared) "mark the transaction cleared" else "mark the transaction uncleared") {
+            repository.setTransactionCleared(id, cleared)
+        }
+    }
+
     fun createAccount(name: String, type: AccountType, openingBalance: String, currencyCode: String) {
         launchOperation("create the account") {
             repository.createAccount(
@@ -223,12 +229,22 @@ class FinanceViewModel(
         }
     }
 
-    fun reconcile(accountId: String, statementBalance: String, createAdjustment: Boolean) {
+    fun reconcile(
+        accountId: String,
+        statementLocalDate: String,
+        statementBalance: String,
+        createAdjustment: Boolean,
+    ) {
         launchOperation("reconcile the account") {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Reconciliation account is missing or archived"
             }.currencyCode
-            repository.reconcile(accountId, Money.parseMajor(statementBalance, currency), createAdjustment)
+            repository.reconcile(
+                accountId,
+                statementLocalDate,
+                Money.parseMajor(statementBalance, currency),
+                createAdjustment,
+            )
         }
     }
 

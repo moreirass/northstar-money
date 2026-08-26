@@ -79,6 +79,20 @@ class DatabaseSnapshotValidatorTest {
     }
 
     @Test
+    fun validate_rejectsInconsistentReconciliationAmounts() {
+        val base = validSnapshot()
+        val invalid = base.copy(
+            reconciliations = listOf(
+                com.northstar.money.core.database.ReconciliationEntity(
+                    "reconciliation", "account", "2026-08-01", 100, 50, 40, null, 1,
+                ),
+            ),
+        )
+
+        assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
+    }
+
+    @Test
     fun validate_rejectsMergeIntoMissingOrArchivedCategory() {
         val missingTarget = validSnapshot().copy(
             categories = listOf(

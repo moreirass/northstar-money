@@ -159,6 +159,7 @@ fun NorthstarApp() {
                             }
                     }
                 },
+                onSetCleared = financeViewModel::setTransactionCleared,
                 onDelete = { id -> pendingDeleteTransactionId = id },
             )
             Destination.More -> MoreScreen(
@@ -421,6 +422,7 @@ private fun ActivityScreen(
     state: FinanceUiState,
     padding: PaddingValues,
     onEdit: (String) -> Unit,
+    onSetCleared: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
 ) {
     var query by remember { mutableStateOf("") }
@@ -446,6 +448,11 @@ private fun ActivityScreen(
         items(visibleTransactions, key = { it.id }) { transaction ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TransactionRow(transaction, Modifier.weight(1f))
+                FilterChip(
+                    selected = transaction.cleared,
+                    onClick = { onSetCleared(transaction.id, !transaction.cleared) },
+                    label = { Text(if (transaction.cleared) "Cleared" else "Pending") },
+                )
                 IconButton(onClick = { onEdit(transaction.id) }) {
                     Icon(Icons.Default.Edit, contentDescription = "Edit ${transaction.payee}")
                 }
@@ -463,7 +470,10 @@ private fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier)
     Row(modifier.padding(vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(item.payee, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-            Text("${item.categoryName ?: item.kind.name} • ${item.accountName}", style = MaterialTheme.typography.bodySmall)
+            Text(
+                "${item.categoryName ?: item.kind.name} • ${item.accountName} • ${if (item.cleared) "cleared" else "uncleared"}",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
         val shown = if (item.kind == TransactionKind.EXPENSE) item.amount else item.amount
         Text(
@@ -525,7 +535,7 @@ private fun MoreScreen(
     onEditAccount: (String) -> Unit,
     onArchiveAccount: (String) -> Unit,
     onRestoreAccount: (String) -> Unit,
-    onReconcile: (String, String, Boolean) -> Unit,
+    onReconcile: (String, String, String, Boolean) -> Unit,
     onCreateGoal: (String, String, String, String?) -> Unit,
     onEditGoal: (String) -> Unit,
     onAddGoalContribution: (String, String, String, String) -> Unit,
@@ -986,6 +996,10 @@ private fun MoreScreen(
                         }
                         Text(account.balance.formatted(), fontWeight = FontWeight.SemiBold)
                     }
+                    Text(
+                        "Cleared: ${account.clearedBalance.formatted()}",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
                     Row {
                         TextButton(onClick = { reconcileAccountId = account.id }) { Text("Reconcile") }
                         TextButton(onClick = { onEditAccount(account.id) }) { Text("Edit") }
@@ -1317,9 +1331,10 @@ private fun MoreScreen(
             ReconcileDialog(
                 accountName = account.name,
                 currentBalance = account.balance,
+                clearedBalance = account.clearedBalance,
                 onDismiss = { reconcileAccountId = null },
-                onSave = { amount, adjustment ->
-                    onReconcile(id, amount, adjustment)
+                onSave = { date, amount, adjustment ->
+                    onReconcile(id, date, amount, adjustment)
                     reconcileAccountId = null
                 },
             )
@@ -2378,17 +2393,27 @@ private fun AccountDialog(
 private fun ReconcileDialog(
     accountName: String,
     currentBalance: Money,
+    clearedBalance: Money,
     onDismiss: () -> Unit,
-    onSave: (String, Boolean) -> Unit,
+    onSave: (String, String, Boolean) -> Unit,
 ) {
     var statement by remember { mutableStateOf("") }
+    var statementDate by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
     var adjustment by remember { mutableStateOf(true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Reconcile $accountName") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Current app balance: ${currentBalance.formatted()}")
+                Text("Current total balance: ${currentBalance.formatted()}")
+                Text("Current cleared balance: ${clearedBalance.formatted()}")
+                Text("Only cleared transactions on or before the statement date are compared.")
+                OutlinedTextField(
+                    statementDate,
+                    { statementDate = it },
+                    label = { Text("Statement date (YYYY-MM-DD)") },
+                    singleLine = true,
+                )
                 OutlinedTextField(
                     statement,
                     { statement = it },
@@ -2404,8 +2429,10 @@ private fun ReconcileDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(statement, adjustment) },
-                enabled = runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess,
+                onClick = { onSave(statementDate, statement, adjustment) },
+                enabled = runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess &&
+                    runCatching { java.time.LocalDate.parse(statementDate) }.getOrNull()
+                        ?.let { !it.isAfter(java.time.LocalDate.now()) } == true,
             ) { Text("Reconcile") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },

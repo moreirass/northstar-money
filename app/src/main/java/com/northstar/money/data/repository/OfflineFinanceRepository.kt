@@ -52,11 +52,23 @@ class OfflineFinanceRepository(
     private val restoreMutex = Mutex()
 
     override fun observeAccounts(): Flow<List<Account>> = dao.observeAccounts().map { rows ->
-        rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
+        rows.map {
+            Account(
+                it.id, it.name, AccountType.valueOf(it.type), it.currencyCode,
+                Money(it.balanceMinor, it.currencyCode),
+                Money(it.clearedBalanceMinor, it.currencyCode),
+            )
+        }
     }
 
     override fun observeArchivedAccounts(): Flow<List<Account>> = dao.observeArchivedAccounts().map { rows ->
-        rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
+        rows.map {
+            Account(
+                it.id, it.name, AccountType.valueOf(it.type), it.currencyCode,
+                Money(it.balanceMinor, it.currencyCode),
+                Money(it.clearedBalanceMinor, it.currencyCode),
+            )
+        }
     }
 
     override fun observeCategories(): Flow<List<Category>> = dao.observeCategories().map { rows ->
@@ -192,7 +204,7 @@ class OfflineFinanceRepository(
             TransactionEntryEntity(
                 UUID.randomUUID().toString(), id, accountId, categoryId,
                 if (kind == TransactionKind.EXPENSE) -amount.minor else amount.minor,
-                amount.currencyCode, true,
+                amount.currencyCode, false,
             ),
         )
     }
@@ -387,35 +399,40 @@ class OfflineFinanceRepository(
             listOf(
                 TransactionEntryEntity(
                     UUID.randomUUID().toString(), id, sourceAccountId, null,
-                    Math.negateExact(sourceAmount.minor), sourceAmount.currencyCode, true,
+                    Math.negateExact(sourceAmount.minor), sourceAmount.currencyCode, false,
                 ),
                 TransactionEntryEntity(
                     UUID.randomUUID().toString(), id, destinationAccountId, null,
-                    destinationAmount.minor, destinationAmount.currencyCode, true,
+                    destinationAmount.minor, destinationAmount.currencyCode, false,
                 ),
             ),
         )
     }
 
-    override suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean) {
+    override suspend fun setTransactionCleared(id: String, cleared: Boolean) {
+        dao.setTransactionCleared(id, cleared)
+    }
+
+    override suspend fun reconcile(
+        accountId: String,
+        statementLocalDate: String,
+        statementBalance: Money,
+        createAdjustment: Boolean,
+    ) {
+        val date = LocalDate.parse(statementLocalDate)
+        require(!date.isAfter(LocalDate.now())) { "Statement date cannot be in the future" }
         requireAccountCurrency(accountId, statementBalance.currencyCode)
-        val calculated = dao.getAccountBalance(accountId)
-        val difference = statementBalance.minor - calculated
         val now = System.currentTimeMillis()
-        val adjustmentId = if (difference != 0L && createAdjustment) UUID.randomUUID().toString() else null
-        val adjustment = adjustmentId?.let {
-            TransactionEntity(it, if (difference > 0) "INCOME" else "EXPENSE", LocalDate.now().toString(), "Reconciliation adjustment", "", now, now)
-        }
-        val entry = adjustmentId?.let {
-            TransactionEntryEntity(UUID.randomUUID().toString(), it, accountId, null, difference, statementBalance.currencyCode, true)
-        }
-        dao.insertReconciliationWithAdjustment(
-            com.northstar.money.core.database.ReconciliationEntity(
-                UUID.randomUUID().toString(), accountId, LocalDate.now().toString(),
-                statementBalance.minor, calculated, difference, adjustmentId, now,
-            ),
-            adjustment,
-            entry,
+        dao.reconcileAccount(
+            accountId = accountId,
+            currencyCode = statementBalance.currencyCode,
+            statementLocalDate = date.toString(),
+            statementBalanceMinor = statementBalance.minor,
+            createAdjustment = createAdjustment,
+            reconciliationId = UUID.randomUUID().toString(),
+            adjustmentTransactionId = UUID.randomUUID().toString(),
+            adjustmentEntryId = UUID.randomUUID().toString(),
+            completedAt = now,
         )
     }
 
@@ -727,7 +744,7 @@ class OfflineFinanceRepository(
                     row.categoryId,
                     row.amountMinor,
                     row.currencyCode,
-                    true,
+                    false,
                 ),
             )
         }
@@ -837,6 +854,7 @@ class OfflineFinanceRepository(
         kind = TransactionKind.valueOf(row.kind),
         amount = Money(row.amountMinor, row.currencyCode),
         localDate = row.localDate,
+        cleared = row.cleared,
     )
 
     private fun recurringToDomain(row: com.northstar.money.core.database.RecurringScheduleEntity) =

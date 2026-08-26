@@ -13,7 +13,8 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT a.id, a.name, a.type, a.currencyCode,
-               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor,
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL AND e.cleared = 1 THEN e.amountMinor ELSE 0 END), 0) AS clearedBalanceMinor
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
@@ -28,7 +29,8 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT a.id, a.name, a.type, a.currencyCode,
-               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0) AS balanceMinor,
+               a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL AND e.cleared = 1 THEN e.amountMinor ELSE 0 END), 0) AS clearedBalanceMinor
         FROM accounts a
         LEFT JOIN transaction_entries e ON e.accountId = a.id
         LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
@@ -58,7 +60,11 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
-               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
+               NOT EXISTS (
+                   SELECT 1 FROM transaction_entries pending
+                   WHERE pending.transactionId = t.id AND pending.cleared = 0
+               ) AS cleared
         FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
         JOIN accounts a ON a.id = e.accountId
@@ -75,7 +81,11 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
-               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
+               NOT EXISTS (
+                   SELECT 1 FROM transaction_entries pending
+                   WHERE pending.transactionId = t.id AND pending.cleared = 0
+               ) AS cleared
         FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
         JOIN accounts a ON a.id = e.accountId
@@ -411,6 +421,22 @@ abstract class FinanceDao {
     )
     abstract suspend fun getAccountBalance(accountId: String): Long
 
+    @Query(
+        """
+        SELECT a.openingBalanceMinor + COALESCE(SUM(CASE WHEN t.id IS NOT NULL THEN e.amountMinor ELSE 0 END), 0)
+        FROM accounts a
+        LEFT JOIN transaction_entries e ON e.accountId = a.id AND e.cleared = 1
+        LEFT JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
+            AND t.localDate <= :statementLocalDate AND e.currencyCode = a.currencyCode
+        WHERE a.id = :accountId AND a.archivedAt IS NULL
+        GROUP BY a.id
+        """,
+    )
+    protected abstract suspend fun getClearedAccountBalance(
+        accountId: String,
+        statementLocalDate: String,
+    ): Long?
+
     @Query("SELECT currencyCode FROM accounts WHERE id = :accountId AND archivedAt IS NULL")
     abstract suspend fun getActiveAccountCurrency(accountId: String): String?
 
@@ -645,8 +671,86 @@ abstract class FinanceDao {
         insertReconciliation(reconciliation)
     }
 
+    @Query(
+        """
+        UPDATE transaction_entries SET cleared = :cleared
+        WHERE transactionId = :transactionId
+          AND EXISTS (SELECT 1 FROM transactions WHERE id = :transactionId AND deletedAt IS NULL)
+        """,
+    )
+    protected abstract suspend fun updateTransactionCleared(transactionId: String, cleared: Boolean): Int
+
+    @Transaction
+    open suspend fun setTransactionCleared(transactionId: String, cleared: Boolean) {
+        require(cleared || countReconciliationReferences(transactionId) == 0) {
+            "A reconciliation adjustment must remain cleared"
+        }
+        require(updateTransactionCleared(transactionId, cleared) > 0) { "Transaction is missing or deleted" }
+    }
+
+    @Transaction
+    open suspend fun reconcileAccount(
+        accountId: String,
+        currencyCode: String,
+        statementLocalDate: String,
+        statementBalanceMinor: Long,
+        createAdjustment: Boolean,
+        reconciliationId: String,
+        adjustmentTransactionId: String,
+        adjustmentEntryId: String,
+        completedAt: Long,
+    ) {
+        val account = requireNotNull(getActiveAccount(accountId)) { "Account is missing or archived" }
+        require(account.currencyCode == currencyCode) { "Statement currency does not match the account" }
+        val calculatedBalance = requireNotNull(getClearedAccountBalance(accountId, statementLocalDate)) {
+            "Cleared balance is unavailable"
+        }
+        val difference = Math.subtractExact(statementBalanceMinor, calculatedBalance)
+        require(difference == 0L || createAdjustment) {
+            "Cleared balance does not match the statement; clear matching transactions or create an adjustment"
+        }
+        val adjustment = if (difference != 0L) {
+            TransactionEntity(
+                adjustmentTransactionId,
+                if (difference > 0) "INCOME" else "EXPENSE",
+                statementLocalDate,
+                "Reconciliation adjustment",
+                "",
+                completedAt,
+                completedAt,
+            )
+        } else {
+            null
+        }
+        val entry = adjustment?.let {
+            TransactionEntryEntity(
+                adjustmentEntryId,
+                adjustmentTransactionId,
+                accountId,
+                null,
+                difference,
+                currencyCode,
+                true,
+            )
+        }
+        insertReconciliationWithAdjustment(
+            ReconciliationEntity(
+                reconciliationId,
+                accountId,
+                statementLocalDate,
+                statementBalanceMinor,
+                calculatedBalance,
+                difference,
+                adjustment?.id,
+                completedAt,
+            ),
+            adjustment,
+            entry,
+        )
+    }
+
     @Query("UPDATE transactions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
-    abstract suspend fun deleteTransaction(id: String, deletedAt: Long): Int
+    protected abstract suspend fun softDeleteTransaction(id: String, deletedAt: Long): Int
 
     @Query("UPDATE transactions SET deletedAt = NULL, updatedAt = :restoredAt WHERE id = :id AND deletedAt IS NOT NULL")
     abstract suspend fun restoreTransaction(id: String, restoredAt: Long): Int
@@ -659,6 +763,12 @@ abstract class FinanceDao {
 
     @Query("SELECT COUNT(*) FROM reconciliations WHERE adjustmentTransactionId = :transactionId")
     protected abstract suspend fun countReconciliationReferences(transactionId: String): Int
+
+    @Transaction
+    open suspend fun deleteTransaction(id: String, deletedAt: Long): Int {
+        require(countReconciliationReferences(id) == 0) { "Reconciliation adjustments cannot be deleted" }
+        return softDeleteTransaction(id, deletedAt)
+    }
 
     @Update
     protected abstract suspend fun updateTransactionEntity(transaction: TransactionEntity): Int

@@ -42,6 +42,7 @@ data class Account(
     val type: AccountType,
     val currencyCode: String,
     val balance: Money,
+    val clearedBalance: Money = balance,
 )
 
 data class EditableAccount(
@@ -69,6 +70,7 @@ data class TransactionItem(
     val kind: TransactionKind,
     val amount: Money,
     val localDate: String,
+    val cleared: Boolean,
 )
 
 data class EditableTransaction(

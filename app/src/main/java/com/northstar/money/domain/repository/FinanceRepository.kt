@@ -51,7 +51,13 @@ interface FinanceRepository {
         destinationAccountId: String,
         note: String,
     )
-    suspend fun reconcile(accountId: String, statementBalance: Money, createAdjustment: Boolean)
+    suspend fun setTransactionCleared(id: String, cleared: Boolean)
+    suspend fun reconcile(
+        accountId: String,
+        statementLocalDate: String,
+        statementBalance: Money,
+        createAdjustment: Boolean,
+    )
     suspend fun setBudget(categoryId: String, planned: Money)
     suspend fun createGoal(name: String, target: Money, saved: Money, targetDate: String?)
     suspend fun getGoalForEdit(id: String): EditableGoal
