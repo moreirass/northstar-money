@@ -13,6 +13,7 @@ import androidx.test.core.app.ApplicationProvider
 import com.northstar.money.R
 import com.northstar.money.core.designsystem.NorthstarTheme
 import com.northstar.money.domain.model.Money
+import com.northstar.money.domain.model.BudgetProgress
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.feature.finance.FinanceUiState
@@ -72,6 +73,27 @@ class AccessibilityScaleUiTest {
             transaction.accountName,
             transaction.amount.formatted(),
             context.getString(R.string.ui_cleared_lowercase),
+        )
+        composeRule.onNodeWithContentDescription(expected).assertIsDisplayed()
+    }
+
+    @Test
+    fun budgetChartHasACompleteTextAlternative() {
+        val budget = BudgetProgress(
+            categoryId = "food",
+            categoryName = "Food",
+            planned = Money(10_000, "EUR"),
+            spent = Money(12_500, "EUR"),
+        )
+        composeRule.setContent { NorthstarTheme { BudgetProgressChart(budget) } }
+
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val expected = context.getString(
+            R.string.accessibility_budget_usage,
+            budget.categoryName,
+            budget.spent.formatted(),
+            budget.planned.formatted(),
+            125,
         )
         composeRule.onNodeWithContentDescription(expected).assertIsDisplayed()
     }

@@ -36,6 +36,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
@@ -64,6 +65,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -95,6 +98,7 @@ import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
 import com.northstar.money.data.backup.SecureBackupCodec
+import kotlin.math.roundToInt
 
 @Composable
 internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
@@ -155,6 +159,73 @@ internal fun SummaryCard(label: String, money: Money, modifier: Modifier = Modif
             Text(label, style = MaterialTheme.typography.labelLarge)
             Text(money.formatted(), style = MaterialTheme.typography.titleLarge)
         }
+    }
+}
+
+internal fun chartFraction(value: Long, maximum: Long): Float =
+    if (value <= 0L || maximum <= 0L) 0f else (value.toDouble() / maximum.toDouble()).coerceIn(0.0, 1.0).toFloat()
+
+internal fun budgetUsagePercent(spent: Long, planned: Long): Int =
+    if (spent <= 0L || planned <= 0L) 0
+    else ((spent.toDouble() / planned.toDouble()) * 100.0).coerceAtMost(Int.MAX_VALUE.toDouble()).roundToInt()
+
+@Composable
+internal fun BudgetProgressChart(budget: com.northstar.money.domain.model.BudgetProgress) {
+    val fraction = chartFraction(budget.spent.minor, budget.planned.minor)
+    val percent = budgetUsagePercent(budget.spent.minor, budget.planned.minor)
+    val description = stringResource(
+        R.string.accessibility_budget_usage,
+        budget.categoryName,
+        budget.spent.formatted(),
+        budget.planned.formatted(),
+        percent,
+    )
+    val progressColor = if (percent > 100) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+    Column(
+        Modifier.fillMaxWidth().semantics(mergeDescendants = true) {
+            contentDescription = description
+            progressBarRangeInfo = ProgressBarRangeInfo(fraction, 0f..1f)
+        },
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        LinearProgressIndicator(
+            progress = { fraction },
+            modifier = Modifier.fillMaxWidth().height(10.dp),
+            color = progressColor,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        Text(stringResource(R.string.budget_usage_percent, percent), style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+internal fun IncomeExpenseChart(income: Money, expenses: Money) {
+    val maximum = maxOf(income.minor, expenses.minor, 0L)
+    val incomeFraction = chartFraction(income.minor, maximum)
+    val expenseFraction = chartFraction(expenses.minor, maximum)
+    val incomePercent = (incomeFraction * 100).roundToInt()
+    val expensePercent = (expenseFraction * 100).roundToInt()
+    val incomeDescription = stringResource(R.string.accessibility_income_chart, income.formatted(), incomePercent)
+    val expenseDescription = stringResource(R.string.accessibility_expense_chart, expenses.formatted(), expensePercent)
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        LinearProgressIndicator(
+            progress = { incomeFraction },
+            modifier = Modifier.fillMaxWidth().height(12.dp).semantics {
+                contentDescription = incomeDescription
+                progressBarRangeInfo = ProgressBarRangeInfo(incomeFraction, 0f..1f)
+            },
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
+        LinearProgressIndicator(
+            progress = { expenseFraction },
+            modifier = Modifier.fillMaxWidth().height(12.dp).semantics {
+                contentDescription = expenseDescription
+                progressBarRangeInfo = ProgressBarRangeInfo(expenseFraction, 0f..1f)
+            },
+            color = MaterialTheme.colorScheme.secondary,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
+        )
     }
 }
 
@@ -280,6 +351,7 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
                     Column(Modifier.weight(1f)) {
                         Text(budget.categoryName, fontWeight = FontWeight.Medium)
                         Text(stringResource(R.string.money_pair, budget.spent.formatted(), budget.planned.formatted()))
+                        BudgetProgressChart(budget)
                         if (budget.rollover.minor != 0L) {
                             Text(
                                 stringResource(R.string.budget_allocated_rollover, budget.allocated.formatted(), budget.rollover.formatted()),
@@ -296,7 +368,7 @@ internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudg
         val budget = state.budgets.firstOrNull { it.categoryId == id }
         if (budget != null) {
             AmountDialog(
-                title = "Budget for ${budget.categoryName}",
+                title = stringResource(R.string.budget_for_named, budget.categoryName),
                 initial = if (budget.allocated.minor == 0L) "" else budget.allocated.minor.toBigDecimal().movePointLeft(2).toPlainString(),
                 onDismiss = { editingCategoryId = null },
                 onSave = { onSetBudget(id, it); editingCategoryId = null },
@@ -688,6 +760,7 @@ internal fun MoreScreen(
                     Text(stringResource(R.string.ui_income_versus_expenses), fontWeight = FontWeight.Medium)
                     Text(stringResource(R.string.report_income_value, state.summary.incomeThisMonth.formatted()))
                     Text(stringResource(R.string.report_expenses_value, state.summary.expensesThisMonth.formatted()))
+                    IncomeExpenseChart(state.summary.incomeThisMonth, state.summary.expensesThisMonth)
                     Text(stringResource(R.string.report_net_value, Money(net).formatted()), fontWeight = FontWeight.SemiBold)
                 }
             }

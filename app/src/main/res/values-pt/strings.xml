@@ -221,4 +221,9 @@
     <string name="accessibility_available_balance">Saldo disponível: %1$s</string>
     <string name="accessibility_summary_amount">%1$s: %2$s</string>
     <string name="accessibility_transaction">%1$s, %2$s, %3$s, %4$s, %5$s</string>
+    <string name="budget_for_named">Orçamento para %1$s</string>
+    <string name="budget_usage_percent">%1$d%% utilizado</string>
+    <string name="accessibility_budget_usage">Orçamento de %1$s: %2$s gastos de %3$s planeados, %4$d%% utilizado</string>
+    <string name="accessibility_income_chart">Rendimentos %1$s, %2$d%% do maior fluxo mensal</string>
+    <string name="accessibility_expense_chart">Despesas %1$s, %2$d%% do maior fluxo mensal</string>
 </resources>
