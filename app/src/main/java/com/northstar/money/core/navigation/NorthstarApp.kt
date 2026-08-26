@@ -135,6 +135,7 @@ fun NorthstarApp() {
                 onSetAppLock = financeViewModel::setAppLock,
                 onSetReminders = financeViewModel::setReminders,
                 onCreateCategory = financeViewModel::createCategory,
+                onCreateFullBackup = financeViewModel::createFullBackup,
             )
         }
     }
@@ -301,8 +302,10 @@ private fun MoreScreen(
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
     onCreateCategory: (String, CategoryKind) -> Unit,
+    onCreateFullBackup: suspend () -> String,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
     ) { uri ->
@@ -360,8 +363,25 @@ private fun MoreScreen(
         ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
         uri?.let {
-            context.contentResolver.openOutputStream(it)?.use { output ->
-                output.write(backupCodec.encrypt(transactionsCsv(state)))
+            scope.launch {
+                runCatching {
+                    val encrypted = backupCodec.encrypt(onCreateFullBackup())
+                    requireNotNull(context.contentResolver.openOutputStream(it)).use { output ->
+                        output.write(encrypted)
+                    }
+                }.onSuccess {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Complete database backup created",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }.onFailure { error ->
+                    android.widget.Toast.makeText(
+                        context,
+                        "Backup failed: ${error.message ?: "unknown error"}",
+                        android.widget.Toast.LENGTH_LONG,
+                    ).show()
+                }
             }
         }
     }
@@ -370,7 +390,24 @@ private fun MoreScreen(
     ) { uri ->
         uri?.let {
             context.contentResolver.openInputStream(it)?.use { input ->
-                runCatching { backupCodec.decrypt(input.readBytes()) }.onSuccess(onImportCsv)
+                runCatching { backupCodec.decrypt(input.readBytes()) }
+                    .onSuccess { decrypted ->
+                        if (decrypted.trimStart().startsWith("{")) {
+                            android.widget.Toast.makeText(
+                                context,
+                                "Complete backup detected; use the full restore flow",
+                                android.widget.Toast.LENGTH_LONG,
+                            ).show()
+                        } else {
+                            onImportCsv(decrypted)
+                        }
+                    }.onFailure { error ->
+                        android.widget.Toast.makeText(
+                            context,
+                            "Backup could not be read: ${error.message ?: "unknown error"}",
+                            android.widget.Toast.LENGTH_LONG,
+                        ).show()
+                    }
             }
         }
     }
@@ -438,7 +475,7 @@ private fun MoreScreen(
                     Text("Export monthly report to PDF")
                 }
                 TextButton(onClick = { backupLauncher.launch("northstar-encrypted-backup.nsb") }) {
-                    Text("Create encrypted transaction backup")
+                    Text("Create encrypted full backup")
                 }
                 TextButton(onClick = { restoreLauncher.launch(arrayOf("application/octet-stream", "*/*")) }) {
                     Text("Restore encrypted transaction backup")
@@ -615,19 +652,6 @@ private fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind)
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
-}
-
-private fun transactionsCsv(state: FinanceUiState): String = buildString {
-    appendLine("date,type,payee,category,account,amount,currency")
-    state.transactions.forEach { transaction ->
-        appendLine(
-            listOf(
-                transaction.localDate, transaction.kind.name, transaction.payee,
-                transaction.categoryName.orEmpty(), transaction.accountName,
-                transaction.amount.minor.toString(), transaction.amount.currencyCode,
-            ).joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" }
-        )
-    }
 }
 
 @Composable

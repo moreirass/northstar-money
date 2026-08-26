@@ -14,13 +14,18 @@ import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
 import com.northstar.money.domain.repository.FinanceRepository
+import com.northstar.money.core.database.NorthstarDatabase
+import com.northstar.money.data.backup.FullBackupJsonCodec
 import java.time.LocalDate
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-class OfflineFinanceRepository(private val dao: FinanceDao) : FinanceRepository {
+class OfflineFinanceRepository(
+    private val dao: FinanceDao,
+    private val backupCodec: FullBackupJsonCodec = FullBackupJsonCodec(),
+) : FinanceRepository {
     override fun observeAccounts(): Flow<List<Account>> = dao.observeAccounts().map { rows ->
         rows.map { Account(it.id, it.name, AccountType.valueOf(it.type), it.currencyCode, Money(it.balanceMinor, it.currencyCode)) }
     }
@@ -306,4 +311,9 @@ class OfflineFinanceRepository(private val dao: FinanceDao) : FinanceRepository 
             )
         )
     }
+
+    override suspend fun createFullBackup(): String = backupCodec.encode(
+        snapshot = dao.exportSnapshot(),
+        databaseVersion = NorthstarDatabase.VERSION,
+    )
 }

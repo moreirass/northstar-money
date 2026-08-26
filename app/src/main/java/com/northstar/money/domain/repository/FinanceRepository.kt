@@ -38,4 +38,5 @@ interface FinanceRepository {
     suspend fun importCsv(csv: String): com.northstar.money.domain.model.ImportResult
     suspend fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind)
     suspend fun deleteTransaction(id: String)
+    suspend fun createFullBackup(): String
 }

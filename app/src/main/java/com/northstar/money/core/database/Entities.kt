@@ -4,7 +4,9 @@ import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
+import kotlinx.serialization.Serializable
 
+@Serializable
 @Entity(tableName = "accounts", indices = [Index("archivedAt")])
 data class AccountEntity(
     @PrimaryKey val id: String,
@@ -17,6 +19,7 @@ data class AccountEntity(
     val updatedAt: Long,
 )
 
+@Serializable
 @Entity(tableName = "categories", indices = [Index(value = ["kind", "name"], unique = true)])
 data class CategoryEntity(
     @PrimaryKey val id: String,
@@ -26,6 +29,7 @@ data class CategoryEntity(
     val archivedAt: Long? = null,
 )
 
+@Serializable
 @Entity(tableName = "transactions", indices = [Index("localDate"), Index("createdAt")])
 data class TransactionEntity(
     @PrimaryKey val id: String,
@@ -37,6 +41,7 @@ data class TransactionEntity(
     val updatedAt: Long,
 )
 
+@Serializable
 @Entity(
     tableName = "transaction_entries",
     foreignKeys = [
@@ -96,6 +101,7 @@ data class AccountBalanceRow(
     val balanceMinor: Long,
 )
 
+@Serializable
 @Entity(
     tableName = "reconciliations",
     foreignKeys = [
@@ -125,6 +131,7 @@ data class ReconciliationEntity(
     val completedAt: Long,
 )
 
+@Serializable
 @Entity(
     tableName = "budget_allocations",
     foreignKeys = [ForeignKey(
@@ -142,6 +149,7 @@ data class BudgetAllocationEntity(
     val plannedMinor: Long,
 )
 
+@Serializable
 @Entity(tableName = "goals", indices = [Index("status")])
 data class GoalEntity(
     @PrimaryKey val id: String,
@@ -161,6 +169,7 @@ data class BudgetRow(
     val spentMinor: Long,
 )
 
+@Serializable
 @Entity(
     tableName = "recurring_schedules",
     foreignKeys = [
@@ -184,6 +193,7 @@ data class RecurringScheduleEntity(
     val createdAt: Long,
 )
 
+@Serializable
 @Entity(
     tableName = "debt_profiles",
     foreignKeys = [ForeignKey(

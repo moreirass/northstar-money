@@ -167,6 +167,8 @@ class FinanceViewModel(
         viewModelScope.launch { repository.createCategory(name, kind) }
     }
 
+    suspend fun createFullBackup(): String = repository.createFullBackup()
+
     private fun calculateForecast(balance: Money, schedules: List<RecurringItem>): CashFlowForecast {
         val today = LocalDate.now()
         val end = today.plusDays(30)

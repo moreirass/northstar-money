@@ -15,11 +15,15 @@ import androidx.room.RoomDatabase
         RecurringScheduleEntity::class,
         DebtProfileEntity::class,
     ],
-    version = 4,
+    version = NorthstarDatabase.VERSION,
     exportSchema = true,
 )
 abstract class NorthstarDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
+
+    companion object {
+        const val VERSION = 4
+    }
 }
 
 val MIGRATION_1_2 = object : androidx.room.migration.Migration(1, 2) {

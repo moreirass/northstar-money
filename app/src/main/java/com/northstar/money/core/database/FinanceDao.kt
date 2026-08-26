@@ -174,4 +174,44 @@ abstract class FinanceDao {
         accountId: String,
         amountMinor: Long,
     ): Int
+
+    @Query("SELECT * FROM accounts ORDER BY id")
+    protected abstract suspend fun getAllAccountsForBackup(): List<AccountEntity>
+
+    @Query("SELECT * FROM categories ORDER BY id")
+    protected abstract suspend fun getAllCategoriesForBackup(): List<CategoryEntity>
+
+    @Query("SELECT * FROM transactions ORDER BY id")
+    protected abstract suspend fun getAllTransactionsForBackup(): List<TransactionEntity>
+
+    @Query("SELECT * FROM transaction_entries ORDER BY id")
+    protected abstract suspend fun getAllTransactionEntriesForBackup(): List<TransactionEntryEntity>
+
+    @Query("SELECT * FROM reconciliations ORDER BY id")
+    protected abstract suspend fun getAllReconciliationsForBackup(): List<ReconciliationEntity>
+
+    @Query("SELECT * FROM budget_allocations ORDER BY id")
+    protected abstract suspend fun getAllBudgetAllocationsForBackup(): List<BudgetAllocationEntity>
+
+    @Query("SELECT * FROM goals ORDER BY id")
+    protected abstract suspend fun getAllGoalsForBackup(): List<GoalEntity>
+
+    @Query("SELECT * FROM recurring_schedules ORDER BY id")
+    protected abstract suspend fun getAllRecurringSchedulesForBackup(): List<RecurringScheduleEntity>
+
+    @Query("SELECT * FROM debt_profiles ORDER BY id")
+    protected abstract suspend fun getAllDebtProfilesForBackup(): List<DebtProfileEntity>
+
+    @Transaction
+    open suspend fun exportSnapshot(): DatabaseSnapshot = DatabaseSnapshot(
+        accounts = getAllAccountsForBackup(),
+        categories = getAllCategoriesForBackup(),
+        transactions = getAllTransactionsForBackup(),
+        transactionEntries = getAllTransactionEntriesForBackup(),
+        reconciliations = getAllReconciliationsForBackup(),
+        budgetAllocations = getAllBudgetAllocationsForBackup(),
+        goals = getAllGoalsForBackup(),
+        recurringSchedules = getAllRecurringSchedulesForBackup(),
+        debtProfiles = getAllDebtProfilesForBackup(),
+    )
 }
