@@ -125,6 +125,15 @@
     <string name="transactions_mark_pending">Mark as pending</string>
     <string name="transactions_mark_cleared">Mark as cleared</string>
     <string name="transactions_delete">Delete</string>
+    <string name="budgets_title">Budgets</string>
+    <string name="budgets_subtitle">Keep monthly spending limits under control by category.</string>
+    <string name="budgets_empty">Create your first budget to start tracking a category.</string>
+    <string name="budgets_add">Add budget</string>
+    <string name="budgets_monthly">Monthly</string>
+    <string name="budgets_of_amount">of %1$s</string>
+    <string name="budgets_percent_used">%1$d%% used</string>
+    <string name="budgets_choose_category">Choose a category</string>
+    <string name="budgets_all_categories_set">Every expense category already has a budget.</string>
     <string name="action_edit_named">Edit %1$s</string>
     <string name="action_delete_named">Delete %1$s</string>
     <string name="forecast_projected">Projected: %1$s</string>

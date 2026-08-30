@@ -215,53 +215,6 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
 }
 
 @Composable
-internal fun PlanScreen(state: FinanceUiState, padding: PaddingValues, onSetBudget: (String, String) -> Unit) {
-    var editingCategoryId by remember { mutableStateOf<String?>(null) }
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { Text(stringResource(R.string.ui_monthly_plan), style = MaterialTheme.typography.headlineMedium) }
-        val totalPlanned = state.budgets.sumOf { it.planned.minor }
-        val totalSpent = state.budgets.sumOf { it.spent.minor }
-        item { Text(stringResource(R.string.budget_spent_planned, Money(totalSpent).displayValue(), Money(totalPlanned).displayValue())) }
-        if (state.budgets.isEmpty()) {
-            item { EmptyStateCard(stringResource(R.string.state_empty_budgets)) }
-        }
-        items(state.budgets, key = { it.categoryId }) { budget ->
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(budget.categoryName, fontWeight = FontWeight.Medium)
-                        Text(stringResource(R.string.money_pair, budget.spent.displayValue(), budget.planned.displayValue()))
-                        BudgetProgressChart(budget)
-                        if (budget.rollover.minor != 0L) {
-                            Text(
-                                stringResource(R.string.budget_allocated_rollover, budget.allocated.displayValue(), budget.rollover.displayValue()),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
-                    TextButton(onClick = { editingCategoryId = budget.categoryId }) { Text(stringResource(R.string.ui_set)) }
-                }
-            }
-        }
-    }
-    editingCategoryId?.let { id ->
-        val budget = state.budgets.firstOrNull { it.categoryId == id }
-        if (budget != null) {
-            AmountDialog(
-                title = stringResource(R.string.budget_for_named, budget.categoryName),
-                initial = if (budget.allocated.minor == 0L) "" else budget.allocated.minor.toBigDecimal().movePointLeft(2).toPlainString(),
-                onDismiss = { editingCategoryId = null },
-                onSave = { onSetBudget(id, it); editingCategoryId = null },
-            )
-        }
-    }
-}
-
-@Composable
 @SuppressLint("LocalContextGetResourceValueCall")
 internal fun MoreScreen(
     state: FinanceUiState,

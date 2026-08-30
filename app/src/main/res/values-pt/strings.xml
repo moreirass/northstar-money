@@ -125,6 +125,15 @@
     <string name="transactions_mark_pending">Marcar como pendente</string>
     <string name="transactions_mark_cleared">Marcar como compensada</string>
     <string name="transactions_delete">Eliminar</string>
+    <string name="budgets_title">Orçamentos</string>
+    <string name="budgets_subtitle">Controle os seus limites mensais por categoria de gasto.</string>
+    <string name="budgets_empty">Crie o primeiro orçamento para começar a controlar uma categoria.</string>
+    <string name="budgets_add">Adicionar orçamento</string>
+    <string name="budgets_monthly">Mensal</string>
+    <string name="budgets_of_amount">de %1$s</string>
+    <string name="budgets_percent_used">%1$d%% usado</string>
+    <string name="budgets_choose_category">Escolha uma categoria</string>
+    <string name="budgets_all_categories_set">Todas as categorias de despesa já têm orçamento.</string>
     <string name="action_edit_named">Editar %1$s</string>
     <string name="action_delete_named">Eliminar %1$s</string>
     <string name="forecast_projected">Previsão: %1$s</string>

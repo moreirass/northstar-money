@@ -161,13 +161,21 @@ fun NorthstarApp() {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
     val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
-        containerColor = if (destination == Destination.Home || destination == Destination.Activity) {
+        containerColor = if (
+            destination == Destination.Home ||
+            destination == Destination.Activity ||
+            destination == Destination.Plan
+        ) {
             Color(0xFF08080A)
         } else {
             MaterialTheme.colorScheme.background
         },
         topBar = {
-            if (destination != Destination.Home && destination != Destination.Activity) {
+            if (
+                destination != Destination.Home &&
+                destination != Destination.Activity &&
+                destination != Destination.Plan
+            ) {
                 TopAppBar(
                     title = { Text(stringResource(destination.labelRes)) },
                     actions = {
