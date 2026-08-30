@@ -112,8 +112,8 @@
     <string name="ui_add_transaction">Adicionar transação</string>
     <string name="ui_currency_is_fixed_after_account_creation">A moeda não pode ser alterada depois de criar a conta.</string>
     <string name="nav_home">Início</string>
-    <string name="nav_plan">Plano</string>
-    <string name="nav_activity">Atividade</string>
+    <string name="nav_plan">Orçamentos</string>
+    <string name="nav_activity">Transações</string>
     <string name="nav_more">Mais</string>
     <string name="action_add_transaction">Adicionar transação</string>
     <string name="action_edit_named">Editar %1$s</string>

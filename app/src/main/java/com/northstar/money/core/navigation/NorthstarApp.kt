@@ -30,12 +30,15 @@ import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material.icons.filled.PieChartOutline
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Card
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FabPosition
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -44,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.OutlinedTextField
@@ -106,8 +110,8 @@ import com.northstar.money.data.backup.SecureBackupCodec
 
 internal enum class Destination(val route: String, @StringRes val labelRes: Int, val icon: ImageVector) {
     Home("home", R.string.nav_home, Icons.Default.Home),
-    Plan("plan", R.string.nav_plan, Icons.Default.Assessment),
-    Activity("activity", R.string.nav_activity, Icons.AutoMirrored.Filled.ReceiptLong),
+    Activity("activity", R.string.nav_activity, Icons.Default.SwapHoriz),
+    Plan("plan", R.string.nav_plan, Icons.Default.PieChartOutline),
     More("more", R.string.nav_more, Icons.Default.MoreHoriz),
 }
 
@@ -157,32 +161,43 @@ fun NorthstarApp() {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
     val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
+        containerColor = if (destination == Destination.Home) Color(0xFF08080A) else MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(destination.labelRes)) },
-                actions = {
-                    val moneyVisibilityDescription = stringResource(
-                        if (state.settings.moneyValuesHidden) R.string.money_show_values else R.string.money_hide_values,
-                    )
-                    IconButton(
-                        onClick = { financeViewModel.setMoneyValuesHidden(!state.settings.moneyValuesHidden) },
-                    ) {
-                        Icon(
-                            imageVector = if (state.settings.moneyValuesHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                            contentDescription = moneyVisibilityDescription,
+            if (destination != Destination.Home) {
+                TopAppBar(
+                    title = { Text(stringResource(destination.labelRes)) },
+                    actions = {
+                        val moneyVisibilityDescription = stringResource(
+                            if (state.settings.moneyValuesHidden) R.string.money_show_values else R.string.money_hide_values,
                         )
-                    }
-                },
-            )
+                        IconButton(
+                            onClick = { financeViewModel.setMoneyValuesHidden(!state.settings.moneyValuesHidden) },
+                        ) {
+                            Icon(
+                                imageVector = if (state.settings.moneyValuesHidden) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = moneyVisibilityDescription,
+                            )
+                        }
+                    },
+                )
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(onClick = { showAdd = true }) {
+            FloatingActionButton(
+                onClick = { showAdd = true },
+                containerColor = Color(0xFF10B981),
+                contentColor = Color(0xFF08080A),
+            ) {
                 Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_transaction))
             }
         },
+        floatingActionButtonPosition = if (destination == Destination.Home) FabPosition.Start else FabPosition.End,
         bottomBar = {
-            if (!useNavigationRail) NavigationBar {
+            if (!useNavigationRail) NavigationBar(
+                containerColor = Color(0xFF121215),
+                tonalElevation = 0.dp,
+            ) {
                 Destination.entries.forEach { item ->
                     NavigationBarItem(
                         selected = destination == item,
@@ -195,6 +210,13 @@ fun NorthstarApp() {
                         },
                         icon = { Icon(item.icon, contentDescription = null) },
                         label = { Text(stringResource(item.labelRes)) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = Color(0xFF10B981),
+                            selectedTextColor = Color(0xFF10B981),
+                            unselectedIconColor = Color(0xFF8E8E9F),
+                            unselectedTextColor = Color(0xFF8E8E9F),
+                            indicatorColor = Color.Transparent,
+                        ),
                     )
                 }
             }
@@ -226,7 +248,14 @@ fun NorthstarApp() {
         ) {
             composable(Destination.Home.route) {
                 FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
-                    AdaptiveContentPane(widthClass) { HomeScreen(state, padding) }
+                    AdaptiveContentPane(widthClass) {
+                        HomeScreen(
+                            state = state,
+                            padding = padding,
+                            onOpenTransactions = { navController.navigate(Destination.Activity.route) },
+                            onOpenBudgets = { navController.navigate(Destination.Plan.route) },
+                        )
+                    }
                 }
             }
             composable(Destination.Plan.route) {

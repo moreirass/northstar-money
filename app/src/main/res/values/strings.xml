@@ -112,8 +112,8 @@
     <string name="ui_add_transaction">Add transaction</string>
     <string name="ui_currency_is_fixed_after_account_creation">Currency is fixed after account creation.</string>
     <string name="nav_home">Home</string>
-    <string name="nav_plan">Plan</string>
-    <string name="nav_activity">Activity</string>
+    <string name="nav_plan">Budgets</string>
+    <string name="nav_activity">Transactions</string>
     <string name="nav_more">More</string>
     <string name="action_add_transaction">Add transaction</string>
     <string name="action_edit_named">Edit %1$s</string>

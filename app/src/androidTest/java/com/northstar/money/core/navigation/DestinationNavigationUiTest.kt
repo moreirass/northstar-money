@@ -19,10 +19,10 @@ class DestinationNavigationUiTest {
         if (composeRule.onAllNodesWithText("Skip introduction").fetchSemanticsNodes().isNotEmpty()) {
             composeRule.onNodeWithText("Skip introduction").performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
-                composeRule.onAllNodesWithText("Activity").fetchSemanticsNodes().isNotEmpty()
+                composeRule.onAllNodesWithText("Transactions").fetchSemanticsNodes().isNotEmpty()
             }
         }
-        composeRule.onNodeWithText("Activity").performClick()
+        composeRule.onNodeWithText("Transactions").performClick()
         composeRule.onNodeWithText("Search transactions").assertIsDisplayed()
 
         composeRule.activity.runOnUiThread {
@@ -30,7 +30,7 @@ class DestinationNavigationUiTest {
         }
         composeRule.waitForIdle()
 
-        composeRule.onNodeWithText("Available now").assertIsDisplayed()
+        composeRule.onNodeWithText("MEUS ORÇAMENTOS").assertIsDisplayed()
         check(composeRule.onAllNodesWithText("Home").fetchSemanticsNodes().isNotEmpty())
     }
 }

@@ -101,57 +101,6 @@ import com.northstar.money.data.backup.SecureBackupCodec
 import kotlin.math.roundToInt
 
 @Composable
-internal fun HomeScreen(state: FinanceUiState, padding: PaddingValues) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize().padding(padding),
-        contentPadding = PaddingValues(20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        item {
-            val balanceDescription = stringResource(
-                R.string.accessibility_available_balance,
-                state.summary.balance.displayValue(),
-            )
-            Column(Modifier.semantics(mergeDescendants = true) { contentDescription = balanceDescription }) {
-                Text(stringResource(R.string.ui_available_now), style = MaterialTheme.typography.labelLarge)
-                Text(state.summary.balance.displayValue(), style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.SemiBold)
-            }
-        }
-        item {
-            Card(Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(stringResource(R.string.ui_30_day_forecast), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.forecast_projected, state.forecast.projectedBalance.displayValue()))
-                    Text(stringResource(R.string.forecast_lowest, state.forecast.lowestBalance.displayValue(), state.forecast.lowestDate))
-                    Text(stringResource(R.string.forecast_scheduled_events, state.forecast.scheduledEvents), style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-        item {
-            BoxWithConstraints {
-                if (maxWidth < 420.dp || LocalDensity.current.fontScale >= 1.5f) {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.fillMaxWidth())
-                        SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.fillMaxWidth())
-                    }
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        SummaryCard(stringResource(R.string.ui_income), state.summary.incomeThisMonth, Modifier.weight(1f))
-                        SummaryCard(stringResource(R.string.ui_spent), state.summary.expensesThisMonth, Modifier.weight(1f))
-                    }
-                }
-            }
-        }
-        item { Text(stringResource(R.string.ui_recent_activity), style = MaterialTheme.typography.titleLarge) }
-        if (state.transactions.isEmpty()) {
-            item { EmptyStateCard(stringResource(R.string.ui_add_your_first_transaction_to_see_your_financial_pic)) }
-        } else {
-            items(state.transactions.take(5), key = { it.id }) { TransactionRow(it) }
-        }
-    }
-}
-
-@Composable
 internal fun SummaryCard(label: String, money: Money, modifier: Modifier = Modifier) {
     val description = stringResource(R.string.accessibility_summary_amount, label, money.displayValue())
     Card(modifier.semantics(mergeDescendants = true) { contentDescription = description }) {
