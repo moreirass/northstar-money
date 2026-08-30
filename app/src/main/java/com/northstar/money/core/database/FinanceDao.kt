@@ -59,7 +59,7 @@ abstract class FinanceDao {
 
     @Query(
         """
-        SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
+        SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
                a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
                NOT EXISTS (
                    SELECT 1 FROM transaction_entries pending
@@ -80,7 +80,7 @@ abstract class FinanceDao {
 
     @Query(
         """
-        SELECT t.id, t.payee, t.kind, t.localDate, e.amountMinor, e.currencyCode,
+        SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
                a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
                NOT EXISTS (
                    SELECT 1 FROM transaction_entries pending

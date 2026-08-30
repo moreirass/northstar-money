@@ -855,6 +855,7 @@ class OfflineFinanceRepository(
         amount = Money(row.amountMinor, row.currencyCode),
         localDate = row.localDate,
         cleared = row.cleared,
+        createdAt = row.createdAt,
     )
 
     private fun recurringToDomain(row: com.northstar.money.core.database.RecurringScheduleEntity) =

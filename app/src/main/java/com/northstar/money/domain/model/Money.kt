@@ -71,6 +71,7 @@ data class TransactionItem(
     val amount: Money,
     val localDate: String,
     val cleared: Boolean,
+    val createdAt: Long = 0L,
 )
 
 data class EditableTransaction(

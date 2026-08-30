@@ -11,6 +11,7 @@ import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import com.northstar.money.domain.model.Money
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -49,6 +50,15 @@ class TransactionEditingTest {
     @After
     fun closeDatabase() {
         database.close()
+    }
+
+    @Test
+    fun observedTransactionExposesPersistedCreationTime() = runBlocking {
+        seedExpense()
+
+        val item = repository.observeTransactions().first().single()
+
+        assertEquals(10L, item.createdAt)
     }
 
     @Test

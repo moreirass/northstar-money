@@ -116,6 +116,15 @@
     <string name="nav_activity">Transactions</string>
     <string name="nav_more">More</string>
     <string name="action_add_transaction">Add transaction</string>
+    <string name="transactions_expenses">Expenses</string>
+    <string name="transactions_income">Income</string>
+    <string name="transactions_month_balance">Month balance</string>
+    <string name="transactions_empty_month">No transactions this month.</string>
+    <string name="transactions_previous_month">Previous month</string>
+    <string name="transactions_next_month">Next month</string>
+    <string name="transactions_mark_pending">Mark as pending</string>
+    <string name="transactions_mark_cleared">Mark as cleared</string>
+    <string name="transactions_delete">Delete</string>
     <string name="action_edit_named">Edit %1$s</string>
     <string name="action_delete_named">Delete %1$s</string>
     <string name="forecast_projected">Projected: %1$s</string>

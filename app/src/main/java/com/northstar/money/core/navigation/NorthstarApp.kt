@@ -161,9 +161,13 @@ fun NorthstarApp() {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
     val useNavigationRail = widthClass != WindowWidthClass.COMPACT
     Scaffold(
-        containerColor = if (destination == Destination.Home) Color(0xFF08080A) else MaterialTheme.colorScheme.background,
+        containerColor = if (destination == Destination.Home || destination == Destination.Activity) {
+            Color(0xFF08080A)
+        } else {
+            MaterialTheme.colorScheme.background
+        },
         topBar = {
-            if (destination != Destination.Home) {
+            if (destination != Destination.Home && destination != Destination.Activity) {
                 TopAppBar(
                     title = { Text(stringResource(destination.labelRes)) },
                     actions = {
@@ -184,12 +188,14 @@ fun NorthstarApp() {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = { showAdd = true },
-                containerColor = Color(0xFF10B981),
-                contentColor = Color(0xFF08080A),
-            ) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_transaction))
+            if (destination == Destination.Home) {
+                FloatingActionButton(
+                    onClick = { showAdd = true },
+                    containerColor = Color(0xFF10B981),
+                    contentColor = Color(0xFF08080A),
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = stringResource(R.string.action_add_transaction))
+                }
             }
         },
         floatingActionButtonPosition = if (destination == Destination.Home) FabPosition.Start else FabPosition.End,

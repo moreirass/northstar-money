@@ -9,6 +9,9 @@ import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.longClick
 import androidx.test.core.app.ApplicationProvider
 import com.northstar.money.R
 import com.northstar.money.core.designsystem.NorthstarTheme
@@ -52,11 +55,14 @@ class AccessibilityScaleUiTest {
             }
         }
 
+        val summary = "${transaction.payee}, - ${transaction.amount.formatted()}, ${transaction.localDate}"
+        composeRule.onNodeWithContentDescription(summary)
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(60.dp)
+            .performTouchInput { longClick() }
         val context = ApplicationProvider.getApplicationContext<android.content.Context>()
-        val edit = context.getString(R.string.action_edit_named, transaction.payee)
-        val delete = context.getString(R.string.action_delete_named, transaction.payee)
-        composeRule.onNodeWithContentDescription(edit).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
-        composeRule.onNodeWithContentDescription(delete).assertIsDisplayed().assertHeightIsAtLeast(48.dp)
+        composeRule.onNodeWithText(context.getString(R.string.transactions_mark_pending)).assertIsDisplayed()
+        composeRule.onNodeWithText(context.getString(R.string.transactions_delete)).assertIsDisplayed()
     }
 
     @Test

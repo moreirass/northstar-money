@@ -101,6 +101,7 @@ data class TransactionRow(
     val payee: String,
     val kind: String,
     val localDate: String,
+    val createdAt: Long,
     val amountMinor: Long,
     val currencyCode: String,
     val accountName: String,
