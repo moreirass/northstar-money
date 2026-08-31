@@ -34,7 +34,7 @@ class BudgetsScreenUiTest {
 
         composeRule.setContent {
             NorthstarTheme {
-                PlanScreen(state, PaddingValues(0.dp), { _, _ -> })
+                PlanScreen(state, PaddingValues(0.dp), { _, _ -> }, {})
             }
         }
 

@@ -117,6 +117,8 @@ internal enum class Destination(val route: String, @StringRes val labelRes: Int,
 
 internal enum class WindowWidthClass { COMPACT, MEDIUM, EXPANDED }
 
+private const val BudgetDetailRoute = "budget/{categoryId}"
+
 internal fun classifyWindowWidth(widthDp: Int): WindowWidthClass = when {
     widthDp < 600 -> WindowWidthClass.COMPACT
     widthDp < 840 -> WindowWidthClass.MEDIUM
@@ -139,6 +141,7 @@ fun NorthstarApp() {
     CompositionLocalProvider(LocalMoneyValuesHidden provides state.settings.moneyValuesHidden) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
+    val isBudgetDetail = backStackEntry?.destination?.route == BudgetDetailRoute
     val destination = Destination.entries.firstOrNull { it.route == backStackEntry?.destination?.route }
         ?: Destination.Home
     var showAdd by remember { mutableStateOf(false) }
@@ -196,7 +199,7 @@ fun NorthstarApp() {
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
-            if (destination == Destination.Home) {
+            if (destination == Destination.Home && !isBudgetDetail) {
                 FloatingActionButton(
                     onClick = { showAdd = true },
                     containerColor = Color(0xFF10B981),
@@ -208,7 +211,7 @@ fun NorthstarApp() {
         },
         floatingActionButtonPosition = if (destination == Destination.Home) FabPosition.Start else FabPosition.End,
         bottomBar = {
-            if (!useNavigationRail) NavigationBar(
+            if (!useNavigationRail && !isBudgetDetail) NavigationBar(
                 containerColor = Color(0xFF121215),
                 tonalElevation = 0.dp,
             ) {
@@ -237,7 +240,7 @@ fun NorthstarApp() {
         },
     ) { padding ->
         Row(Modifier.fillMaxSize()) {
-        if (useNavigationRail) {
+        if (useNavigationRail && !isBudgetDetail) {
             NavigationRail {
                 Destination.entries.forEach { item ->
                     NavigationRailItem(
@@ -274,7 +277,34 @@ fun NorthstarApp() {
             }
             composable(Destination.Plan.route) {
                 FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
-                    AdaptiveContentPane(widthClass) { PlanScreen(state, padding, financeViewModel::setBudget) }
+                    AdaptiveContentPane(widthClass) {
+                        PlanScreen(
+                            state = state,
+                            padding = padding,
+                            onSetBudget = financeViewModel::setBudget,
+                            onOpenBudget = { categoryId -> navController.navigate("budget/$categoryId") },
+                        )
+                    }
+                }
+            }
+            composable(BudgetDetailRoute) { entry ->
+                FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
+                    AdaptiveContentPane(widthClass) {
+                        BudgetDetailScreen(
+                            budget = state.budgets.firstOrNull {
+                                it.categoryId == entry.arguments?.getString("categoryId")
+                            },
+                            transactions = state.transactions,
+                            padding = padding,
+                            onBack = navController::popBackStack,
+                            onEditTransaction = { id ->
+                                scope.launch {
+                                    runSuspendCatching { financeViewModel.getTransactionForEdit(id) }
+                                        .onSuccess { editingTransaction = it }
+                                }
+                            },
+                        )
+                    }
                 }
             }
             composable(Destination.Activity.route) { FinanceScreenState(

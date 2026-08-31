@@ -75,6 +75,7 @@ internal fun PlanScreen(
     state: FinanceUiState,
     padding: PaddingValues,
     onSetBudget: (String, String) -> Unit,
+    onOpenBudget: (String) -> Unit,
 ) {
     var editingCategoryId by remember { mutableStateOf<String?>(null) }
     var showCategoryPicker by remember { mutableStateOf(false) }
@@ -112,7 +113,7 @@ internal fun PlanScreen(
                 }
             } else {
                 items(activeBudgets, key = { it.categoryId }) { budget ->
-                    DesignedBudgetCard(budget, onClick = { editingCategoryId = budget.categoryId })
+                    DesignedBudgetCard(budget, onClick = { onOpenBudget(budget.categoryId) })
                 }
             }
         }
@@ -130,7 +131,7 @@ internal fun PlanScreen(
 
     if (showCategoryPicker) {
         BudgetCategoryPicker(
-            budgets = state.budgets.filter { it.allocated.minor == 0L },
+            budgets = state.budgets,
             onDismiss = { showCategoryPicker = false },
             onSelected = { id ->
                 showCategoryPicker = false

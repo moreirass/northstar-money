@@ -134,6 +134,12 @@
     <string name="budgets_percent_used">%1$d%% used</string>
     <string name="budgets_choose_category">Choose a category</string>
     <string name="budgets_all_categories_set">Every expense category already has a budget.</string>
+    <string name="budget_detail_back">Back to budgets</string>
+    <string name="budget_detail_not_found">This budget is no longer available.</string>
+    <string name="budget_detail_spent_so_far">Total spent so far</string>
+    <string name="budget_detail_trend">MONTHLY TREND (LAST 6 MONTHS)</string>
+    <string name="budget_detail_transactions">TRANSACTIONS IN BUDGET</string>
+    <string name="budget_detail_empty_transactions">No transactions in this budget this month.</string>
     <string name="action_edit_named">Edit %1$s</string>
     <string name="action_delete_named">Delete %1$s</string>
     <string name="forecast_projected">Projected: %1$s</string>

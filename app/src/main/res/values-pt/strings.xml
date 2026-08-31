@@ -134,6 +134,12 @@
     <string name="budgets_percent_used">%1$d%% usado</string>
     <string name="budgets_choose_category">Escolha uma categoria</string>
     <string name="budgets_all_categories_set">Todas as categorias de despesa já têm orçamento.</string>
+    <string name="budget_detail_back">Voltar aos orçamentos</string>
+    <string name="budget_detail_not_found">Este orçamento já não está disponível.</string>
+    <string name="budget_detail_spent_so_far">Total gasto até agora</string>
+    <string name="budget_detail_trend">EVOLUÇÃO MENSAL (ÚLTIMOS 6 MESES)</string>
+    <string name="budget_detail_transactions">TRANSAÇÕES NO ORÇAMENTO</string>
+    <string name="budget_detail_empty_transactions">Sem transações neste orçamento durante o mês atual.</string>
     <string name="action_edit_named">Editar %1$s</string>
     <string name="action_delete_named">Eliminar %1$s</string>
     <string name="forecast_projected">Previsão: %1$s</string>
