@@ -2,6 +2,8 @@ package com.northstar.money.core.navigation
 
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -36,6 +39,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -57,6 +61,19 @@ private val OnboardingPrimary = Color.White
 private val OnboardingSecondary = Color(0xFF8E8E9F)
 private val OnboardingTertiary = Color(0xFF4F4F5F)
 private val OnboardingAccent = Color(0xFF10B981)
+private val OnboardingCurrencySurface = Color(0xFF141417)
+private val OnboardingCurrencySymbolSurface = Color(0xFF24242B)
+
+private data class CurrencyOption(val code: String, val symbol: String, val name: String)
+
+private val currencyOptions = listOf(
+    CurrencyOption("EUR", "€", "Euro"),
+    CurrencyOption("USD", "$", "Dólar Americano"),
+    CurrencyOption("GBP", "£", "Libra Esterlina"),
+    CurrencyOption("BRL", "R$", "Real Brasileiro"),
+    CurrencyOption("CHF", "CHF", "Franco Suíço"),
+    CurrencyOption("JPY", "¥", "Iene Japonês"),
+)
 
 private data class LegacyOnboardingPage(
     @StringRes val titleRes: Int,
@@ -71,18 +88,127 @@ private val legacyOnboardingPages = listOf(
 )
 
 @Composable
-internal fun OnboardingScreen(onComplete: () -> Unit) {
+internal fun OnboardingScreen(
+    initialCurrencyCode: String = "EUR",
+    onCurrencySelected: (String) -> Unit = {},
+    onComplete: () -> Unit,
+) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
-    if (pageIndex == 0) {
-        WelcomeOnboardingPage(onStart = { pageIndex = 1 })
-    } else {
-        LegacyOnboardingPageScreen(
+    var selectedCurrencyCode by rememberSaveable { mutableStateOf(initialCurrencyCode) }
+    when (pageIndex) {
+        0 -> WelcomeOnboardingPage(onStart = { pageIndex = 1 })
+        1 -> CurrencyOnboardingPage(
+            selectedCurrencyCode = selectedCurrencyCode,
+            onCurrencySelected = { selectedCurrencyCode = it },
+            onContinue = {
+                onCurrencySelected(selectedCurrencyCode)
+                pageIndex = 2
+            },
+        )
+        else -> LegacyOnboardingPageScreen(
             pageIndex = pageIndex - 1,
             onNext = {
                 if (pageIndex == legacyOnboardingPages.size) onComplete() else pageIndex++
             },
             onBack = { pageIndex-- },
         )
+    }
+}
+
+@Composable
+internal fun CurrencyOnboardingPage(
+    selectedCurrencyCode: String,
+    onCurrencySelected: (String) -> Unit,
+    onContinue: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(OnboardingBackground)
+            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Icon(Icons.Default.StarBorder, contentDescription = null, tint = OnboardingAccent, modifier = Modifier.size(22.dp))
+            Text(
+                stringResource(R.string.onboarding_brand),
+                color = OnboardingPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 14.sp,
+                letterSpacing = 0.8.sp,
+            )
+        }
+        Spacer(Modifier.height(38.dp))
+        Text(
+            stringResource(R.string.onboarding_currency_title),
+            color = OnboardingPrimary,
+            fontWeight = FontWeight.Bold,
+            fontSize = 26.sp,
+            lineHeight = 32.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().semantics { heading() },
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            stringResource(R.string.onboarding_currency_body),
+            color = OnboardingSecondary,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+        )
+        Spacer(Modifier.height(24.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            currencyOptions.forEach { currency ->
+                val selected = currency.code == selectedCurrencyCode
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .background(OnboardingCurrencySurface, RoundedCornerShape(12.dp))
+                        .border(
+                            width = if (selected) 1.5.dp else 1.dp,
+                            color = if (selected) OnboardingAccent else Color.Transparent,
+                            shape = RoundedCornerShape(12.dp),
+                        )
+                        .clickable { onCurrencySelected(currency.code) }
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier.size(36.dp).background(OnboardingCurrencySymbolSurface, RoundedCornerShape(9.dp)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(currency.symbol, color = OnboardingPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(currency.code, color = OnboardingPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text(currency.name, color = OnboardingSecondary, fontSize = 12.sp)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(20.dp)
+                            .border(1.5.dp, if (selected) OnboardingAccent else OnboardingTertiary, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (selected) Box(Modifier.size(10.dp).background(OnboardingAccent, CircleShape))
+                    }
+                }
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        OnboardingStepIndicator(currentStep = 0, totalSteps = 3)
+        Spacer(Modifier.height(20.dp))
+        Button(
+            onClick = onContinue,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            shape = CircleShape,
+            colors = ButtonDefaults.buttonColors(containerColor = OnboardingAccent, contentColor = OnboardingBackground),
+        ) {
+            Text(stringResource(R.string.onboarding_continue), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        }
     }
 }
 

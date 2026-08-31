@@ -18,14 +18,17 @@ class DestinationNavigationUiTest {
     @Test
     fun bottomDestinationParticipatesInAndroidBackStack() {
         composeRule.waitForIdle()
-        if (composeRule.onAllNodesWithText("Skip introduction").fetchSemanticsNodes().isNotEmpty()) {
-            composeRule.onNodeWithText("Skip introduction").performClick()
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        if (composeRule.onAllNodesWithText(context.getString(R.string.onboarding_start)).fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_start)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_next)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_finish)).performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithText("Transactions").fetchSemanticsNodes().isNotEmpty()
             }
         }
         composeRule.onNodeWithText("Transactions").performClick()
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
         composeRule.onNodeWithText(context.getString(R.string.transactions_expenses)).assertIsDisplayed()
 
         composeRule.activity.runOnUiThread {

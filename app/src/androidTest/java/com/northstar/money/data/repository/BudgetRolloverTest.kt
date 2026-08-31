@@ -12,6 +12,7 @@ import com.northstar.money.core.database.TransactionEntryEntity
 import com.northstar.money.domain.model.Money
 import java.time.LocalDate
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -89,6 +90,25 @@ class BudgetRolloverTest {
         assertEquals(30_000L, updated.allocated.minor)
         assertEquals(6_000L, updated.rollover.minor)
         assertEquals(36_000L, updated.planned.minor)
+    }
+
+    @Test
+    fun baseCurrencyChangesSummaryAndBudgetCurrencyReactively() = runBlocking {
+        val dao = database.financeDao()
+        dao.insertAccount(AccountEntity("usd-account", "USD account", "CHECKING", "USD", 12_345, null, 2, 2))
+        val baseCurrencyCode = MutableStateFlow("EUR")
+        val dynamicRepository = OfflineFinanceRepository(dao, baseCurrencyCode = baseCurrencyCode)
+
+        assertEquals("EUR", dynamicRepository.observeSummary().first().balance.currencyCode)
+
+        baseCurrencyCode.value = "USD"
+        val usdSummary = dynamicRepository.observeSummary().first { it.balance.currencyCode == "USD" }
+        assertEquals(12_345L, usdSummary.balance.minor)
+        dynamicRepository.setBudget("food", Money(5_000, "USD"))
+        assertEquals(
+            "USD",
+            dynamicRepository.observeBudgets().first().single { it.categoryId == "food" }.planned.currencyCode,
+        )
     }
 
     @Test

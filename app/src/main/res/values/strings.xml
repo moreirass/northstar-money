@@ -274,6 +274,9 @@
     <string name="onboarding_new_welcome_title">Welcome to Northstar Money</string>
     <string name="onboarding_new_welcome_body">Your data stays on your device. Total privacy.</string>
     <string name="onboarding_start">Start</string>
+    <string name="onboarding_currency_title">Escolha a sua moeda</string>
+    <string name="onboarding_currency_body">Configure a moeda padrão para as suas transações e relatórios.</string>
+    <string name="onboarding_continue">Continuar</string>
     <string name="onboarding_welcome_title">A clear view of your money</string>
     <string name="onboarding_welcome_body">Northstar brings accounts, spending, budgets and upcoming commitments into one calm, private plan.</string>
     <string name="onboarding_privacy_title">Your data stays under your control</string>

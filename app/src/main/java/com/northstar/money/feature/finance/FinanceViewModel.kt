@@ -273,7 +273,9 @@ class FinanceViewModel(
     }
 
     fun setBudget(categoryId: String, planned: String) {
-        launchOperation { repository.setBudget(categoryId, Money.parseMajor(planned)) }
+        launchOperation {
+            repository.setBudget(categoryId, Money.parseMajor(planned, uiState.value.settings.baseCurrencyCode))
+        }
     }
 
     fun createGoal(name: String, target: String, saved: String, targetDate: String?) {
@@ -389,6 +391,10 @@ class FinanceViewModel(
 
     fun setMoneyValuesHidden(hidden: Boolean) {
         launchOperation { preferences.setMoneyValuesHidden(hidden) }
+    }
+
+    fun setBaseCurrencyCode(currencyCode: String) {
+        launchOperation { preferences.setBaseCurrencyCode(currencyCode) }
     }
 
     fun retryLoading() {

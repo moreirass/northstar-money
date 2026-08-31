@@ -34,10 +34,12 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -48,6 +50,7 @@ class OfflineFinanceRepository(
     private val portableBackupCodec: PortableBackupCodec = PortableBackupCodec(),
     private val snapshotValidator: DatabaseSnapshotValidator = DatabaseSnapshotValidator(),
     private val csvValidator: TransactionCsvValidator = TransactionCsvValidator(),
+    private val baseCurrencyCode: Flow<String> = flowOf(DEFAULT_BASE_CURRENCY_CODE),
 ) : FinanceRepository {
     private val restoreMutex = Mutex()
 
@@ -96,14 +99,17 @@ class OfflineFinanceRepository(
     override fun observeDeletedTransactions(): Flow<List<TransactionItem>> =
         dao.observeDeletedTransactions().map { rows -> rows.map(::transactionRowToDomain) }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun observeSummary(): Flow<FinanceSummary> {
         val monthStart = LocalDate.now().withDayOfMonth(1).toString()
-        return dao.observeSummary(monthStart, BASE_CURRENCY_CODE).map {
-            FinanceSummary(
-                Money(it.balanceMinor, BASE_CURRENCY_CODE),
-                Money(it.incomeMinor, BASE_CURRENCY_CODE),
-                Money(it.expenseMinor, BASE_CURRENCY_CODE),
-            )
+        return baseCurrencyCode.distinctUntilChanged().flatMapLatest { currencyCode ->
+            dao.observeSummary(monthStart, currencyCode).map {
+                FinanceSummary(
+                    Money(it.balanceMinor, currencyCode),
+                    Money(it.incomeMinor, currencyCode),
+                    Money(it.expenseMinor, currencyCode),
+                )
+            }
         }
     }
 
@@ -117,21 +123,23 @@ class OfflineFinanceRepository(
                 java.time.Duration.between(now, nextDay).toMillis().coerceAtLeast(1_000L),
             )
         }
-    }.distinctUntilChanged().flatMapLatest { month ->
+    }.distinctUntilChanged().combine(baseCurrencyCode.distinctUntilChanged()) { month, currencyCode ->
+        month to currencyCode
+    }.flatMapLatest { (month, currencyCode) ->
         dao.observeBudgets(
             monthStart = month.toString(),
             nextMonthStart = month.plusMonths(1).toString(),
-            baseCurrencyCode = BASE_CURRENCY_CODE,
-        )
-    }.map { rows ->
+            baseCurrencyCode = currencyCode,
+        ).map { rows -> currencyCode to rows }
+    }.map { (currencyCode, rows) ->
         rows.map {
             com.northstar.money.domain.model.BudgetProgress(
                 categoryId = it.categoryId,
                 categoryName = it.categoryName,
-                planned = Money(it.plannedMinor, BASE_CURRENCY_CODE),
-                spent = Money(it.spentMinor, BASE_CURRENCY_CODE),
-                allocated = Money(it.allocatedMinor, BASE_CURRENCY_CODE),
-                rollover = Money(it.rolloverMinor, BASE_CURRENCY_CODE),
+                planned = Money(it.plannedMinor, currencyCode),
+                spent = Money(it.spentMinor, currencyCode),
+                allocated = Money(it.allocatedMinor, currencyCode),
+                rollover = Money(it.rolloverMinor, currencyCode),
             )
         }
     }
@@ -437,7 +445,8 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun setBudget(categoryId: String, planned: Money) {
-        require(planned.currencyCode == BASE_CURRENCY_CODE) { "Budgets use $BASE_CURRENCY_CODE" }
+        val currencyCode = baseCurrencyCode.first()
+        require(planned.currencyCode == currencyCode) { "Budgets use $currencyCode" }
         val month = LocalDate.now().withDayOfMonth(1).toString()
         dao.upsertBudget(
             com.northstar.money.core.database.BudgetAllocationEntity(
@@ -898,6 +907,7 @@ class OfflineFinanceRepository(
 
     companion object {
         private const val BASE_CURRENCY_CODE = "EUR"
+        private const val DEFAULT_BASE_CURRENCY_CODE = "EUR"
         private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
         private val GOAL_STATUSES = setOf("ACTIVE", "PAUSED", "COMPLETED")
         private const val MAX_RECURRING_POSTS_PER_RUN = 10_000

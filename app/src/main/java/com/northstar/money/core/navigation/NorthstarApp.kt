@@ -135,7 +135,11 @@ fun NorthstarApp() {
     )
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
     if (!state.isLoading && !state.loadFailed && !state.settings.onboardingCompleted) {
-        OnboardingScreen(onComplete = { financeViewModel.setOnboardingCompleted(true) })
+        OnboardingScreen(
+            initialCurrencyCode = state.settings.baseCurrencyCode,
+            onCurrencySelected = financeViewModel::setBaseCurrencyCode,
+            onComplete = { financeViewModel.setOnboardingCompleted(true) },
+        )
         return
     }
     CompositionLocalProvider(LocalMoneyValuesHidden provides state.settings.moneyValuesHidden) {

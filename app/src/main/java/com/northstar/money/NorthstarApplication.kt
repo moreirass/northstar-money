@@ -14,6 +14,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.flow.map
 
 class NorthstarApplication : Application() {
     val database by lazy {
@@ -28,13 +29,14 @@ class NorthstarApplication : Application() {
             .build()
     }
 
+    val userPreferences by lazy { com.northstar.money.core.datastore.UserPreferences(this) }
     val financeRepository by lazy {
         OfflineFinanceRepository(
             dao = database.financeDao(),
             restoreRecoveryStore = FileRestoreRecoveryStore(this),
+            baseCurrencyCode = userPreferences.settings.map { it.baseCurrencyCode },
         )
     }
-    val userPreferences by lazy { com.northstar.money.core.datastore.UserPreferences(this) }
 
     override fun onCreate() {
         super.onCreate()
