@@ -280,6 +280,12 @@
     <string name="onboarding_balance_title">Saldo inicial</string>
     <string name="onboarding_balance_body">Quanto dinheiro tem disponível atualmente nas suas contas?</string>
     <string name="onboarding_account_name">NOME DA CONTA</string>
+    <string name="onboarding_budget_title">Defina o seu orçamento</string>
+    <string name="onboarding_budget_body">Defina um limite de gastos para manter a sua saúde financeira em dia.</string>
+    <string name="onboarding_budget_period">PERÍODO</string>
+    <string name="onboarding_budget_start_date">Data de Início</string>
+    <string name="onboarding_budget_end_date">Data de Fim</string>
+    <string name="onboarding_budget_finish">Concluir</string>
     <string name="onboarding_welcome_title">A clear view of your money</string>
     <string name="onboarding_welcome_body">Northstar brings accounts, spending, budgets and upcoming commitments into one calm, private plan.</string>
     <string name="onboarding_privacy_title">Your data stays under your control</string>

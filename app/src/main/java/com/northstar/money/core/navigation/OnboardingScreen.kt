@@ -27,6 +27,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Button
@@ -34,6 +35,9 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -44,6 +48,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -61,6 +66,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.northstar.money.R
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalAdjusters
 
 private val OnboardingBackground = Color(0xFF08080A)
 private val OnboardingSurface = Color(0xFF18181C)
@@ -68,6 +79,7 @@ private val OnboardingPrimary = Color.White
 private val OnboardingSecondary = Color(0xFF8E8E9F)
 private val OnboardingTertiary = Color(0xFF4F4F5F)
 private val OnboardingAccent = Color(0xFF10B981)
+private val OnboardingBudgetAccent = Color(0xFF3B82F6)
 private val OnboardingCurrencySurface = Color(0xFF141417)
 private val OnboardingCurrencySymbolSurface = Color(0xFF24242B)
 
@@ -81,6 +93,10 @@ private val currencyOptions = listOf(
     CurrencyOption("CHF", "CHF", "Franco Suíço"),
     CurrencyOption("JPY", "¥", "Iene Japonês"),
 )
+
+private enum class OnboardingBudgetPeriod(val label: String) {
+    WEEK("Semana"), MONTH("Mês"), YEAR("Ano"), CUSTOM("Pers."),
+}
 
 private data class LegacyOnboardingPage(
     @StringRes val titleRes: Int,
@@ -99,6 +115,7 @@ internal fun OnboardingScreen(
     initialCurrencyCode: String = "EUR",
     onCurrencySelected: (String) -> Unit = {},
     onInitialAccountSubmitted: (String, String) -> Unit = { _, _ -> },
+    onBudgetSubmitted: (String, String, String, String) -> Unit = { _, _, _, _ -> },
     onComplete: () -> Unit,
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -120,6 +137,13 @@ internal fun OnboardingScreen(
                 pageIndex = 3
             },
         )
+        3 -> BudgetOnboardingPage(
+            currencyCode = selectedCurrencyCode,
+            onFinish = { amount, period, startDate, endDate ->
+                onBudgetSubmitted(amount, period, startDate, endDate)
+                onComplete()
+            },
+        )
         else -> LegacyOnboardingPageScreen(
             pageIndex = pageIndex - 1,
             onNext = {
@@ -127,6 +151,172 @@ internal fun OnboardingScreen(
             },
             onBack = { pageIndex-- },
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun BudgetOnboardingPage(
+    currencyCode: String,
+    onFinish: (amount: String, period: String, startDate: String, endDate: String) -> Unit,
+) {
+    val nextMonth = remember { LocalDate.now().plusMonths(1).withDayOfMonth(1) }
+    var amountText by rememberSaveable { mutableStateOf("500,00") }
+    var period by rememberSaveable { mutableStateOf(OnboardingBudgetPeriod.CUSTOM) }
+    var startDate by rememberSaveable { mutableStateOf(nextMonth) }
+    var endDate by rememberSaveable { mutableStateOf(nextMonth.with(TemporalAdjusters.lastDayOfMonth())) }
+    var editingStartDate by rememberSaveable { mutableStateOf<Boolean?>(null) }
+    val amountIsValid = amountText.trim().replace(',', '.').toBigDecimalOrNull()?.signum()?.let { it > 0 } == true
+    val currencySymbol = currencyOptions.firstOrNull { it.code == currencyCode }?.symbol ?: currencyCode
+    Column(
+        modifier = Modifier.fillMaxSize().background(OnboardingBackground).windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp)) {
+            Text(
+                stringResource(R.string.onboarding_budget_title),
+                color = OnboardingPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                modifier = Modifier.semantics { heading() },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.onboarding_budget_body),
+                color = OnboardingSecondary,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(24.dp))
+            Row(
+                Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(currencySymbol, color = OnboardingBudgetAccent, fontWeight = FontWeight.Bold, fontSize = 28.sp)
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        if (value.length <= 15 && value.all { it.isDigit() || it == ',' || it == '.' }) amountText = value
+                    },
+                    modifier = Modifier.width(190.dp),
+                    singleLine = true,
+                    textStyle = TextStyle(color = OnboardingPrimary, fontWeight = FontWeight.Bold, fontSize = 36.sp),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                    cursorBrush = SolidColor(OnboardingBudgetAccent),
+                )
+            }
+            Box(Modifier.fillMaxWidth().height(2.dp).background(OnboardingCurrencySymbolSurface))
+            Spacer(Modifier.height(20.dp))
+            Text(stringResource(R.string.onboarding_budget_period), color = OnboardingSecondary, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().height(44.dp).background(OnboardingCurrencySurface, RoundedCornerShape(12.dp)).padding(4.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
+            ) {
+                OnboardingBudgetPeriod.entries.forEach { option ->
+                    val selected = period == option
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxSize()
+                            .background(if (selected) OnboardingCurrencySymbolSurface else Color.Transparent, RoundedCornerShape(8.dp))
+                            .clickable {
+                                period = option
+                                val today = LocalDate.now()
+                                when (option) {
+                                    OnboardingBudgetPeriod.WEEK -> {
+                                        startDate = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                                        endDate = startDate.plusDays(6)
+                                    }
+                                    OnboardingBudgetPeriod.MONTH -> {
+                                        startDate = today.withDayOfMonth(1)
+                                        endDate = startDate.with(TemporalAdjusters.lastDayOfMonth())
+                                    }
+                                    OnboardingBudgetPeriod.YEAR -> {
+                                        startDate = today.withDayOfYear(1)
+                                        endDate = startDate.with(TemporalAdjusters.lastDayOfYear())
+                                    }
+                                    OnboardingBudgetPeriod.CUSTOM -> Unit
+                                }
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(option.label, color = if (selected) OnboardingPrimary else OnboardingSecondary, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium, fontSize = 12.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BudgetDateField(
+                    label = stringResource(R.string.onboarding_budget_start_date),
+                    date = startDate,
+                    modifier = Modifier.weight(1f),
+                    onClick = { editingStartDate = true },
+                )
+                BudgetDateField(
+                    label = stringResource(R.string.onboarding_budget_end_date),
+                    date = endDate,
+                    modifier = Modifier.weight(1f),
+                    onClick = { editingStartDate = false },
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            OnboardingStepIndicator(currentStep = 2, totalSteps = 3)
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = { onFinish(amountText, period.name, startDate.toString(), endDate.toString()) },
+                enabled = amountIsValid && !endDate.isBefore(startDate),
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = OnboardingAccent, contentColor = OnboardingBackground),
+            ) {
+                Text(stringResource(R.string.onboarding_budget_finish), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+        }
+    }
+    editingStartDate?.let { isStart ->
+        val current = if (isStart) startDate else endDate
+        val pickerState = androidx.compose.material3.rememberDatePickerState(
+            initialSelectedDateMillis = current.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { editingStartDate = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    pickerState.selectedDateMillis?.let { millis ->
+                        val selected = Instant.ofEpochMilli(millis).atZone(ZoneOffset.UTC).toLocalDate()
+                        if (isStart) startDate = selected else endDate = selected
+                    }
+                    period = OnboardingBudgetPeriod.CUSTOM
+                    editingStartDate = null
+                }) { Text(stringResource(R.string.ui_ok)) }
+            },
+            dismissButton = { TextButton(onClick = { editingStartDate = null }) { Text(stringResource(R.string.ui_cancel)) } },
+        ) { DatePicker(state = pickerState) }
+    }
+}
+
+@Composable
+private fun BudgetDateField(label: String, date: LocalDate, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(label, color = OnboardingSecondary, fontSize = 11.sp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp)
+                .background(OnboardingCurrencySurface, RoundedCornerShape(8.dp))
+                .border(1.dp, OnboardingCurrencySymbolSurface, RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = OnboardingSecondary, modifier = Modifier.size(16.dp))
+            Text(date.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")), color = OnboardingPrimary, fontSize = 13.sp)
+        }
     }
 }
 

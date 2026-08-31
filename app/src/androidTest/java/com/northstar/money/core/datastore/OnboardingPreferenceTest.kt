@@ -42,4 +42,25 @@ class OnboardingPreferenceTest {
             runBlocking { preferences.setBaseCurrencyCode("BTC") }
         }
     }
+
+    @Test
+    fun customSpendingLimitPersistsAmountPeriodAndDates() = runBlocking {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val preferences = UserPreferences(context)
+        val original = preferences.settings.first().spendingLimit
+        val limit = SpendingLimit(
+            amountMinor = 50_000,
+            currencyCode = "EUR",
+            period = BudgetPeriod.CUSTOM,
+            startDate = "2026-09-01",
+            endDate = "2026-09-30",
+        )
+
+        try {
+            preferences.setSpendingLimit(limit)
+            assertEquals(limit, preferences.settings.first().spendingLimit)
+        } finally {
+            if (original == null) preferences.clearSpendingLimit() else preferences.setSpendingLimit(original)
+        }
+    }
 }

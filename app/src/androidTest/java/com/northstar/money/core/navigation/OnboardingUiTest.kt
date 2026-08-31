@@ -23,6 +23,8 @@ class OnboardingUiTest {
         var selectedCurrency = ""
         var submittedAccountName = ""
         var submittedBalance = ""
+        var submittedBudgetAmount = ""
+        var submittedBudgetPeriod = ""
         composeRule.setContent {
             NorthstarTheme {
                 OnboardingScreen(
@@ -30,6 +32,10 @@ class OnboardingUiTest {
                     onInitialAccountSubmitted = { name, balance ->
                         submittedAccountName = name
                         submittedBalance = balance
+                    },
+                    onBudgetSubmitted = { amount, period, _, _ ->
+                        submittedBudgetAmount = amount
+                        submittedBudgetPeriod = period
                     },
                     onComplete = { completed = true },
                 )
@@ -46,13 +52,17 @@ class OnboardingUiTest {
         composeRule.onNodeWithText("0,00").performTextReplacement("1234,56")
         composeRule.onNodeWithText("Conta Principal").performTextReplacement("Conta Casa")
         composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
-        composeRule.onNodeWithText("Build your financial Northstar").assertIsDisplayed()
-        composeRule.onNodeWithText("Get started").performClick()
+        composeRule.onNodeWithText(context.getString(R.string.onboarding_budget_title)).assertIsDisplayed()
+        composeRule.onNodeWithText("500,00").performTextReplacement("750,00")
+        composeRule.onNodeWithText("Mês").performClick()
+        composeRule.onNodeWithText(context.getString(R.string.onboarding_budget_finish)).performClick()
 
         composeRule.runOnIdle {
             assertEquals("USD", selectedCurrency)
             assertEquals("Conta Casa", submittedAccountName)
             assertEquals("1234,56", submittedBalance)
+            assertEquals("750,00", submittedBudgetAmount)
+            assertEquals("MONTH", submittedBudgetPeriod)
             assertTrue(completed)
         }
     }

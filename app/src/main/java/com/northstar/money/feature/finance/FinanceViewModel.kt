@@ -17,6 +17,8 @@ import com.northstar.money.domain.model.CashFlowForecast
 import java.time.LocalDate
 import com.northstar.money.core.datastore.AppSettings
 import com.northstar.money.core.datastore.UserPreferences
+import com.northstar.money.core.datastore.BudgetPeriod
+import com.northstar.money.core.datastore.SpendingLimit
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
@@ -404,6 +406,22 @@ class FinanceViewModel(
 
     fun setBaseCurrencyCode(currencyCode: String) {
         launchOperation { preferences.setBaseCurrencyCode(currencyCode) }
+    }
+
+    fun completeOnboarding(amount: String, period: String, startDate: String, endDate: String) {
+        launchOperation {
+            val currencyCode = uiState.value.settings.baseCurrencyCode
+            preferences.setSpendingLimit(
+                SpendingLimit(
+                    amountMinor = Money.parseMajor(amount, currencyCode).minor,
+                    currencyCode = currencyCode,
+                    period = BudgetPeriod.valueOf(period),
+                    startDate = startDate,
+                    endDate = endDate,
+                ),
+            )
+            preferences.setOnboardingCompleted(true)
+        }
     }
 
     fun retryLoading() {

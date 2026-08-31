@@ -23,7 +23,7 @@ class DestinationNavigationUiTest {
             composeRule.onNodeWithText(context.getString(R.string.onboarding_start)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
-            composeRule.onNodeWithText(context.getString(R.string.onboarding_finish)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_budget_finish)).performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithText("Transactions").fetchSemanticsNodes().isNotEmpty()
             }
