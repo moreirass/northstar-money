@@ -19,12 +19,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.StarBorder
 import androidx.compose.material3.Button
@@ -45,7 +47,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -91,6 +98,7 @@ private val legacyOnboardingPages = listOf(
 internal fun OnboardingScreen(
     initialCurrencyCode: String = "EUR",
     onCurrencySelected: (String) -> Unit = {},
+    onInitialAccountSubmitted: (String, String) -> Unit = { _, _ -> },
     onComplete: () -> Unit,
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -105,6 +113,13 @@ internal fun OnboardingScreen(
                 pageIndex = 2
             },
         )
+        2 -> BalanceOnboardingPage(
+            currencyCode = selectedCurrencyCode,
+            onContinue = { accountName, balance ->
+                onInitialAccountSubmitted(accountName, balance)
+                pageIndex = 3
+            },
+        )
         else -> LegacyOnboardingPageScreen(
             pageIndex = pageIndex - 1,
             onNext = {
@@ -112,6 +127,113 @@ internal fun OnboardingScreen(
             },
             onBack = { pageIndex-- },
         )
+    }
+}
+
+@Composable
+internal fun BalanceOnboardingPage(
+    currencyCode: String,
+    onContinue: (accountName: String, balance: String) -> Unit,
+) {
+    var balanceText by rememberSaveable { mutableStateOf("0,00") }
+    var accountName by rememberSaveable { mutableStateOf("Conta Principal") }
+    val balanceIsValid = balanceText.trim().replace(',', '.').toBigDecimalOrNull()?.signum()?.let { it >= 0 } == true
+    val currencySymbol = currencyOptions.firstOrNull { it.code == currencyCode }?.symbol ?: currencyCode
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(OnboardingBackground)
+            .windowInsetsPadding(WindowInsets.safeDrawing),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 24.dp),
+        ) {
+            Text(
+                stringResource(R.string.onboarding_balance_title),
+                color = OnboardingPrimary,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                modifier = Modifier.fillMaxWidth().semantics { heading() },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.onboarding_balance_body),
+                color = OnboardingSecondary,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+            )
+            Spacer(Modifier.height(32.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().border(0.dp, Color.Transparent).padding(vertical = 12.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(currencySymbol, color = OnboardingAccent, fontWeight = FontWeight.Bold, fontSize = 32.sp)
+                Spacer(Modifier.width(8.dp))
+                BasicTextField(
+                    value = balanceText,
+                    onValueChange = { value ->
+                        if (value.length <= 15 && value.all { it.isDigit() || it == ',' || it == '.' }) balanceText = value
+                    },
+                    modifier = Modifier.width(210.dp),
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        color = OnboardingPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 48.sp,
+                        textAlign = TextAlign.Start,
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+                    cursorBrush = SolidColor(OnboardingAccent),
+                )
+            }
+            Box(Modifier.fillMaxWidth().height(2.dp).background(OnboardingCurrencySymbolSurface))
+            Spacer(Modifier.height(24.dp))
+            Text(
+                stringResource(R.string.onboarding_account_name),
+                color = OnboardingSecondary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .background(OnboardingCurrencySurface, RoundedCornerShape(12.dp))
+                    .border(1.dp, OnboardingCurrencySymbolSurface, RoundedCornerShape(12.dp))
+                    .padding(horizontal = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                BasicTextField(
+                    value = accountName,
+                    onValueChange = { accountName = it.take(60) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    textStyle = TextStyle(color = OnboardingPrimary, fontSize = 15.sp),
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                    cursorBrush = SolidColor(OnboardingAccent),
+                )
+                Icon(Icons.Default.Edit, contentDescription = null, tint = OnboardingTertiary, modifier = Modifier.size(18.dp))
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            OnboardingStepIndicator(currentStep = 1, totalSteps = 3)
+            Spacer(Modifier.height(20.dp))
+            Button(
+                onClick = { onContinue(accountName.trim(), balanceText) },
+                enabled = accountName.isNotBlank() && balanceIsValid,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = CircleShape,
+                colors = ButtonDefaults.buttonColors(containerColor = OnboardingAccent, contentColor = OnboardingBackground),
+            ) {
+                Text(stringResource(R.string.onboarding_continue), fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            }
+        }
     }
 }
 

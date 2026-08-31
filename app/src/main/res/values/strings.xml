@@ -277,6 +277,9 @@
     <string name="onboarding_currency_title">Escolha a sua moeda</string>
     <string name="onboarding_currency_body">Configure a moeda padrão para as suas transações e relatórios.</string>
     <string name="onboarding_continue">Continuar</string>
+    <string name="onboarding_balance_title">Saldo inicial</string>
+    <string name="onboarding_balance_body">Quanto dinheiro tem disponível atualmente nas suas contas?</string>
+    <string name="onboarding_account_name">NOME DA CONTA</string>
     <string name="onboarding_welcome_title">A clear view of your money</string>
     <string name="onboarding_welcome_body">Northstar brings accounts, spending, budgets and upcoming commitments into one calm, private plan.</string>
     <string name="onboarding_privacy_title">Your data stays under your control</string>

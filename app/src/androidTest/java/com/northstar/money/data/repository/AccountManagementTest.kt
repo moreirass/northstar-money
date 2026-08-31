@@ -85,6 +85,25 @@ class AccountManagementTest {
     }
 
     @Test
+    fun configureInitialAccount_updatesOnlyUntouchedSeedAccount() = runBlocking {
+        database.financeDao().insertAccount(
+            AccountEntity("main-account", "Main account", "CHECKING", "EUR", 0, null, 20, 20),
+        )
+
+        repository.configureInitialAccount("Conta Principal", Money(123_456, "USD"))
+
+        val configured = repository.getAccountForEdit("main-account")
+        assertEquals("Conta Principal", configured.name)
+        assertEquals("USD", configured.openingBalance.currencyCode)
+        assertEquals(123_456L, configured.openingBalance.minor)
+        assertTrue(
+            runCatching {
+                repository.updateAccount(configured.copy(openingBalance = Money(123_456, "EUR")))
+            }.isFailure,
+        )
+    }
+
+    @Test
     fun archiveAndRestore_hideAndRecoverDependentPlanningData() = runBlocking {
         val dao = database.financeDao()
         dao.insertRecurring(

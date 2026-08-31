@@ -357,6 +357,9 @@ abstract class FinanceDao {
     @Insert
     abstract suspend fun insertAccount(item: AccountEntity)
 
+    @Query("SELECT COUNT(*) FROM transaction_entries WHERE accountId = :accountId")
+    abstract suspend fun countEntriesForAccount(accountId: String): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     abstract suspend fun insertCategories(items: List<CategoryEntity>)
 

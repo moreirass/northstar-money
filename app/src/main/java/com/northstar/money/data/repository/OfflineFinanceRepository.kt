@@ -183,13 +183,14 @@ class OfflineFinanceRepository(
 
     override suspend fun seedIfEmpty() {
         val now = System.currentTimeMillis()
+        val currencyCode = baseCurrencyCode.first()
         val expenseNames = listOf("Housing", "Groceries", "Transport", "Dining", "Health", "Shopping", "Other")
         val categories = expenseNames.mapIndexed { index, name ->
             CategoryEntity("expense-${name.lowercase()}", name, "EXPENSE", index)
         } + CategoryEntity("income-salary", "Salary", "INCOME", 0)
         dao.seedIfEmpty(
             defaultAccounts = listOf(
-                AccountEntity("main-account", "Main account", "CHECKING", "EUR", 0, createdAt = now, updatedAt = now),
+                AccountEntity(INITIAL_ACCOUNT_ID, "Conta Principal", "CHECKING", currencyCode, 0, createdAt = now, updatedAt = now),
             ),
             defaultCategories = categories,
         )
@@ -351,6 +352,24 @@ class OfflineFinanceRepository(
                 updatedAt = now,
             )
         )
+    }
+
+    override suspend fun configureInitialAccount(name: String, openingBalance: Money) {
+        require(name.isNotBlank()) { "Account name is required" }
+        require(openingBalance.minor >= 0) { "Initial balance cannot be negative" }
+        val seededAccount = dao.getActiveAccount(INITIAL_ACCOUNT_ID)
+        if (seededAccount != null && dao.countEntriesForAccount(INITIAL_ACCOUNT_ID) == 0) {
+            dao.updateAccount(
+                seededAccount.copy(
+                    name = name.trim(),
+                    currencyCode = openingBalance.currencyCode,
+                    openingBalanceMinor = openingBalance.minor,
+                    updatedAt = System.currentTimeMillis(),
+                ),
+            )
+        } else {
+            createAccount(name, AccountType.CHECKING, openingBalance)
+        }
     }
 
     override suspend fun getAccountForEdit(id: String): EditableAccount {
@@ -908,6 +927,7 @@ class OfflineFinanceRepository(
     companion object {
         private const val BASE_CURRENCY_CODE = "EUR"
         private const val DEFAULT_BASE_CURRENCY_CODE = "EUR"
+        private const val INITIAL_ACCOUNT_ID = "main-account"
         private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
         private val GOAL_STATUSES = setOf("ACTIVE", "PAUSED", "COMPLETED")
         private const val MAX_RECURRING_POSTS_PER_RUN = 10_000

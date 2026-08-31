@@ -4,6 +4,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performTextReplacement
 import com.northstar.money.core.designsystem.NorthstarTheme
 import androidx.test.core.app.ApplicationProvider
 import com.northstar.money.R
@@ -20,10 +21,16 @@ class OnboardingUiTest {
     fun onboardingCoversAllPagesAndCompletes() {
         var completed = false
         var selectedCurrency = ""
+        var submittedAccountName = ""
+        var submittedBalance = ""
         composeRule.setContent {
             NorthstarTheme {
                 OnboardingScreen(
                     onCurrencySelected = { selectedCurrency = it },
+                    onInitialAccountSubmitted = { name, balance ->
+                        submittedAccountName = name
+                        submittedBalance = balance
+                    },
                     onComplete = { completed = true },
                 )
             }
@@ -35,13 +42,17 @@ class OnboardingUiTest {
         composeRule.onNodeWithText(context.getString(R.string.onboarding_currency_title)).assertIsDisplayed()
         composeRule.onNodeWithText("Dólar Americano").performClick()
         composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
-        composeRule.onNodeWithText("Your data stays under your control").assertIsDisplayed()
-        composeRule.onNodeWithText("Next").performClick()
+        composeRule.onNodeWithText(context.getString(R.string.onboarding_balance_title)).assertIsDisplayed()
+        composeRule.onNodeWithText("0,00").performTextReplacement("1234,56")
+        composeRule.onNodeWithText("Conta Principal").performTextReplacement("Conta Casa")
+        composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
         composeRule.onNodeWithText("Build your financial Northstar").assertIsDisplayed()
         composeRule.onNodeWithText("Get started").performClick()
 
         composeRule.runOnIdle {
             assertEquals("USD", selectedCurrency)
+            assertEquals("Conta Casa", submittedAccountName)
+            assertEquals("1234,56", submittedBalance)
             assertTrue(completed)
         }
     }

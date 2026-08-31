@@ -40,6 +40,7 @@ interface FinanceRepository {
         payee: String,
     )
     suspend fun createAccount(name: String, type: com.northstar.money.domain.model.AccountType, openingBalance: Money)
+    suspend fun configureInitialAccount(name: String, openingBalance: Money)
     suspend fun getAccountForEdit(id: String): EditableAccount
     suspend fun updateAccount(account: EditableAccount)
     suspend fun archiveAccount(id: String)

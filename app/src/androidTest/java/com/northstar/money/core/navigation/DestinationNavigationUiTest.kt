@@ -22,7 +22,7 @@ class DestinationNavigationUiTest {
         if (composeRule.onAllNodesWithText(context.getString(R.string.onboarding_start)).fetchSemanticsNodes().isNotEmpty()) {
             composeRule.onNodeWithText(context.getString(R.string.onboarding_start)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
-            composeRule.onNodeWithText(context.getString(R.string.onboarding_next)).performClick()
+            composeRule.onNodeWithText(context.getString(R.string.onboarding_continue)).performClick()
             composeRule.onNodeWithText(context.getString(R.string.onboarding_finish)).performClick()
             composeRule.waitUntil(timeoutMillis = 5_000) {
                 composeRule.onAllNodesWithText("Transactions").fetchSemanticsNodes().isNotEmpty()

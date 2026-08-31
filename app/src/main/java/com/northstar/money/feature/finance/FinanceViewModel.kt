@@ -215,6 +215,15 @@ class FinanceViewModel(
         }
     }
 
+    fun configureInitialAccount(name: String, openingBalance: String) {
+        launchOperation {
+            repository.configureInitialAccount(
+                name = name,
+                openingBalance = Money.parseMajor(openingBalance, uiState.value.settings.baseCurrencyCode),
+            )
+        }
+    }
+
     suspend fun getAccountForEdit(id: String): EditableAccount = repository.getAccountForEdit(id)
 
     fun updateAccount(account: EditableAccount) {

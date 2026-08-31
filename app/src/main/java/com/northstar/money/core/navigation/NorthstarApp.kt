@@ -138,6 +138,7 @@ fun NorthstarApp() {
         OnboardingScreen(
             initialCurrencyCode = state.settings.baseCurrencyCode,
             onCurrencySelected = financeViewModel::setBaseCurrencyCode,
+            onInitialAccountSubmitted = financeViewModel::configureInitialAccount,
             onComplete = { financeViewModel.setOnboardingCompleted(true) },
         )
         return
