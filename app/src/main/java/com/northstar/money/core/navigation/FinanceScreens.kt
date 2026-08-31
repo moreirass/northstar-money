@@ -449,11 +449,28 @@ internal fun MoreScreen(
     var deleteRecurringId by remember { mutableStateOf<String?>(null) }
     var contributionGoalId by remember { mutableStateOf<String?>(null) }
     var deleteContributionId by remember { mutableStateOf<String?>(null) }
+    var managementTarget by remember { mutableStateOf<MoreHubTarget?>(null) }
+    var showAbout by remember { mutableStateOf(false) }
+    var showHelp by remember { mutableStateOf(false) }
+    if (managementTarget == null) {
+        MoreHubScreen(
+            padding = padding,
+            onOpen = { managementTarget = it },
+            onAbout = { showAbout = true },
+            onHelp = { showHelp = true },
+        )
+    } else {
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(padding),
         contentPadding = PaddingValues(20.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
+        item {
+            MoreManagementHeader(
+                title = stringResource(requireNotNull(managementTarget).titleRes),
+                onBack = { managementTarget = null },
+            )
+        }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.ui_accounts), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
@@ -805,6 +822,27 @@ internal fun MoreScreen(
                 }
             }
         }
+    }
+    }
+    if (showAbout) {
+        AlertDialog(
+            onDismissRequest = { showAbout = false },
+            title = { Text(stringResource(R.string.more_about)) },
+            text = { Text(stringResource(R.string.more_about_body)) },
+            confirmButton = {
+                TextButton(onClick = { showAbout = false }) { Text(stringResource(R.string.ui_ok)) }
+            },
+        )
+    }
+    if (showHelp) {
+        AlertDialog(
+            onDismissRequest = { showHelp = false },
+            title = { Text(stringResource(R.string.more_help)) },
+            text = { Text(stringResource(R.string.more_help_body)) },
+            confirmButton = {
+                TextButton(onClick = { showHelp = false }) { Text(stringResource(R.string.ui_ok)) }
+            },
+        )
     }
     if (showBackupPasswordDialog) {
         BackupPasswordDialog(

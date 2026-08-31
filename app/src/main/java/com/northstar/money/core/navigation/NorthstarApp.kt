@@ -167,7 +167,8 @@ fun NorthstarApp() {
         containerColor = if (
             destination == Destination.Home ||
             destination == Destination.Activity ||
-            destination == Destination.Plan
+            destination == Destination.Plan ||
+            destination == Destination.More
         ) {
             Color(0xFF08080A)
         } else {
@@ -177,7 +178,8 @@ fun NorthstarApp() {
             if (
                 destination != Destination.Home &&
                 destination != Destination.Activity &&
-                destination != Destination.Plan
+                destination != Destination.Plan &&
+                destination != Destination.More
             ) {
                 TopAppBar(
                     title = { Text(stringResource(destination.labelRes)) },
