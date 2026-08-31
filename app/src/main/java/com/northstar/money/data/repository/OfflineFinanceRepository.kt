@@ -8,6 +8,8 @@ import com.northstar.money.core.database.FinanceDao
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import com.northstar.money.core.database.TransactionImportItem
+import com.northstar.money.core.database.ReceiptAttachmentEntity
+import com.northstar.money.core.database.TransactionExchangeRateEntity
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.AccountType
 import com.northstar.money.domain.model.Category
@@ -22,6 +24,8 @@ import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.model.EditableGoal
 import com.northstar.money.domain.model.GoalContribution
+import com.northstar.money.domain.model.ReceiptAttachment
+import com.northstar.money.domain.model.HistoricalExchangeRate
 import com.northstar.money.domain.repository.FinanceRepository
 import com.northstar.money.core.database.NorthstarDatabase
 import com.northstar.money.data.backup.FullBackupJsonCodec
@@ -29,6 +33,10 @@ import com.northstar.money.data.backup.DatabaseSnapshotValidator
 import com.northstar.money.data.backup.PortableBackupCodec
 import com.northstar.money.data.backup.RestoreRecoveryStore
 import com.northstar.money.data.importing.TransactionCsvValidator
+import com.northstar.money.data.receipt.ReceiptOcrEngine
+import com.northstar.money.data.receipt.ReceiptImageNormalizer
+import com.northstar.money.data.exchange.HistoricalRateClient
+import com.northstar.money.data.exchange.HistoricalRateProvider
 import java.time.LocalDate
 import java.time.Instant
 import java.time.ZoneOffset
@@ -50,6 +58,8 @@ class OfflineFinanceRepository(
     private val portableBackupCodec: PortableBackupCodec = PortableBackupCodec(),
     private val snapshotValidator: DatabaseSnapshotValidator = DatabaseSnapshotValidator(),
     private val csvValidator: TransactionCsvValidator = TransactionCsvValidator(),
+    private val receiptOcrEngine: ReceiptOcrEngine = ReceiptOcrEngine(),
+    private val historicalRateProvider: HistoricalRateProvider = HistoricalRateClient(),
     private val baseCurrencyCode: Flow<String> = flowOf(DEFAULT_BASE_CURRENCY_CODE),
 ) : FinanceRepository {
     private val restoreMutex = Mutex()
@@ -98,6 +108,12 @@ class OfflineFinanceRepository(
 
     override fun observeDeletedTransactions(): Flow<List<TransactionItem>> =
         dao.observeDeletedTransactions().map { rows -> rows.map(::transactionRowToDomain) }
+
+    override fun observeReceiptAttachments(): Flow<List<ReceiptAttachment>> =
+        dao.observeReceiptAttachments().map { rows -> rows.map(::receiptAttachmentToDomain) }
+
+    override fun observeHistoricalExchangeRates(): Flow<List<HistoricalExchangeRate>> =
+        dao.observeTransactionExchangeRates().map { rows -> rows.map(::exchangeRateToDomain) }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun observeSummary(): Flow<FinanceSummary> {
@@ -208,14 +224,17 @@ class OfflineFinanceRepository(
         requireAccountCurrency(accountId, amount.currencyCode)
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        dao.insertTransaction(
-            TransactionEntity(id, kind.name, LocalDate.now().toString(), payee.trim(), "", now, now),
-            TransactionEntryEntity(
-                UUID.randomUUID().toString(), id, accountId, categoryId,
-                if (kind == TransactionKind.EXPENSE) -amount.minor else amount.minor,
-                amount.currencyCode, false,
-            ),
+        val localDate = LocalDate.now().toString()
+        val entry = TransactionEntryEntity(
+            UUID.randomUUID().toString(), id, accountId, categoryId,
+            if (kind == TransactionKind.EXPENSE) -amount.minor else amount.minor,
+            amount.currencyCode, false,
         )
+        dao.insertTransaction(
+            TransactionEntity(id, kind.name, localDate, payee.trim(), "", now, now),
+            entry,
+        )
+        recordHistoricalRate(id, entry, localDate)
     }
 
     override suspend fun deleteTransaction(id: String) {
@@ -336,6 +355,87 @@ class OfflineFinanceRepository(
             )
         }
         dao.updateTransaction(updatedTransaction, updatedEntries)
+        updatedEntries.forEach { recordHistoricalRate(transaction.id, it, localDate) }
+    }
+
+    override suspend fun addReceiptAttachment(
+        transactionId: String,
+        originalName: String,
+        mimeType: String,
+        content: ByteArray,
+    ) {
+        require(content.isNotEmpty() && content.size <= MAX_RECEIPT_BYTES) { "Receipt images must be 8 MB or smaller" }
+        require(mimeType.startsWith("image/")) { "Only receipt images are supported" }
+        val stored = dao.getTransactionForEdit(transactionId)
+        val normalizedContent = ReceiptImageNormalizer.normalize(content)
+        val attachment = ReceiptAttachmentEntity(
+            id = UUID.randomUUID().toString(),
+            transactionId = transactionId,
+            content = normalizedContent,
+            originalName = originalName.trim().ifBlank { "receipt" },
+            mimeType = "image/jpeg",
+            byteSize = normalizedContent.size.toLong(),
+            createdAt = System.currentTimeMillis(),
+        )
+        dao.insertReceiptAttachment(attachment)
+        processReceiptOcr(attachment, stored.entries.first().currencyCode)
+    }
+
+    override suspend fun deleteReceiptAttachment(id: String) {
+        require(dao.deleteReceiptAttachment(id) == 1) { "Receipt attachment is missing" }
+    }
+
+    override suspend fun retryReceiptOcr(id: String) {
+        val attachment = requireNotNull(dao.getReceiptAttachment(id)) { "Receipt attachment is missing" }
+        val stored = dao.getTransactionForEdit(attachment.transactionId)
+        processReceiptOcr(attachment, stored.entries.first().currencyCode)
+    }
+
+    override suspend fun applyReceiptOcr(id: String) {
+        val attachment = requireNotNull(dao.getReceiptAttachment(id)) { "Receipt attachment is missing" }
+        val transaction = getTransactionForEdit(attachment.transactionId)
+        require(transaction.kind != TransactionKind.TRANSFER) { "Receipt values cannot be applied to a transfer" }
+        val detectedAmount = attachment.detectedAmountMinor?.let { minor ->
+            val currency = attachment.detectedCurrencyCode ?: transaction.amount.currencyCode
+            require(currency == transaction.amount.currencyCode) { "Receipt currency does not match the account" }
+            Money(minor, currency)
+        }
+        updateTransaction(
+            transaction.copy(
+                amount = detectedAmount ?: transaction.amount,
+                localDate = attachment.detectedLocalDate ?: transaction.localDate,
+                payee = attachment.detectedMerchant ?: transaction.payee,
+            ),
+        )
+    }
+
+    override suspend fun refreshPendingExchangeRates(): Int {
+        var refreshed = 0
+        dao.getEntriesMissingExchangeRates().forEach { candidate ->
+            runCatching {
+                recordHistoricalRate(
+                    candidate.transactionId,
+                    TransactionEntryEntity(
+                        id = candidate.entryId,
+                        transactionId = candidate.transactionId,
+                        accountId = candidate.accountId,
+                        categoryId = candidate.categoryId,
+                        amountMinor = candidate.amountMinor,
+                        currencyCode = candidate.currencyCode,
+                        cleared = candidate.cleared,
+                    ),
+                    candidate.localDate,
+                )
+            }.onSuccess { refreshed++ }
+        }
+        dao.getPendingTransactionExchangeRates().forEach { pending ->
+            runCatching {
+                val stored = dao.getTransactionForEdit(pending.transactionId)
+                val entry = stored.entries.first { it.id == pending.entryId }
+                recordHistoricalRate(pending.transactionId, entry, stored.transaction.localDate)
+            }.onSuccess { refreshed++ }
+        }
+        return refreshed
     }
 
     override suspend fun createAccount(name: String, type: AccountType, openingBalance: Money) {
@@ -421,19 +521,22 @@ class OfflineFinanceRepository(
         ) { "Same-currency transfer amounts must match" }
         val id = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        dao.insertTransaction(
-            TransactionEntity(id, TransactionKind.TRANSFER.name, LocalDate.now().toString(), "Transfer", note.trim(), now, now),
-            listOf(
-                TransactionEntryEntity(
-                    UUID.randomUUID().toString(), id, sourceAccountId, null,
-                    Math.negateExact(sourceAmount.minor), sourceAmount.currencyCode, false,
-                ),
-                TransactionEntryEntity(
-                    UUID.randomUUID().toString(), id, destinationAccountId, null,
-                    destinationAmount.minor, destinationAmount.currencyCode, false,
-                ),
+        val localDate = LocalDate.now().toString()
+        val entries = listOf(
+            TransactionEntryEntity(
+                UUID.randomUUID().toString(), id, sourceAccountId, null,
+                Math.negateExact(sourceAmount.minor), sourceAmount.currencyCode, false,
+            ),
+            TransactionEntryEntity(
+                UUID.randomUUID().toString(), id, destinationAccountId, null,
+                destinationAmount.minor, destinationAmount.currencyCode, false,
             ),
         )
+        dao.insertTransaction(
+            TransactionEntity(id, TransactionKind.TRANSFER.name, localDate, "Transfer", note.trim(), now, now),
+            entries,
+        )
+        entries.forEach { recordHistoricalRate(id, it, localDate) }
     }
 
     override suspend fun setTransactionCleared(id: String, cleared: Boolean) {
@@ -450,7 +553,7 @@ class OfflineFinanceRepository(
         require(!date.isAfter(LocalDate.now())) { "Statement date cannot be in the future" }
         requireAccountCurrency(accountId, statementBalance.currencyCode)
         val now = System.currentTimeMillis()
-        dao.reconcileAccount(
+        val adjustmentEntry = dao.reconcileAccount(
             accountId = accountId,
             currencyCode = statementBalance.currencyCode,
             statementLocalDate = date.toString(),
@@ -461,6 +564,7 @@ class OfflineFinanceRepository(
             adjustmentEntryId = UUID.randomUUID().toString(),
             completedAt = now,
         )
+        adjustmentEntry?.let { recordHistoricalRate(it.transactionId, it, date.toString()) }
     }
 
     override suspend fun setBudget(categoryId: String, planned: Money) {
@@ -692,6 +796,8 @@ class OfflineFinanceRepository(
                     createdAt = System.currentTimeMillis(),
                 )
                 if (!inserted) return@forEach
+                val stored = dao.getTransactionForEdit(transactionId)
+                recordHistoricalRate(transactionId, stored.entries.single(), occurrenceDate.toString())
                 posted += 1
                 occurrenceDate = nextDate
             }
@@ -777,6 +883,11 @@ class OfflineFinanceRepository(
             )
         }
         val writeResult = dao.importTransactions(items)
+        items.forEach { item ->
+            runCatching { dao.getTransactionForEdit(item.transaction.id) }
+                .getOrNull()
+                ?.let { stored -> recordHistoricalRate(stored.transaction.id, stored.entries.single(), stored.transaction.localDate) }
+        }
         return com.northstar.money.domain.model.ImportResult(
             imported = writeResult.imported,
             skippedDuplicates = validation.skippedDuplicates + writeResult.skippedDuplicates,
@@ -886,6 +997,132 @@ class OfflineFinanceRepository(
         createdAt = row.createdAt,
     )
 
+    private fun receiptAttachmentToDomain(row: ReceiptAttachmentEntity) = ReceiptAttachment(
+        id = row.id,
+        transactionId = row.transactionId,
+        originalName = row.originalName,
+        mimeType = row.mimeType,
+        byteSize = row.byteSize,
+        createdAt = row.createdAt,
+        ocrStatus = row.ocrStatus,
+        detectedAmount = row.detectedAmountMinor?.let { minor ->
+            Money(minor, row.detectedCurrencyCode ?: BASE_CURRENCY_CODE)
+        },
+        detectedLocalDate = row.detectedLocalDate,
+        detectedMerchant = row.detectedMerchant,
+    )
+
+    private fun exchangeRateToDomain(row: TransactionExchangeRateEntity) = HistoricalExchangeRate(
+        id = row.id,
+        transactionId = row.transactionId,
+        entryId = row.entryId,
+        baseCurrencyCode = row.baseCurrencyCode,
+        quoteCurrencyCode = row.quoteCurrencyCode,
+        rateMicros = row.rateMicros,
+        convertedAmountMinor = row.convertedAmountMinor,
+        rateLocalDate = row.rateLocalDate,
+        source = row.source,
+        status = row.status,
+    )
+
+    private suspend fun processReceiptOcr(attachment: ReceiptAttachmentEntity, currencyCode: String) {
+        dao.updateReceiptAttachment(attachment.copy(ocrStatus = "PROCESSING"))
+        runCatching { receiptOcrEngine.recognize(attachment.content, currencyCode) }
+            .onSuccess { parsed ->
+                dao.updateReceiptAttachment(
+                    attachment.copy(
+                        ocrStatus = "COMPLETE",
+                        ocrText = parsed.rawText,
+                        detectedAmountMinor = parsed.amount?.minor,
+                        detectedCurrencyCode = parsed.amount?.currencyCode,
+                        detectedLocalDate = parsed.localDate,
+                        detectedMerchant = parsed.merchant,
+                    ),
+                )
+            }
+            .onFailure {
+                dao.updateReceiptAttachment(attachment.copy(ocrStatus = "FAILED"))
+            }
+    }
+
+    private suspend fun recordHistoricalRate(
+        transactionId: String,
+        entry: TransactionEntryEntity,
+        localDate: String,
+    ) {
+        val existing = dao.getTransactionExchangeRate(entry.id)
+        val quoteCurrencyCode = baseCurrencyCode.first()
+        if (
+            existing?.status == "AVAILABLE" && existing.rateMicros != null &&
+            existing.baseCurrencyCode == entry.currencyCode &&
+            existing.quoteCurrencyCode == quoteCurrencyCode &&
+            existing.rateLocalDate == localDate
+        ) {
+            dao.upsertTransactionExchangeRate(
+                existing.copy(
+                    transactionId = transactionId,
+                    convertedAmountMinor = HistoricalRateClient.convertMinor(
+                        entry.amountMinor,
+                        entry.currencyCode,
+                        quoteCurrencyCode,
+                        existing.rateMicros,
+                    ),
+                ),
+            )
+            return
+        }
+        val pending = TransactionExchangeRateEntity(
+            id = "rate-${entry.id}",
+            transactionId = transactionId,
+            entryId = entry.id,
+            baseCurrencyCode = entry.currencyCode,
+            quoteCurrencyCode = quoteCurrencyCode,
+            rateMicros = null,
+            convertedAmountMinor = null,
+            rateLocalDate = localDate,
+            source = HistoricalRateClient.SOURCE,
+            status = "PENDING",
+            fetchedAt = null,
+        )
+        runCatching {
+            historicalRateProvider.getRate(entry.currencyCode, pending.quoteCurrencyCode, localDate)
+        }.onSuccess { quote ->
+            dao.upsertTransactionExchangeRate(
+                pending.copy(
+                    rateMicros = quote.rateMicros,
+                    convertedAmountMinor = HistoricalRateClient.convertMinor(
+                        entry.amountMinor,
+                        entry.currencyCode,
+                        pending.quoteCurrencyCode,
+                        quote.rateMicros,
+                    ),
+                    rateLocalDate = localDate,
+                    source = if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
+                    status = "AVAILABLE",
+                    fetchedAt = System.currentTimeMillis(),
+                ),
+            )
+        }.onFailure {
+            if (existing?.status == "AVAILABLE" && existing.rateMicros != null &&
+                existing.baseCurrencyCode == entry.currencyCode && existing.quoteCurrencyCode == quoteCurrencyCode
+            ) {
+                dao.upsertTransactionExchangeRate(
+                    existing.copy(
+                        transactionId = transactionId,
+                        convertedAmountMinor = HistoricalRateClient.convertMinor(
+                            entry.amountMinor,
+                            entry.currencyCode,
+                            quoteCurrencyCode,
+                            existing.rateMicros,
+                        ),
+                    ),
+                )
+            } else {
+                dao.upsertTransactionExchangeRate(pending)
+            }
+        }
+    }
+
     private fun recurringToDomain(row: com.northstar.money.core.database.RecurringScheduleEntity) =
         com.northstar.money.domain.model.RecurringItem(
             row.id,
@@ -931,5 +1168,6 @@ class OfflineFinanceRepository(
         private val FREQUENCIES = setOf("WEEKLY", "MONTHLY", "YEARLY")
         private val GOAL_STATUSES = setOf("ACTIVE", "PAUSED", "COMPLETED")
         private const val MAX_RECURRING_POSTS_PER_RUN = 10_000
+        private const val MAX_RECEIPT_BYTES = 8 * 1024 * 1024
     }
 }

@@ -352,6 +352,71 @@ class NorthstarDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun migrate8To9_createsReceiptAndHistoricalRateTables() {
+        helper.createDatabase(DB_8_9, 8).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(DB_8_9, 9, true, MIGRATION_8_9).apply {
+            assertBaseDataPreserved()
+            execSQL(
+                """
+                INSERT INTO receipt_attachments (
+                    id, transactionId, content, originalName, mimeType, byteSize, createdAt,
+                    ocrStatus, ocrText, detectedAmountMinor, detectedCurrencyCode,
+                    detectedLocalDate, detectedMerchant
+                ) VALUES (
+                    'receipt-1', 'transaction-1', X'0102', 'receipt.jpg', 'image/jpeg', 2, 1,
+                    'COMPLETE', 'TOTAL 25.00', 2500, 'EUR', '2026-08-01', 'Market'
+                )
+                """.trimIndent(),
+            )
+            execSQL(
+                """
+                INSERT INTO transaction_exchange_rates (
+                    id, transactionId, entryId, baseCurrencyCode, quoteCurrencyCode,
+                    rateMicros, convertedAmountMinor, rateLocalDate, source, status, fetchedAt
+                ) VALUES (
+                    'rate-entry-1', 'transaction-1', 'entry-1', 'EUR', 'EUR',
+                    1000000, -2500, '2026-08-01', 'Frankfurter', 'AVAILABLE', 1
+                )
+                """.trimIndent(),
+            )
+            assertRowCount("receipt_attachments", 1)
+            assertRowCount("transaction_exchange_rates", 1)
+            close()
+        }
+    }
+
+    @Test
+    fun migrate1To9_runsCompleteMigrationChainWithoutDataLoss() {
+        helper.createDatabase(DB_1_9, 1).apply {
+            insertBaseData()
+            close()
+        }
+
+        helper.runMigrationsAndValidate(
+            DB_1_9,
+            9,
+            true,
+            MIGRATION_1_2,
+            MIGRATION_2_3,
+            MIGRATION_3_4,
+            MIGRATION_4_5,
+            MIGRATION_5_6,
+            MIGRATION_6_7,
+            MIGRATION_7_8,
+            MIGRATION_8_9,
+        ).apply {
+            assertBaseDataPreserved()
+            assertRowCount("receipt_attachments", 0)
+            assertRowCount("transaction_exchange_rates", 0)
+            close()
+        }
+    }
+
     private fun SupportSQLiteDatabase.insertBaseData() {
         execSQL(
             """
@@ -412,5 +477,7 @@ class NorthstarDatabaseMigrationTest {
         private const val DB_1_7 = "migration-1-7"
         private const val DB_7_8 = "migration-7-8"
         private const val DB_1_8 = "migration-1-8"
+        private const val DB_8_9 = "migration-8-9"
+        private const val DB_1_9 = "migration-1-9"
     }
 }

@@ -11,6 +11,8 @@ import com.northstar.money.core.database.ReconciliationEntity
 import com.northstar.money.core.database.RecurringScheduleEntity
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
+import com.northstar.money.core.database.ReceiptAttachmentEntity
+import com.northstar.money.core.database.TransactionExchangeRateEntity
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -30,6 +32,8 @@ data class FullBackupDocument(
     val goalContributions: List<GoalContributionEntity> = emptyList(),
     val recurringSchedules: List<RecurringScheduleEntity>,
     val debtProfiles: List<DebtProfileEntity>,
+    val receiptAttachments: List<ReceiptAttachmentEntity> = emptyList(),
+    val transactionExchangeRates: List<TransactionExchangeRateEntity> = emptyList(),
 ) {
     fun toSnapshot(): DatabaseSnapshot = DatabaseSnapshot(
         accounts = accounts,
@@ -42,6 +46,8 @@ data class FullBackupDocument(
         goalContributions = goalContributions,
         recurringSchedules = recurringSchedules,
         debtProfiles = debtProfiles,
+        receiptAttachments = receiptAttachments,
+        transactionExchangeRates = transactionExchangeRates,
     )
 }
 
@@ -71,13 +77,15 @@ class FullBackupJsonCodec {
             goalContributions = snapshot.goalContributions,
             recurringSchedules = snapshot.recurringSchedules,
             debtProfiles = snapshot.debtProfiles,
+            receiptAttachments = snapshot.receiptAttachments,
+            transactionExchangeRates = snapshot.transactionExchangeRates,
         ),
     )
 
     fun decode(encoded: String): FullBackupDocument {
         val document = json.decodeFromString<FullBackupDocument>(encoded)
         require(document.format == FORMAT) { "Not a Northstar Money database backup" }
-        require(document.formatVersion == FORMAT_VERSION) {
+        require(document.formatVersion in 1..FORMAT_VERSION) {
             "Unsupported backup format version ${document.formatVersion}"
         }
         require(document.databaseVersion > 0) { "Invalid database version" }
@@ -86,6 +94,6 @@ class FullBackupJsonCodec {
 
     companion object {
         const val FORMAT = "northstar-money-database-backup"
-        const val FORMAT_VERSION = 1
+        const val FORMAT_VERSION = 2
     }
 }

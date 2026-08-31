@@ -253,6 +253,7 @@ internal fun MoreScreen(
     onRestoreFullBackup: suspend (String, CharArray) -> Unit,
     onUndoFullRestore: suspend (CharArray) -> Unit,
     onRecoverTransaction: (String) -> Unit,
+    onRefreshExchangeRates: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -270,6 +271,22 @@ internal fun MoreScreen(
                     ).joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" }
                     writer.appendLine(values)
                 }
+            }
+        }
+    }
+    val xlsxLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            withContext(Dispatchers.IO) {
+                val workbook = com.northstar.money.data.exporting.FormattedXlsxExporter().export(
+                    state.transactions,
+                    state.accounts,
+                    state.budgets,
+                    state.summary,
+                    state.historicalExchangeRates,
+                )
+                requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(workbook) }
             }
         }
     }
@@ -605,6 +622,9 @@ internal fun MoreScreen(
                 TextButton(onClick = { exportLauncher.launch("northstar-transactions.csv") }) {
                     Text(stringResource(R.string.ui_export_transactions_to_csv))
                 }
+                TextButton(onClick = { xlsxLauncher.launch("northstar-money.xlsx") }) {
+                    Text(stringResource(R.string.xlsx_export))
+                }
                 TextButton(onClick = { pdfLauncher.launch("northstar-monthly-summary.pdf") }) {
                     Text(stringResource(R.string.ui_export_monthly_report_to_pdf))
                 }
@@ -622,6 +642,18 @@ internal fun MoreScreen(
                         stringResource(R.string.import_result, it.imported, it.skippedDuplicates, it.errors),
                         style = MaterialTheme.typography.bodySmall,
                     )
+                }
+                Text(stringResource(R.string.exchange_rates), fontWeight = FontWeight.Medium)
+                Text(
+                    stringResource(
+                        R.string.exchange_rates_summary,
+                        state.historicalExchangeRates.count { it.status == "AVAILABLE" },
+                        state.historicalExchangeRates.count { it.status != "AVAILABLE" },
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                TextButton(onClick = onRefreshExchangeRates) {
+                    Text(stringResource(R.string.exchange_rates_refresh))
                 }
             }
         }

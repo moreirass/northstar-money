@@ -307,4 +307,21 @@
     <string name="money_hide_values">Ocultar valores monetários</string>
     <string name="money_show_values">Mostrar valores monetários</string>
     <string name="money_privacy_explanation">Oculta os montantes no ecrã sem impedir capturas. As exportações e cópias de segurança cifradas mantêm os valores reais.</string>
+    <string name="receipt_attachments">Anexos de recibos</string>
+    <string name="receipt_choose_photo">Escolher fotografia</string>
+    <string name="receipt_take_photo">Tirar fotografia</string>
+    <string name="receipt_none">Nenhum recibo anexado.</string>
+    <string name="receipt_ocr_status">OCR: %1$s</string>
+    <string name="receipt_merchant">Comerciante: %1$s</string>
+    <string name="receipt_date">Data: %1$s</string>
+    <string name="receipt_amount">Valor: %1$s</string>
+    <string name="receipt_apply_detected">Aplicar valores detetados</string>
+    <string name="xlsx_export">Exportar livro Excel formatado</string>
+    <string name="exchange_rates">Taxas de câmbio históricas</string>
+    <string name="exchange_rates_summary">Disponíveis: %1$d · Pendentes: %2$d</string>
+    <string name="exchange_rates_refresh">Tentar obter taxas em falta</string>
+    <string name="widget_balance_title">Saldo atual</string>
+    <string name="widget_recent_title">Últimas transações</string>
+    <string name="widget_no_transactions">Ainda não existem transações</string>
+    <string name="widget_balance_placeholder">0,00 €</string>
 </resources>

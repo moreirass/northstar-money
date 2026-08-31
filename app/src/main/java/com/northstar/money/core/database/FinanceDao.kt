@@ -78,6 +78,45 @@ abstract class FinanceDao {
     )
     abstract fun observeTransactions(): Flow<List<TransactionRow>>
 
+    @Query("SELECT * FROM receipt_attachments ORDER BY createdAt DESC")
+    abstract fun observeReceiptAttachments(): Flow<List<ReceiptAttachmentEntity>>
+
+    @Insert
+    abstract suspend fun insertReceiptAttachment(item: ReceiptAttachmentEntity)
+
+    @Update
+    abstract suspend fun updateReceiptAttachment(item: ReceiptAttachmentEntity): Int
+
+    @Query("SELECT * FROM receipt_attachments WHERE id = :id")
+    abstract suspend fun getReceiptAttachment(id: String): ReceiptAttachmentEntity?
+
+    @Query("DELETE FROM receipt_attachments WHERE id = :id")
+    abstract suspend fun deleteReceiptAttachment(id: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertTransactionExchangeRate(item: TransactionExchangeRateEntity)
+
+    @Query("SELECT * FROM transaction_exchange_rates ORDER BY rateLocalDate DESC")
+    abstract fun observeTransactionExchangeRates(): Flow<List<TransactionExchangeRateEntity>>
+
+    @Query("SELECT * FROM transaction_exchange_rates WHERE status = 'PENDING'")
+    abstract suspend fun getPendingTransactionExchangeRates(): List<TransactionExchangeRateEntity>
+
+    @Query("SELECT * FROM transaction_exchange_rates WHERE entryId = :entryId")
+    abstract suspend fun getTransactionExchangeRate(entryId: String): TransactionExchangeRateEntity?
+
+    @Query(
+        """
+        SELECT t.id AS transactionId, t.localDate, e.id AS entryId, e.accountId, e.categoryId,
+               e.amountMinor, e.currencyCode, e.cleared
+        FROM transaction_entries e
+        JOIN transactions t ON t.id = e.transactionId
+        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id
+        WHERE t.deletedAt IS NULL AND fx.id IS NULL
+        """,
+    )
+    abstract suspend fun getEntriesMissingExchangeRates(): List<EntryRateCandidate>
+
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
@@ -104,14 +143,19 @@ abstract class FinanceDao {
         SELECT
           COALESCE((SELECT SUM(openingBalanceMinor) FROM accounts
                     WHERE archivedAt IS NULL AND currencyCode = :baseCurrencyCode), 0)
-            + COALESCE(SUM(e.amountMinor), 0) AS balanceMinor,
-          COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS incomeMinor,
-          COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart THEN e.amountMinor ELSE 0 END), 0) AS expenseMinor
+            + COALESCE(SUM(CASE WHEN e.currencyCode = :baseCurrencyCode
+                                THEN e.amountMinor ELSE fx.convertedAmountMinor END), 0) AS balanceMinor,
+          COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart
+                            THEN CASE WHEN e.currencyCode = :baseCurrencyCode
+                                      THEN e.amountMinor ELSE fx.convertedAmountMinor END ELSE 0 END), 0) AS incomeMinor,
+          COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart
+                             THEN CASE WHEN e.currencyCode = :baseCurrencyCode
+                                       THEN e.amountMinor ELSE fx.convertedAmountMinor END ELSE 0 END), 0) AS expenseMinor
         FROM transaction_entries e
         JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         JOIN accounts a ON a.id = e.accountId
-        WHERE a.archivedAt IS NULL AND a.currencyCode = :baseCurrencyCode
-          AND e.currencyCode = :baseCurrencyCode
+        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id AND fx.status = 'AVAILABLE'
+        WHERE a.archivedAt IS NULL
         """
     )
     abstract fun observeSummary(monthStart: String, baseCurrencyCode: String): Flow<SummaryRow>
@@ -702,7 +746,7 @@ abstract class FinanceDao {
         adjustmentTransactionId: String,
         adjustmentEntryId: String,
         completedAt: Long,
-    ) {
+    ): TransactionEntryEntity? {
         val account = requireNotNull(getActiveAccount(accountId)) { "Account is missing or archived" }
         require(account.currencyCode == currencyCode) { "Statement currency does not match the account" }
         val calculatedBalance = requireNotNull(getClearedAccountBalance(accountId, statementLocalDate)) {
@@ -750,6 +794,7 @@ abstract class FinanceDao {
             adjustment,
             entry,
         )
+        return entry
     }
 
     @Query("UPDATE transactions SET deletedAt = :deletedAt, updatedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
@@ -873,6 +918,12 @@ abstract class FinanceDao {
     @Query("SELECT * FROM debt_profiles ORDER BY id")
     protected abstract suspend fun getAllDebtProfilesForBackup(): List<DebtProfileEntity>
 
+    @Query("SELECT * FROM receipt_attachments ORDER BY id")
+    protected abstract suspend fun getAllReceiptAttachmentsForBackup(): List<ReceiptAttachmentEntity>
+
+    @Query("SELECT * FROM transaction_exchange_rates ORDER BY id")
+    protected abstract suspend fun getAllTransactionExchangeRatesForBackup(): List<TransactionExchangeRateEntity>
+
     @Query("DELETE FROM reconciliations")
     protected abstract suspend fun deleteAllReconciliations()
 
@@ -884,6 +935,12 @@ abstract class FinanceDao {
 
     @Query("DELETE FROM debt_profiles")
     protected abstract suspend fun deleteAllDebtProfiles()
+
+    @Query("DELETE FROM receipt_attachments")
+    protected abstract suspend fun deleteAllReceiptAttachments()
+
+    @Query("DELETE FROM transaction_exchange_rates")
+    protected abstract suspend fun deleteAllTransactionExchangeRates()
 
     @Query("DELETE FROM transaction_entries")
     protected abstract suspend fun deleteAllTransactionEntries()
@@ -933,6 +990,12 @@ abstract class FinanceDao {
     @Insert
     protected abstract suspend fun restoreDebtProfiles(items: List<DebtProfileEntity>)
 
+    @Insert
+    protected abstract suspend fun restoreReceiptAttachments(items: List<ReceiptAttachmentEntity>)
+
+    @Insert
+    protected abstract suspend fun restoreTransactionExchangeRates(items: List<TransactionExchangeRateEntity>)
+
     @Transaction
     open suspend fun exportSnapshot(): DatabaseSnapshot = DatabaseSnapshot(
         accounts = getAllAccountsForBackup(),
@@ -945,6 +1008,8 @@ abstract class FinanceDao {
         goalContributions = getAllGoalContributionsForBackup(),
         recurringSchedules = getAllRecurringSchedulesForBackup(),
         debtProfiles = getAllDebtProfilesForBackup(),
+        receiptAttachments = getAllReceiptAttachmentsForBackup(),
+        transactionExchangeRates = getAllTransactionExchangeRatesForBackup(),
     )
 
     @Transaction
@@ -953,6 +1018,8 @@ abstract class FinanceDao {
         deleteAllBudgetAllocations()
         deleteAllRecurringSchedules()
         deleteAllDebtProfiles()
+        deleteAllReceiptAttachments()
+        deleteAllTransactionExchangeRates()
         deleteAllTransactionEntries()
         deleteAllTransactions()
         deleteAllGoalContributions()
@@ -970,5 +1037,7 @@ abstract class FinanceDao {
         restoreGoalContributions(snapshot.goalContributions)
         restoreRecurringSchedules(snapshot.recurringSchedules)
         restoreDebtProfiles(snapshot.debtProfiles)
+        restoreReceiptAttachments(snapshot.receiptAttachments)
+        restoreTransactionExchangeRates(snapshot.transactionExchangeRates)
     }
 }

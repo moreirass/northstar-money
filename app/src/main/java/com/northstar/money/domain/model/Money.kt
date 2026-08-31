@@ -87,6 +87,32 @@ data class EditableTransaction(
     val destinationAmount: Money? = null,
 )
 
+data class ReceiptAttachment(
+    val id: String,
+    val transactionId: String,
+    val originalName: String,
+    val mimeType: String,
+    val byteSize: Long,
+    val createdAt: Long,
+    val ocrStatus: String,
+    val detectedAmount: Money?,
+    val detectedLocalDate: String?,
+    val detectedMerchant: String?,
+)
+
+data class HistoricalExchangeRate(
+    val id: String,
+    val transactionId: String,
+    val entryId: String,
+    val baseCurrencyCode: String,
+    val quoteCurrencyCode: String,
+    val rateMicros: Long?,
+    val convertedAmountMinor: Long?,
+    val rateLocalDate: String,
+    val source: String,
+    val status: String,
+)
+
 data class FinanceSummary(
     val balance: Money = Money(0),
     val incomeThisMonth: Money = Money(0),

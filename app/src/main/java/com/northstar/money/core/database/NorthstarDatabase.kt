@@ -15,6 +15,8 @@ import androidx.room.RoomDatabase
         GoalContributionEntity::class,
         RecurringScheduleEntity::class,
         DebtProfileEntity::class,
+        ReceiptAttachmentEntity::class,
+        TransactionExchangeRateEntity::class,
     ],
     version = NorthstarDatabase.VERSION,
     exportSchema = true,
@@ -23,7 +25,7 @@ abstract class NorthstarDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
 
     companion object {
-        const val VERSION = 8
+        const val VERSION = 9
     }
 }
 
@@ -174,5 +176,53 @@ val MIGRATION_7_8 = object : androidx.room.migration.Migration(7, 8) {
             """.trimIndent(),
         )
         db.execSQL("UPDATE goals SET savedMinor = 0 WHERE savedMinor > 0")
+    }
+}
+
+val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS receipt_attachments (
+                id TEXT NOT NULL PRIMARY KEY,
+                transactionId TEXT NOT NULL,
+                content BLOB NOT NULL,
+                originalName TEXT NOT NULL,
+                mimeType TEXT NOT NULL,
+                byteSize INTEGER NOT NULL,
+                createdAt INTEGER NOT NULL,
+                ocrStatus TEXT NOT NULL,
+                ocrText TEXT,
+                detectedAmountMinor INTEGER,
+                detectedCurrencyCode TEXT,
+                detectedLocalDate TEXT,
+                detectedMerchant TEXT,
+                FOREIGN KEY(transactionId) REFERENCES transactions(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_receipt_attachments_transactionId ON receipt_attachments(transactionId)")
+        db.execSQL(
+            """
+            CREATE TABLE IF NOT EXISTS transaction_exchange_rates (
+                id TEXT NOT NULL PRIMARY KEY,
+                transactionId TEXT NOT NULL,
+                entryId TEXT NOT NULL,
+                baseCurrencyCode TEXT NOT NULL,
+                quoteCurrencyCode TEXT NOT NULL,
+                rateMicros INTEGER,
+                convertedAmountMinor INTEGER,
+                rateLocalDate TEXT NOT NULL,
+                source TEXT NOT NULL,
+                status TEXT NOT NULL,
+                fetchedAt INTEGER,
+                FOREIGN KEY(transactionId) REFERENCES transactions(id) ON DELETE CASCADE,
+                FOREIGN KEY(entryId) REFERENCES transaction_entries(id) ON DELETE CASCADE
+            )
+            """.trimIndent(),
+        )
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_transaction_exchange_rates_transactionId ON transaction_exchange_rates(transactionId)")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_transaction_exchange_rates_entryId ON transaction_exchange_rates(entryId)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS index_transaction_exchange_rates_rateLocalDate ON transaction_exchange_rates(rateLocalDate)")
     }
 }

@@ -307,4 +307,21 @@
     <string name="money_hide_values">Hide monetary values</string>
     <string name="money_show_values">Show monetary values</string>
     <string name="money_privacy_explanation">Masks amounts on screen while keeping screenshots available. Exports and encrypted backups retain the real values.</string>
+    <string name="receipt_attachments">Receipt attachments</string>
+    <string name="receipt_choose_photo">Choose photo</string>
+    <string name="receipt_take_photo">Take photo</string>
+    <string name="receipt_none">No receipt attached.</string>
+    <string name="receipt_ocr_status">OCR: %1$s</string>
+    <string name="receipt_merchant">Merchant: %1$s</string>
+    <string name="receipt_date">Date: %1$s</string>
+    <string name="receipt_amount">Amount: %1$s</string>
+    <string name="receipt_apply_detected">Apply detected values</string>
+    <string name="xlsx_export">Export formatted Excel workbook</string>
+    <string name="exchange_rates">Historical exchange rates</string>
+    <string name="exchange_rates_summary">Available: %1$d · Pending: %2$d</string>
+    <string name="exchange_rates_refresh">Retry missing rates</string>
+    <string name="widget_balance_title">Current balance</string>
+    <string name="widget_recent_title">Recent transactions</string>
+    <string name="widget_no_transactions">No transactions yet</string>
+    <string name="widget_balance_placeholder">€0.00</string>
 </resources>

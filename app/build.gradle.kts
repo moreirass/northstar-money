@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment.ktx)
+    implementation(libs.mlkit.text.recognition)
     kapt(libs.androidx.room.compiler)
 
     testImplementation(libs.junit)

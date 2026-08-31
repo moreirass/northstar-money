@@ -438,6 +438,7 @@ fun NorthstarApp() {
                 onCreateFullBackup = financeViewModel::createFullBackup,
                 onRestoreFullBackup = financeViewModel::restoreFullBackup,
                 onUndoFullRestore = financeViewModel::undoLastFullRestore,
+                onRefreshExchangeRates = financeViewModel::refreshExchangeRates,
                 onRecoverTransaction = { id ->
                     scope.launch {
                         runSuspendCatching { financeViewModel.restoreTransaction(id) }
@@ -460,6 +461,12 @@ fun NorthstarApp() {
                 financeViewModel.updateTransaction(it)
                 editingTransaction = null
             },
+            onAttachReceipt = { name, mimeType, content ->
+                financeViewModel.addReceiptAttachment(transaction.id, name, mimeType, content)
+            },
+            onDeleteReceipt = financeViewModel::deleteReceiptAttachment,
+            onRetryReceiptOcr = financeViewModel::retryReceiptOcr,
+            onApplyReceiptOcr = financeViewModel::applyReceiptOcr,
         )
     }
 

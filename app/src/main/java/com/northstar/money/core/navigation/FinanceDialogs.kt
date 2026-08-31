@@ -230,7 +230,30 @@ internal fun EditTransactionDialog(
     state: FinanceUiState,
     onDismiss: () -> Unit,
     onSave: (EditableTransaction) -> Unit,
+    onAttachReceipt: (String, String, ByteArray) -> Unit,
+    onDeleteReceipt: (String) -> Unit,
+    onRetryReceiptOcr: (String) -> Unit,
+    onApplyReceiptOcr: (String) -> Unit,
 ) {
+    val context = LocalContext.current
+    val receipts = state.receiptAttachments.filter { it.transactionId == transaction.id }
+    var cameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val receiptPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) {
+            val type = context.contentResolver.getType(uri) ?: "image/jpeg"
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: "receipt"
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                onAttachReceipt(name, type, input.readBytes())
+            }
+        }
+    }
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
+        cameraFile?.let { file ->
+            if (saved && file.exists()) onAttachReceipt(file.name, "image/jpeg", file.readBytes())
+            file.delete()
+        }
+        cameraFile = null
+    }
     val sourceDigits = java.util.Currency.getInstance(transaction.amount.currencyCode).defaultFractionDigits
     val initialDestinationAmount = transaction.destinationAmount ?: transaction.amount
     val destinationDigits = java.util.Currency.getInstance(initialDestinationAmount.currencyCode).defaultFractionDigits
@@ -293,6 +316,63 @@ internal fun EditTransactionDialog(
                 OutlinedTextField(localDate, { localDate = it }, label = { Text(stringResource(R.string.ui_date_yyyy_mm_dd)) }, singleLine = true)
                 OutlinedTextField(payee, { payee = it }, label = { Text(stringResource(R.string.ui_payee)) }, singleLine = true)
                 OutlinedTextField(note, { note = it }, label = { Text(stringResource(R.string.ui_note)) })
+                Text(stringResource(R.string.receipt_attachments), style = MaterialTheme.typography.titleSmall)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { receiptPicker.launch("image/*") }) {
+                        Text(stringResource(R.string.receipt_choose_photo))
+                    }
+                    TextButton(onClick = {
+                        val directory = java.io.File(context.cacheDir, "receipt-camera").apply { mkdirs() }
+                        val file = java.io.File.createTempFile("receipt-", ".jpg", directory)
+                        cameraFile = file
+                        cameraLauncher.launch(
+                            androidx.core.content.FileProvider.getUriForFile(
+                                context,
+                                "${context.packageName}.files",
+                                file,
+                            ),
+                        )
+                    }) {
+                        Text(stringResource(R.string.receipt_take_photo))
+                    }
+                }
+                if (receipts.isEmpty()) {
+                    Text(stringResource(R.string.receipt_none), style = MaterialTheme.typography.bodySmall)
+                }
+                receipts.forEach { receipt ->
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(receipt.originalName, fontWeight = FontWeight.Medium)
+                            Text(
+                                stringResource(R.string.receipt_ocr_status, receipt.ocrStatus.lowercase()),
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                            receipt.detectedMerchant?.let { Text(stringResource(R.string.receipt_merchant, it)) }
+                            receipt.detectedLocalDate?.let { Text(stringResource(R.string.receipt_date, it)) }
+                            receipt.detectedAmount?.let { Text(stringResource(R.string.receipt_amount, it.formatted())) }
+                            Row {
+                                if (receipt.ocrStatus == "FAILED") {
+                                    TextButton(onClick = { onRetryReceiptOcr(receipt.id) }) {
+                                        Text(stringResource(R.string.ui_retry))
+                                    }
+                                }
+                                if (receipt.ocrStatus == "COMPLETE" &&
+                                    (receipt.detectedAmount != null || receipt.detectedLocalDate != null || receipt.detectedMerchant != null)
+                                ) {
+                                    TextButton(onClick = {
+                                        onApplyReceiptOcr(receipt.id)
+                                        onDismiss()
+                                    }) {
+                                        Text(stringResource(R.string.receipt_apply_detected))
+                                    }
+                                }
+                                TextButton(onClick = { onDeleteReceipt(receipt.id) }) {
+                                    Text(stringResource(R.string.ui_delete))
+                                }
+                            }
+                        }
+                    }
+                }
                 Text(stringResource(if (transaction.kind == TransactionKind.TRANSFER) R.string.field_from_account else R.string.ui_account))
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     accounts.forEach { account ->

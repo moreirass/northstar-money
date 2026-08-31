@@ -52,7 +52,7 @@ Calendar-based calculations use the user's configured time zone.
 ### FR-CORE-004 — Audit metadata (MVP)
 
 Mutable financial records contain creation and last-modified timestamps. Records
-that may later synchronize also receive stable UUID identifiers.
+also receive stable UUID identifiers for backup, restore, and import safety.
 
 ### FR-CORE-005 — Safe destructive actions (MVP)
 
@@ -60,6 +60,13 @@ that may later synchronize also receive stable UUID identifiers.
 - Deletion explains related records that will be affected.
 - Transaction deletion offers a temporary undo action.
 - Accounts with transactions are archived by default rather than silently erased.
+
+### FR-CORE-006 — Historical exchange rates (Post-MVP/Premium)
+
+Each transaction entry retains its transaction-date conversion rate into the base
+currency. Rates are obtained from Frankfurter, stored locally with source/status
+metadata, included in full backups, and retried explicitly when connectivity is
+unavailable. Missing rates never prevent a local transaction from being saved.
 
 ## 3. Onboarding and settings
 
@@ -193,13 +200,20 @@ One transaction may allocate its total across multiple categories.
 
 ### FR-TXN-005 — Transaction status (MVP)
 
-Transactions can be uncleared or cleared. A future synchronized version may add
-pending and reconciled states without changing transaction identity.
+Transactions can be uncleared or cleared. Reconciled states may be added later
+without changing transaction identity.
 
 ### FR-TXN-006 — Attachments (Post-MVP/Premium)
 
-The user can attach receipt images or documents. Attachments are encrypted at rest,
-have size/type limits, and can be removed independently of the transaction.
+The user can attach receipt images from the document picker or camera. Attachments
+are stored locally, included in full backups, limited to supported image types and
+8 MB each, and can be removed independently of the transaction.
+
+### FR-TXN-008 — Receipt OCR (Post-MVP/Premium)
+
+After a receipt image is attached, on-device OCR extracts candidate amount, date,
+and merchant values. The user reviews and explicitly applies the detected values;
+OCR never silently overwrites a transaction.
 
 ### FR-TXN-007 — Bulk actions (Post-MVP)
 
@@ -253,12 +267,6 @@ The user can create recurring income, expense, or transfer templates with:
 
 The app can mark a recurring expense as a subscription and record provider,
 billing cycle, renewal date, trial end, and optional cancellation link.
-
-### FR-SUB-002 — Subscription detection (Post-MVP/Premium)
-
-The app suggests possible subscriptions based on repeated payee and amount patterns.
-It never changes transaction data without confirmation and explains the evidence
-for every suggestion.
 
 ## 8. Monthly budgets
 
@@ -506,24 +514,12 @@ document picker.
 - A failed restore preserves the current database.
 - The app periodically reminds users who have no recent backup.
 
-### FR-SYNC-001 — Cloud synchronization (Post-MVP/Premium)
-
-Synchronization will support multiple devices, conflicts, tombstones, retries, and
-end-to-end data protection appropriate to the selected service. Local data remains
-the immediately available source for the UI.
-
-### FR-BANK-001 — Bank synchronization (Post-MVP/Premium)
-
-Bank connectivity is isolated behind a provider-neutral contract. The app stores no
-bank credentials, clearly displays consent scope and expiration, and never merges a
-candidate transaction without deterministic matching or user review.
-
 ## 18. Widgets and platform integration
 
 ### FR-WID-001 — Android widgets (Post-MVP)
 
-Optional widgets provide quick transaction entry and a privacy-aware budget summary.
-Widgets hide amounts while the app's sensitive-data mode is enabled.
+An optional home-screen widget shows the current base-currency balance and the three
+latest transactions. It hides amounts while sensitive-data mode is enabled.
 
 ### FR-SHORT-001 — App shortcuts (Post-MVP)
 
@@ -569,12 +565,6 @@ transactions, and explicitly expected income.
 
 The app flags similar payments within a configurable time window and explains the
 matching attributes. It never deletes a transaction automatically.
-
-### FR-AI-006 — Expense anomaly insight (MVP)
-
-The app may flag a transaction or category total that is materially different from
-the user's own history. It must disclose the comparison period and suppress results
-when history is insufficient.
 
 ### FR-AI-007 — Savings recommendation (Post-MVP/Premium)
 
@@ -657,7 +647,7 @@ The first public release includes:
 - CSV import/export and PDF summary
 - Configurable notifications
 - Local encrypted backup/restore and application lock
-- Rules-based categorization, duplicates, spending pace, anomaly indicators,
+- Rules-based categorization, duplicates, spending pace,
   health score, and 30-day cash-flow projection
 
 Anything marked Post-MVP, Premium, or Future is excluded unless a later milestone
@@ -676,4 +666,3 @@ A feature is complete only when:
 7. Analytics, if later enabled, contains no sensitive financial data.
 8. User-facing documentation or onboarding is updated.
 9. Requirement IDs are referenced in the implementation milestone.
-

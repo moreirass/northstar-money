@@ -15,6 +15,8 @@ class DatabaseSnapshotValidator {
         requireUniqueIds("goal contributions", snapshot.goalContributions.map { it.id })
         requireUniqueIds("recurring schedules", snapshot.recurringSchedules.map { it.id })
         requireUniqueIds("debt profiles", snapshot.debtProfiles.map { it.id })
+        requireUniqueIds("receipt attachments", snapshot.receiptAttachments.map { it.id })
+        requireUniqueIds("transaction exchange rates", snapshot.transactionExchangeRates.map { it.id })
 
         val accountIds = snapshot.accounts.mapTo(mutableSetOf()) { it.id }
         val accountCurrencies = snapshot.accounts.associate { it.id to it.currencyCode }
@@ -149,6 +151,29 @@ class DatabaseSnapshotValidator {
                 it.accountId in accountIds && it.annualRateBasisPoints >= 0 &&
                     it.minimumPaymentMinor >= 0 && it.dueDay in 1..31,
             ) { "Backup contains an invalid debt profile" }
+        }
+        snapshot.receiptAttachments.forEach {
+            require(
+                it.transactionId in transactionIds && it.originalName.isNotBlank() &&
+                    it.mimeType.startsWith("image/") && it.content.isNotEmpty() &&
+                    it.content.size.toLong() == it.byteSize && it.byteSize <= 8L * 1024 * 1024 &&
+                    it.ocrStatus in setOf("PENDING", "PROCESSING", "COMPLETE", "FAILED"),
+            ) { "Backup contains an invalid receipt attachment" }
+            it.detectedLocalDate?.let { date -> requireDate(date, "receipt") }
+        }
+        val entryIds = snapshot.transactionEntries.mapTo(mutableSetOf()) { it.id }
+        require(snapshot.transactionExchangeRates.distinctBy { it.entryId }.size == snapshot.transactionExchangeRates.size) {
+            "Backup contains duplicate exchange rates for an entry"
+        }
+        snapshot.transactionExchangeRates.forEach {
+            require(
+                it.transactionId in transactionIds && it.entryId in entryIds &&
+                    it.baseCurrencyCode.isCurrencyCode() && it.quoteCurrencyCode.isCurrencyCode() &&
+                    it.status in setOf("PENDING", "AVAILABLE", "FAILED") &&
+                    (it.rateMicros == null || it.rateMicros > 0) &&
+                    (it.status != "AVAILABLE" || (it.rateMicros != null && it.convertedAmountMinor != null)),
+            ) { "Backup contains an invalid historical exchange rate" }
+            requireDate(it.rateLocalDate, "exchange rate")
         }
     }
 

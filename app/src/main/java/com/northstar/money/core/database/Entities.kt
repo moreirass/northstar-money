@@ -96,6 +96,86 @@ data class TransactionEntryEntity(
     val cleared: Boolean,
 )
 
+@Serializable
+@Entity(
+    tableName = "receipt_attachments",
+    foreignKeys = [ForeignKey(
+        entity = TransactionEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["transactionId"],
+        onDelete = ForeignKey.CASCADE,
+    )],
+    indices = [Index("transactionId")],
+)
+data class ReceiptAttachmentEntity(
+    @PrimaryKey val id: String,
+    val transactionId: String,
+    val content: ByteArray,
+    val originalName: String,
+    val mimeType: String,
+    val byteSize: Long,
+    val createdAt: Long,
+    val ocrStatus: String = "PENDING",
+    val ocrText: String? = null,
+    val detectedAmountMinor: Long? = null,
+    val detectedCurrencyCode: String? = null,
+    val detectedLocalDate: String? = null,
+    val detectedMerchant: String? = null,
+) {
+    override fun equals(other: Any?): Boolean = other is ReceiptAttachmentEntity &&
+        id == other.id && transactionId == other.transactionId && content.contentEquals(other.content) &&
+        originalName == other.originalName && mimeType == other.mimeType && byteSize == other.byteSize &&
+        createdAt == other.createdAt && ocrStatus == other.ocrStatus && ocrText == other.ocrText &&
+        detectedAmountMinor == other.detectedAmountMinor && detectedCurrencyCode == other.detectedCurrencyCode &&
+        detectedLocalDate == other.detectedLocalDate && detectedMerchant == other.detectedMerchant
+
+    override fun hashCode(): Int = 31 * id.hashCode() + content.contentHashCode()
+}
+
+@Serializable
+@Entity(
+    tableName = "transaction_exchange_rates",
+    foreignKeys = [
+        ForeignKey(
+            entity = TransactionEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["transactionId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+        ForeignKey(
+            entity = TransactionEntryEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["entryId"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index("transactionId"), Index(value = ["entryId"], unique = true), Index("rateLocalDate")],
+)
+data class TransactionExchangeRateEntity(
+    @PrimaryKey val id: String,
+    val transactionId: String,
+    val entryId: String,
+    val baseCurrencyCode: String,
+    val quoteCurrencyCode: String,
+    val rateMicros: Long?,
+    val convertedAmountMinor: Long?,
+    val rateLocalDate: String,
+    val source: String,
+    val status: String,
+    val fetchedAt: Long?,
+)
+
+data class EntryRateCandidate(
+    val transactionId: String,
+    val localDate: String,
+    val entryId: String,
+    val accountId: String,
+    val categoryId: String?,
+    val amountMinor: Long,
+    val currencyCode: String,
+    val cleared: Boolean,
+)
+
 data class TransactionRow(
     val id: String,
     val payee: String,

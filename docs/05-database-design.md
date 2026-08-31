@@ -2,11 +2,11 @@
 
 ## 1. Storage principles
 
-- UUID text primary keys enable future multi-device synchronization.
+- UUID text primary keys provide stable identities across backup, restore, and import.
 - Monetary values use signed `INTEGER` minor units plus currency code.
-- UTC instants store audit/synchronization time; local date stores financial intent.
+- UTC instants store audit time; local date stores financial intent.
 - Foreign keys are enabled and indexed.
-- Financial history is archived or soft-deleted when synchronization/audit requires it.
+- Financial history is archived or soft-deleted for recovery and local auditability.
 - Derived account balances and budget totals are queried, not independently mutable.
 
 ## 2. Entity relationship diagram
@@ -137,10 +137,17 @@ Index: `(goal_id, local_date)`.
 
 Index: `(account_id, statement_local_date DESC)`.
 
-### attachments
+### receipt_attachments
 
-Post-MVP: `id PK`, `transaction_id FK CASCADE`, `encrypted_relative_path`, `mime_type`,
-`display_name`, `size_bytes`, `content_hash`, `created_at`.
+`id PK`, `transaction_id FK CASCADE`, `content BLOB`, `original_name`, `mime_type`,
+`byte_size`, `created_at`, `ocr_status`, `ocr_text`, `detected_amount_minor`,
+`detected_currency_code`, `detected_local_date`, `detected_merchant`.
+
+### transaction_exchange_rates
+
+`id PK`, `transaction_id FK CASCADE`, `entry_id FK CASCADE UNIQUE`,
+`base_currency_code`, `quote_currency_code`, `rate_micros`,
+`converted_amount_minor`, `rate_local_date`, `source`, `status`, `fetched_at`.
 
 ### import_batches
 
@@ -173,9 +180,9 @@ and goals are independent; many-to-many relationships use joins; derived totals 
 not duplicated. Selective denormalization is allowed only after profiling and must
 include transactional invalidation rules.
 
-Future synchronization fields (`revision`, timestamps, soft deletion) allow an
-outbox/change-log without changing public identifiers. Large transaction lists use
-indexed date/account queries and Paging when measurement justifies it.
+Stable identifiers, timestamps, and soft deletion support safe local recovery and
+portable backups. Large transaction lists use indexed date/account queries and Paging
+when measurement justifies it.
 
 ## 7. Migration policy
 
@@ -185,4 +192,3 @@ indexed date/account queries and Paging when measurement justifies it.
 - Back up before high-risk migration when possible.
 - Add nullable/defaulted columns before making constraints stricter.
 - Treat money representation and transfer invariants as migration-critical.
-

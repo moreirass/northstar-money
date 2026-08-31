@@ -27,6 +27,8 @@ import com.northstar.money.domain.model.EditableAccount
 import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.model.EditableGoal
 import com.northstar.money.domain.model.GoalContribution
+import com.northstar.money.domain.model.ReceiptAttachment
+import com.northstar.money.domain.model.HistoricalExchangeRate
 import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +67,8 @@ data class FinanceUiState(
     val forecast: CashFlowForecast = CashFlowForecast(Money(0), Money(0), LocalDate.now().toString(), 0),
     val importSummary: CsvImportSummary? = null,
     val settings: AppSettings = AppSettings(),
+    val receiptAttachments: List<ReceiptAttachment> = emptyList(),
+    val historicalExchangeRates: List<HistoricalExchangeRate> = emptyList(),
 )
 
 data class FinanceUiEvent(@StringRes val messageRes: Int)
@@ -81,6 +85,13 @@ private data class GoalUiState(
     val goals: List<SavingsGoal>,
     val contributions: List<GoalContribution>,
     val deletedContributions: List<GoalContribution>,
+)
+
+private data class AuxiliaryUiState(
+    val importSummary: CsvImportSummary?,
+    val settings: AppSettings,
+    val receiptAttachments: List<ReceiptAttachment>,
+    val historicalExchangeRates: List<HistoricalExchangeRate>,
 )
 
 class FinanceViewModel(
@@ -135,21 +146,29 @@ class FinanceViewModel(
         repository.observeDeletedRecurring(),
     ) { active, paused, deleted -> RecurringUiState(active, paused, deleted) }
 
+    private val auxiliaryState = combine(
+        importSummary,
+        preferences.settings,
+        repository.observeReceiptAttachments(),
+        repository.observeHistoricalExchangeRates(),
+    ) { summary, settings, receipts, rates -> AuxiliaryUiState(summary, settings, receipts, rates) }
+
     private val loadedState: Flow<FinanceUiState> = combine(
         planningState,
         recurringState,
         repository.observeDebts(),
-        importSummary,
-        preferences.settings,
-    ) { state, recurringState, debts, summary, settings ->
+        auxiliaryState,
+    ) { state, recurringState, debts, auxiliary ->
         state.copy(
             recurring = recurringState.active,
             pausedRecurring = recurringState.paused,
             deletedRecurring = recurringState.deleted,
             debts = debts,
             forecast = calculateForecast(state.summary.balance, recurringState.active),
-            importSummary = summary,
-            settings = settings,
+            importSummary = auxiliary.importSummary,
+            settings = auxiliary.settings,
+            receiptAttachments = auxiliary.receiptAttachments,
+            historicalExchangeRates = auxiliary.historicalExchangeRates,
         )
     }
 
@@ -167,7 +186,10 @@ class FinanceViewModel(
     )
 
     init {
-        launchOperation { repository.seedIfEmpty() }
+        launchOperation {
+            repository.seedIfEmpty()
+            repository.refreshPendingExchangeRates()
+        }
     }
 
     fun addTransaction(
@@ -199,6 +221,26 @@ class FinanceViewModel(
 
     fun updateTransaction(transaction: EditableTransaction) {
         launchOperation { repository.updateTransaction(transaction) }
+    }
+
+    fun addReceiptAttachment(transactionId: String, originalName: String, mimeType: String, content: ByteArray) {
+        launchOperation { repository.addReceiptAttachment(transactionId, originalName, mimeType, content) }
+    }
+
+    fun deleteReceiptAttachment(id: String) {
+        launchOperation { repository.deleteReceiptAttachment(id) }
+    }
+
+    fun retryReceiptOcr(id: String) {
+        launchOperation { repository.retryReceiptOcr(id) }
+    }
+
+    fun applyReceiptOcr(id: String) {
+        launchOperation { repository.applyReceiptOcr(id) }
+    }
+
+    fun refreshExchangeRates() {
+        launchOperation { repository.refreshPendingExchangeRates() }
     }
 
     fun setTransactionCleared(id: String, cleared: Boolean) {

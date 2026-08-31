@@ -88,9 +88,9 @@ Errors are modeled by layer:
 
 - Room is authoritative for financial data.
 - Data is written locally first.
-- Future remote synchronization observes a durable change log/outbox.
-- WorkManager retries deferred synchronization with constraints and backoff.
-- UI never reads remote responses directly; remote data is normalized into Room.
+- The current product has no remote data synchronization or backend dependency.
+- WorkManager handles local reminders and deferred personal-finance work.
+- External reference data such as exchange rates is normalized into Room.
 - Derived totals are queried/calculated from authoritative records and cached only
   when profiling proves it necessary.
 
@@ -149,4 +149,3 @@ is API 26 to balance modern cryptography/background APIs with device coverage. R
 3. Database entities never cross into UI state.
 4. Do not precompute derived money values unless correctness and invalidation are defined.
 5. External providers are replaceable adapters, not domain dependencies.
-

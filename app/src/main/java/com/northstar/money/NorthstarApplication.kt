@@ -14,9 +14,15 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 
 class NorthstarApplication : Application() {
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val database by lazy {
         Room.databaseBuilder(this, NorthstarDatabase::class.java, "northstar.db")
             .addMigrations(com.northstar.money.core.database.MIGRATION_1_2)
@@ -26,6 +32,7 @@ class NorthstarApplication : Application() {
             .addMigrations(com.northstar.money.core.database.MIGRATION_5_6)
             .addMigrations(com.northstar.money.core.database.MIGRATION_6_7)
             .addMigrations(com.northstar.money.core.database.MIGRATION_7_8)
+            .addMigrations(com.northstar.money.core.database.MIGRATION_8_9)
             .build()
     }
 
@@ -40,6 +47,15 @@ class NorthstarApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        applicationScope.launch {
+            combine(
+                financeRepository.observeSummary(),
+                financeRepository.observeTransactions(),
+                userPreferences.settings,
+            ) { _, _, _ -> Unit }.collect {
+                com.northstar.money.widget.FinanceWidgetProvider.updateAll(this@NorthstarApplication)
+            }
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             getSystemService(NotificationManager::class.java).createNotificationChannels(
                 listOf(

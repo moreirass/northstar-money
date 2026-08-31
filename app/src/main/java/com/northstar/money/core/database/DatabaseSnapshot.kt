@@ -11,4 +11,6 @@ data class DatabaseSnapshot(
     val goalContributions: List<GoalContributionEntity> = emptyList(),
     val recurringSchedules: List<RecurringScheduleEntity>,
     val debtProfiles: List<DebtProfileEntity>,
+    val receiptAttachments: List<ReceiptAttachmentEntity> = emptyList(),
+    val transactionExchangeRates: List<TransactionExchangeRateEntity> = emptyList(),
 )

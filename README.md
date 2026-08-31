@@ -11,7 +11,9 @@ Northstar Money is a private, local-first personal finance app for Android, buil
 - Track cash, checking, savings, and credit accounts in multiple currencies
 - Add and edit income, expenses, and transfers
 - Record cross-currency transfers with separate sent and received amounts
+- Retain transaction-date exchange rates locally and include converted activity in the EUR summary
 - Search transactions, mark them cleared, and reconcile accounts against statements
+- Attach receipt images from storage or the camera and extract amount, date, and merchant with on-device OCR
 - Recover recently deleted transactions and restore archived accounts
 - Manage income and expense categories, including archive, restore, and reversible merges
 - Store monetary values as integer minor units rather than floating-point numbers
@@ -24,6 +26,7 @@ Northstar Money is a private, local-first personal finance app for Android, buil
 - Schedule recurring transactions, pause/resume them, and automatically post due occurrences
 - View account totals, monthly cash flow, accessible charts, and a 30-day forecast
 - Export transactions to CSV and a monthly summary to PDF
+- Export a formatted Excel workbook with transactions, accounts, budgets, summary, and exchange-rate sheets
 - Import validated CSV transactions atomically, with duplicate detection
 
 ### Privacy, safety, and accessibility
@@ -37,6 +40,7 @@ Northstar Money is a private, local-first personal finance app for Android, buil
 - First-run onboarding and consistent loading, empty, and error states
 - English and Portuguese localization
 - Adaptive phone, tablet, and foldable layouts with bottom navigation or a navigation rail
+- A privacy-aware Android home-screen widget for balance and recent transactions
 - Large-text support, semantic descriptions, and accessible chart alternatives
 
 ## Technical overview
@@ -59,8 +63,23 @@ Northstar Money is a private, local-first personal finance app for Android, buil
 | P1 | Core completeness — editing, category/account management, rollover, recurring posting, and reconciliation | ✅ Implemented |
 | P2 | UX and accessibility — navigation, adaptive layouts, localization, onboarding, and privacy controls | ✅ Implemented |
 | P3 | Engineering — automated checks, lint, broader regression coverage, and CI/CD | 🟡 In progress |
-| P4 | Optional advanced features — OCR, sync, and assisted categorization | ⚪ Not started |
+| P4 | Personal premium features — receipts/OCR, formatted Excel, Android widgets, and historical FX | ✅ Implemented |
 | P5 | Commercial release — final branding, legal/privacy material, signing, and store delivery | ⚪ Not started |
+
+### P4 scope
+
+P4 is implemented in this fixed order:
+
+1. Receipt attachments and photographs
+2. Receipt OCR, extracting amount, date, and merchant from an attached photograph
+3. Formatted Excel (`.xlsx`) export
+4. Android home-screen widgets for the current balance and recent transactions
+5. Multi-currency transactions with the exchange rate for the transaction date retained from an external rate source
+
+Multi-device support, cloud sync, bank/Open Banking sync, shared couple spaces,
+ML-based categorization, and advanced subscription/anomaly detection are outside the
+current roadmap. They must not be planned or implemented without a new explicit scope
+decision.
 
 The repository contains JVM tests plus Room and Compose instrumented tests. The checked-in GitHub Actions workflow is still a placeholder and does not yet build or test the app, so local verification remains required.
 

@@ -13,6 +13,8 @@ import com.northstar.money.domain.model.EditableRecurring
 import com.northstar.money.domain.model.EditableGoal
 import com.northstar.money.domain.model.GoalContribution
 import com.northstar.money.domain.model.DebtProfile
+import com.northstar.money.domain.model.ReceiptAttachment
+import com.northstar.money.domain.model.HistoricalExchangeRate
 import kotlinx.coroutines.flow.Flow
 
 interface FinanceRepository {
@@ -22,6 +24,8 @@ interface FinanceRepository {
     fun observeArchivedCategories(): Flow<List<ArchivedCategory>>
     fun observeTransactions(): Flow<List<TransactionItem>>
     fun observeDeletedTransactions(): Flow<List<TransactionItem>>
+    fun observeReceiptAttachments(): Flow<List<ReceiptAttachment>>
+    fun observeHistoricalExchangeRates(): Flow<List<HistoricalExchangeRate>>
     fun observeSummary(): Flow<FinanceSummary>
     fun observeBudgets(): Flow<List<com.northstar.money.domain.model.BudgetProgress>>
     fun observeGoals(): Flow<List<com.northstar.money.domain.model.SavingsGoal>>
@@ -93,6 +97,11 @@ interface FinanceRepository {
     suspend fun restoreTransaction(id: String)
     suspend fun getTransactionForEdit(id: String): EditableTransaction
     suspend fun updateTransaction(transaction: EditableTransaction)
+    suspend fun addReceiptAttachment(transactionId: String, originalName: String, mimeType: String, content: ByteArray)
+    suspend fun deleteReceiptAttachment(id: String)
+    suspend fun retryReceiptOcr(id: String)
+    suspend fun applyReceiptOcr(id: String)
+    suspend fun refreshPendingExchangeRates(): Int
     suspend fun createFullBackup(): String
     suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray)
     suspend fun undoLastFullRestore(recoveryPassword: CharArray)

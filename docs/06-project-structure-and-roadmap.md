@@ -116,7 +116,7 @@ Testing: leap years, end-of-month, time zones, idempotency, skipped events, payo
 
 ### M5 — Dashboard, reports, and explainable insights
 
-Objectives: dashboard queries, accessible charts, 30-day forecast, pace/anomaly/
+Objectives: dashboard queries, accessible charts, 30-day forecast, spending pace,
 duplicate insights, health score.
 
 Difficulty: High.  
@@ -151,6 +151,6 @@ offline mode, backup recovery, baseline profile, Play pre-launch report.
 “Functionally complete” means all promoted MVP requirements have implementation and
 tests, the release build succeeds, critical workflows pass on an emulator/device,
 there are no known data-loss or high-severity security defects, and privacy/export/
-restore behavior is documented. External bank/cloud functionality is not complete
-without a contracted provider, credentials, legal review, and production environment.
-
+restore behavior is documented. Multi-device, cloud, banking, shared-space, ML
+categorization, and advanced subscription/anomaly functionality is outside the
+current roadmap and is not part of commercial completion.
