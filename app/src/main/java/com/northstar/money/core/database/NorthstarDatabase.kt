@@ -6,6 +6,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [
         AccountEntity::class,
+        AccountExchangeRateEntity::class,
         CategoryEntity::class,
         TransactionEntity::class,
         TransactionEntryEntity::class,
@@ -25,7 +26,7 @@ abstract class NorthstarDatabase : RoomDatabase() {
     abstract fun financeDao(): FinanceDao
 
     companion object {
-        const val VERSION = 9
+        const val VERSION = 10
     }
 }
 
@@ -226,3 +227,42 @@ val MIGRATION_8_9 = object : androidx.room.migration.Migration(8, 9) {
         db.execSQL("CREATE INDEX IF NOT EXISTS index_transaction_exchange_rates_rateLocalDate ON transaction_exchange_rates(rateLocalDate)")
     }
 }
+
+/** Legacy allocations have no currency field: use the installation's currency at upgrade. */
+fun migration9To10(legacyCurrency: String = "EUR") = object : androidx.room.migration.Migration(9, 10) {
+    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+        require(com.northstar.money.domain.model.validCurrency(legacyCurrency))
+        db.execSQL("ALTER TABLE budget_allocations ADD COLUMN currencyCode TEXT NOT NULL DEFAULT 'EUR'")
+        db.execSQL("UPDATE budget_allocations SET currencyCode = ?", arrayOf(legacyCurrency))
+        db.execSQL("DROP INDEX index_budget_allocations_monthStart_categoryId")
+        db.execSQL("CREATE UNIQUE INDEX index_budget_allocations_monthStart_categoryId_currencyCode ON budget_allocations(monthStart, categoryId, currencyCode)")
+        db.execSQL("ALTER TABLE recurring_schedules ADD COLUMN anchorDay INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE recurring_schedules ADD COLUMN anchorMonth INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("UPDATE recurring_schedules SET anchorDay = CAST(substr(nextLocalDate, 9, 2) AS INTEGER), anchorMonth = CAST(substr(nextLocalDate, 6, 2) AS INTEGER)")
+        // Version 9 allowed nested merges and retained rates after changing a date.
+        db.execSQL("""WITH RECURSIVE resolved(original, target, depth) AS (
+            SELECT id, mergedIntoCategoryId, 0 FROM categories WHERE mergedIntoCategoryId IS NOT NULL
+            UNION ALL SELECT resolved.original, category.mergedIntoCategoryId, resolved.depth + 1
+            FROM resolved JOIN categories category ON category.id = resolved.target
+            WHERE category.mergedIntoCategoryId IS NOT NULL AND resolved.depth < 100
+        ) UPDATE categories SET mergedIntoCategoryId = (
+            SELECT resolved.target FROM resolved JOIN categories final ON final.id = resolved.target
+            WHERE resolved.original = categories.id AND final.mergedIntoCategoryId IS NULL AND final.archivedAt IS NULL
+            ORDER BY resolved.depth DESC LIMIT 1
+        ) WHERE mergedIntoCategoryId IS NOT NULL""")
+        db.execSQL("""DELETE FROM transaction_exchange_rates WHERE EXISTS (
+            SELECT 1 FROM transaction_entries entry JOIN transactions t ON t.id = entry.transactionId
+            WHERE entry.id = transaction_exchange_rates.entryId AND
+                (t.id != transaction_exchange_rates.transactionId OR t.localDate != transaction_exchange_rates.rateLocalDate
+                 OR entry.currencyCode != transaction_exchange_rates.baseCurrencyCode)
+        )""")
+        db.execSQL("""CREATE TABLE IF NOT EXISTS account_exchange_rates (
+            accountId TEXT NOT NULL PRIMARY KEY, baseCurrencyCode TEXT NOT NULL,
+            quoteCurrencyCode TEXT NOT NULL, openingBalanceMinor INTEGER NOT NULL,
+            convertedAmountMinor INTEGER NOT NULL, rateMicros INTEGER NOT NULL,
+            rateLocalDate TEXT NOT NULL,
+            FOREIGN KEY(accountId) REFERENCES accounts(id) ON DELETE CASCADE
+        )""")
+    }
+}
+val MIGRATION_9_10 = migration9To10()

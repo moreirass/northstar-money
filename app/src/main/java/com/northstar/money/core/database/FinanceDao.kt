@@ -60,6 +60,9 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
+               e.accountId, COALESCE(target.id, c.id) AS categoryId,
+               (SELECT other.accountId FROM transaction_entries other
+                WHERE other.transactionId = t.id AND other.id != e.id LIMIT 1) AS destinationAccountId,
                a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
                NOT EXISTS (
                    SELECT 1 FROM transaction_entries pending
@@ -70,16 +73,71 @@ abstract class FinanceDao {
         JOIN accounts a ON a.id = e.accountId
         LEFT JOIN categories c ON c.id = e.categoryId
         LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
-        WHERE t.deletedAt IS NULL AND e.rowid = (
-            SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
+        WHERE t.deletedAt IS NULL AND e.id = (
+            SELECT e2.id FROM transaction_entries e2 WHERE e2.transactionId = t.id
+            ORDER BY e2.amountMinor, e2.id LIMIT 1
         )
         ORDER BY t.localDate DESC, t.createdAt DESC
         """
     )
     abstract fun observeTransactions(): Flow<List<TransactionRow>>
 
-    @Query("SELECT * FROM receipt_attachments ORDER BY createdAt DESC")
-    abstract fun observeReceiptAttachments(): Flow<List<ReceiptAttachmentEntity>>
+    @Query(
+        """
+        SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
+               e.accountId, COALESCE(target.id, c.id) AS categoryId,
+               (SELECT other.accountId FROM transaction_entries other
+                WHERE other.transactionId = t.id AND other.id != e.id LIMIT 1) AS destinationAccountId,
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
+               NOT EXISTS (
+                   SELECT 1 FROM transaction_entries pending
+                   WHERE pending.transactionId = t.id AND pending.cleared = 0
+               ) AS cleared
+        FROM transactions t
+        JOIN transaction_entries e ON e.transactionId = t.id
+        JOIN accounts a ON a.id = e.accountId
+        LEFT JOIN categories c ON c.id = e.categoryId
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        WHERE t.deletedAt IS NULL AND e.id = (
+            SELECT e2.id FROM transaction_entries e2 WHERE e2.transactionId = t.id
+            ORDER BY e2.amountMinor, e2.id LIMIT 1
+        )
+        ORDER BY t.localDate DESC, t.createdAt DESC LIMIT :limit
+        """
+    )
+    abstract fun observeRecentTransactions(limit: Int = 3): Flow<List<TransactionRow>>
+
+    @Query(
+        """
+        SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
+               e.accountId, COALESCE(target.id, c.id) AS categoryId,
+               (SELECT other.accountId FROM transaction_entries other
+                WHERE other.transactionId = t.id AND other.id != e.id LIMIT 1) AS destinationAccountId,
+               a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
+               NOT EXISTS (
+                   SELECT 1 FROM transaction_entries pending
+                   WHERE pending.transactionId = t.id AND pending.cleared = 0
+               ) AS cleared
+        FROM transactions t
+        JOIN transaction_entries e ON e.transactionId = t.id
+        JOIN accounts a ON a.id = e.accountId
+        LEFT JOIN categories c ON c.id = e.categoryId
+        LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        WHERE t.deletedAt IS NULL
+          AND (:startDate IS NULL OR t.localDate >= :startDate)
+          AND (:endDate IS NULL OR t.localDate < :endDate)
+          AND (:categoryId IS NULL OR COALESCE(target.id, c.id) = :categoryId)
+          AND e.id = (
+            SELECT e2.id FROM transaction_entries e2 WHERE e2.transactionId = t.id
+            ORDER BY e2.amountMinor, e2.id LIMIT 1
+        )
+        ORDER BY t.localDate DESC, t.createdAt DESC LIMIT :limit
+        """
+    )
+    abstract fun observeTransactionWindow(startDate: String?, endDate: String?, categoryId: String?, limit: Int): Flow<List<TransactionRow>>
+
+    @Query("SELECT id, transactionId, originalName, mimeType, byteSize, createdAt, ocrStatus, detectedAmountMinor, detectedCurrencyCode, detectedLocalDate, detectedMerchant FROM receipt_attachments ORDER BY createdAt DESC")
+    abstract fun observeReceiptAttachments(): Flow<List<ReceiptMetadataRow>>
 
     @Insert
     abstract suspend fun insertReceiptAttachment(item: ReceiptAttachmentEntity)
@@ -112,14 +170,19 @@ abstract class FinanceDao {
         FROM transaction_entries e
         JOIN transactions t ON t.id = e.transactionId
         LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id
-        WHERE t.deletedAt IS NULL AND fx.id IS NULL
+        WHERE t.deletedAt IS NULL AND (fx.id IS NULL OR fx.status != 'AVAILABLE'
+            OR fx.quoteCurrencyCode != :quoteCurrencyCode OR fx.baseCurrencyCode != e.currencyCode
+            OR fx.rateLocalDate != t.localDate)
         """,
     )
-    abstract suspend fun getEntriesMissingExchangeRates(): List<EntryRateCandidate>
+    abstract suspend fun getEntriesMissingExchangeRates(quoteCurrencyCode: String): List<EntryRateCandidate>
 
     @Query(
         """
         SELECT t.id, t.payee, t.kind, t.localDate, t.createdAt, e.amountMinor, e.currencyCode,
+               e.accountId, COALESCE(target.id, c.id) AS categoryId,
+               (SELECT other.accountId FROM transaction_entries other
+                WHERE other.transactionId = t.id AND other.id != e.id LIMIT 1) AS destinationAccountId,
                a.name AS accountName, COALESCE(target.name, c.name) AS categoryName,
                NOT EXISTS (
                    SELECT 1 FROM transaction_entries pending
@@ -130,8 +193,9 @@ abstract class FinanceDao {
         JOIN accounts a ON a.id = e.accountId
         LEFT JOIN categories c ON c.id = e.categoryId
         LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
-        WHERE t.deletedAt IS NOT NULL AND e.rowid = (
-            SELECT MIN(e2.rowid) FROM transaction_entries e2 WHERE e2.transactionId = t.id
+        WHERE t.deletedAt IS NOT NULL AND e.id = (
+            SELECT e2.id FROM transaction_entries e2 WHERE e2.transactionId = t.id
+            ORDER BY e2.amountMinor, e2.id LIMIT 1
         )
         ORDER BY t.deletedAt DESC
         """
@@ -141,24 +205,36 @@ abstract class FinanceDao {
     @Query(
         """
         SELECT
-          COALESCE((SELECT SUM(openingBalanceMinor) FROM accounts
-                    WHERE archivedAt IS NULL AND currencyCode = :baseCurrencyCode), 0)
+          COALESCE((SELECT SUM(CASE WHEN opening.currencyCode = :baseCurrencyCode
+                    THEN opening.openingBalanceMinor ELSE openingFx.convertedAmountMinor END)
+                    FROM accounts opening LEFT JOIN account_exchange_rates openingFx
+                    ON openingFx.accountId = opening.id AND openingFx.quoteCurrencyCode = :baseCurrencyCode
+                    AND openingFx.baseCurrencyCode = opening.currencyCode
+                    AND openingFx.openingBalanceMinor = opening.openingBalanceMinor
+                    WHERE opening.archivedAt IS NULL), 0)
             + COALESCE(SUM(CASE WHEN e.currencyCode = :baseCurrencyCode
                                 THEN e.amountMinor ELSE fx.convertedAmountMinor END), 0) AS balanceMinor,
-          COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart
+          COALESCE(SUM(CASE WHEN t.kind = 'INCOME' AND t.localDate >= :monthStart AND t.localDate < :nextMonthStart
                             THEN CASE WHEN e.currencyCode = :baseCurrencyCode
                                       THEN e.amountMinor ELSE fx.convertedAmountMinor END ELSE 0 END), 0) AS incomeMinor,
-          COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart
+          COALESCE(-SUM(CASE WHEN t.kind = 'EXPENSE' AND t.localDate >= :monthStart AND t.localDate < :nextMonthStart
                              THEN CASE WHEN e.currencyCode = :baseCurrencyCode
-                                       THEN e.amountMinor ELSE fx.convertedAmountMinor END ELSE 0 END), 0) AS expenseMinor
+                                       THEN e.amountMinor ELSE fx.convertedAmountMinor END ELSE 0 END), 0) AS expenseMinor,
+          COALESCE(SUM(CASE WHEN e.currencyCode != :baseCurrencyCode AND fx.id IS NULL THEN 1 ELSE 0 END), 0)
+          + (SELECT COUNT(*) FROM accounts opening WHERE opening.archivedAt IS NULL
+             AND opening.currencyCode != :baseCurrencyCode AND opening.openingBalanceMinor != 0
+             AND NOT EXISTS (SELECT 1 FROM account_exchange_rates openingFx
+                 WHERE openingFx.accountId = opening.id AND openingFx.quoteCurrencyCode = :baseCurrencyCode
+                 AND openingFx.baseCurrencyCode = opening.currencyCode
+                 AND openingFx.openingBalanceMinor = opening.openingBalanceMinor)) AS missingConversions
         FROM transaction_entries e
         JOIN transactions t ON t.id = e.transactionId AND t.deletedAt IS NULL
         JOIN accounts a ON a.id = e.accountId
-        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id AND fx.status = 'AVAILABLE'
+        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id AND fx.status = 'AVAILABLE' AND fx.quoteCurrencyCode = :baseCurrencyCode AND fx.baseCurrencyCode = e.currencyCode
         WHERE a.archivedAt IS NULL
         """
     )
-    abstract fun observeSummary(monthStart: String, baseCurrencyCode: String): Flow<SummaryRow>
+    abstract fun observeSummary(monthStart: String, baseCurrencyCode: String, nextMonthStart: String = java.time.LocalDate.parse(monthStart).plusMonths(1).toString()): Flow<SummaryRow>
 
     @Query(
         """
@@ -167,7 +243,7 @@ abstract class FinanceDao {
                    COALESCE((
                        SELECT SUM(currentAllocation.plannedMinor)
                        FROM budget_allocations currentAllocation
-                       WHERE currentAllocation.categoryId = c.id
+                       WHERE currentAllocation.categoryId = c.id AND currentAllocation.currencyCode = :baseCurrencyCode
                          AND currentAllocation.monthStart = :monthStart
                    ), 0) AS allocatedMinor,
                    CASE WHEN EXISTS (
@@ -175,38 +251,44 @@ abstract class FinanceDao {
                        FROM budget_allocations earlierAllocation
                        JOIN categories earlierCategory ON earlierCategory.id = earlierAllocation.categoryId
                        WHERE COALESCE(earlierCategory.mergedIntoCategoryId, earlierCategory.id) = c.id
-                         AND earlierAllocation.monthStart < :monthStart
+                         AND earlierAllocation.monthStart < :monthStart AND earlierAllocation.currencyCode = :baseCurrencyCode
                    ) THEN
                        COALESCE((
                            SELECT SUM(priorAllocation.plannedMinor)
                            FROM budget_allocations priorAllocation
                            JOIN categories allocatedCategory ON allocatedCategory.id = priorAllocation.categoryId
                            WHERE COALESCE(allocatedCategory.mergedIntoCategoryId, allocatedCategory.id) = c.id
-                             AND priorAllocation.monthStart < :monthStart
+                             AND priorAllocation.monthStart < :monthStart AND priorAllocation.currencyCode = :baseCurrencyCode
                        ), 0) - COALESCE((
-                           SELECT -SUM(entry.amountMinor)
+                           SELECT -SUM(CASE WHEN entry.currencyCode = :baseCurrencyCode THEN entry.amountMinor ELSE fx.convertedAmountMinor END)
                            FROM transaction_entries entry
                            JOIN transactions transactionRecord ON transactionRecord.id = entry.transactionId
                            JOIN categories spentCategory ON spentCategory.id = entry.categoryId
+                           LEFT JOIN transaction_exchange_rates fx ON fx.entryId = entry.id
+                             AND fx.status = 'AVAILABLE' AND fx.quoteCurrencyCode = :baseCurrencyCode
+                             AND fx.baseCurrencyCode = entry.currencyCode
                            WHERE COALESCE(spentCategory.mergedIntoCategoryId, spentCategory.id) = c.id
-                             AND entry.currencyCode = :baseCurrencyCode
+
                              AND transactionRecord.kind = 'EXPENSE' AND transactionRecord.deletedAt IS NULL
                              AND transactionRecord.localDate >= (
                                  SELECT MIN(firstAllocation.monthStart)
                                  FROM budget_allocations firstAllocation
                                  JOIN categories firstCategory ON firstCategory.id = firstAllocation.categoryId
-                                 WHERE COALESCE(firstCategory.mergedIntoCategoryId, firstCategory.id) = c.id
+                                 WHERE COALESCE(firstCategory.mergedIntoCategoryId, firstCategory.id) = c.id AND firstAllocation.currencyCode = :baseCurrencyCode
                              )
                              AND transactionRecord.localDate < :monthStart
                        ), 0)
                    ELSE 0 END AS rolloverMinor,
                    COALESCE((
-                       SELECT -SUM(entry.amountMinor)
+                       SELECT -SUM(CASE WHEN entry.currencyCode = :baseCurrencyCode THEN entry.amountMinor ELSE fx.convertedAmountMinor END)
                        FROM transaction_entries entry
                        JOIN transactions transactionRecord ON transactionRecord.id = entry.transactionId
                        JOIN categories spentCategory ON spentCategory.id = entry.categoryId
+                           LEFT JOIN transaction_exchange_rates fx ON fx.entryId = entry.id
+                             AND fx.status = 'AVAILABLE' AND fx.quoteCurrencyCode = :baseCurrencyCode
+                             AND fx.baseCurrencyCode = entry.currencyCode
                        WHERE COALESCE(spentCategory.mergedIntoCategoryId, spentCategory.id) = c.id
-                         AND entry.currencyCode = :baseCurrencyCode
+
                          AND transactionRecord.kind = 'EXPENSE' AND transactionRecord.deletedAt IS NULL
                          AND transactionRecord.localDate >= :monthStart
                          AND transactionRecord.localDate < :nextMonthStart
@@ -215,7 +297,17 @@ abstract class FinanceDao {
             WHERE c.kind = 'EXPENSE' AND c.archivedAt IS NULL
         )
         SELECT categoryId, categoryName, allocatedMinor, rolloverMinor,
-               allocatedMinor + rolloverMinor AS plannedMinor, spentMinor
+               allocatedMinor + rolloverMinor AS plannedMinor, spentMinor,
+               (SELECT COUNT(*) FROM transaction_entries entry
+                JOIN transactions t ON t.id = entry.transactionId
+                JOIN categories category ON category.id = entry.categoryId
+                WHERE COALESCE(category.mergedIntoCategoryId, category.id) = budget_values.categoryId
+                AND t.deletedAt IS NULL AND t.kind = 'EXPENSE'
+                AND t.localDate >= :monthStart AND t.localDate < :nextMonthStart
+                AND entry.currencyCode != :baseCurrencyCode
+                AND NOT EXISTS (SELECT 1 FROM transaction_exchange_rates fx WHERE fx.entryId = entry.id
+                    AND fx.status = 'AVAILABLE' AND fx.quoteCurrencyCode = :baseCurrencyCode
+                    AND fx.baseCurrencyCode = entry.currencyCode)) AS missingConversions
         FROM budget_values
         ORDER BY sortOrder, categoryName
         """
@@ -442,6 +534,7 @@ abstract class FinanceDao {
         transaction: TransactionEntity,
         entry: TransactionEntryEntity,
     ) {
+        validateEntry(transaction, entry)
         insertTransactionEntity(transaction)
         insertEntry(entry)
     }
@@ -451,6 +544,7 @@ abstract class FinanceDao {
         transaction: TransactionEntity,
         entries: List<TransactionEntryEntity>,
     ) {
+        entries.forEach { validateEntry(transaction, it) }
         insertTransactionEntity(transaction)
         insertEntries(entries)
     }
@@ -501,6 +595,8 @@ abstract class FinanceDao {
 
     @Transaction
     open suspend fun updateAccount(account: AccountEntity) {
+        val previous = requireNotNull(getActiveAccount(account.id))
+        if (previous.openingBalanceMinor != account.openingBalanceMinor || previous.currencyCode != account.currencyCode) deleteAccountRate(account.id)
         require(updateAccountEntity(account) == 1) { "Account could not be updated" }
     }
 
@@ -572,6 +668,7 @@ abstract class FinanceDao {
 
     @Transaction
     open suspend fun archiveCategory(categoryId: String, archivedAt: Long) {
+        require(countMergedChildren(categoryId) == 0) { "Undo incoming category merges before archiving this category" }
         require(archiveActiveCategory(categoryId, archivedAt) == 1) { "Category is missing or already archived" }
     }
 
@@ -583,6 +680,7 @@ abstract class FinanceDao {
         require(source.archivedAt == null && source.mergedIntoCategoryId == null) { "Source category is not active" }
         require(target.archivedAt == null && target.mergedIntoCategoryId == null) { "Target category is not active" }
         require(source.kind == target.kind) { "Categories must have the same type" }
+        require(countMergedChildren(sourceCategoryId) == 0) { "Undo incoming category merges before merging this category" }
         require(markCategoryMerged(sourceCategoryId, targetCategoryId, mergedAt) == 1) { "Category could not be merged" }
     }
 
@@ -595,6 +693,9 @@ abstract class FinanceDao {
     open suspend fun undoCategoryMerge(categoryId: String) {
         require(undoMergedCategory(categoryId) == 1) { "Category is not an archived merge" }
     }
+
+    @Query("SELECT COUNT(*) FROM categories WHERE mergedIntoCategoryId = :id")
+    protected abstract suspend fun countMergedChildren(id: String): Int
 
     @Query("SELECT * FROM recurring_schedules WHERE id = :id AND deletedAt IS NULL")
     abstract suspend fun getRecurringForEdit(id: String): RecurringScheduleEntity?
@@ -839,17 +940,28 @@ abstract class FinanceDao {
         transaction: TransactionEntity,
         entries: List<TransactionEntryEntity>,
     ) {
+        requireNotNull(getActiveTransaction(transaction.id)) { "Transaction is missing or deleted" }
+        entries.forEach { validateEntry(transaction, it) }
+        val preservedRates = entries.mapNotNull { entry ->
+            getTransactionExchangeRate(entry.id)?.takeIf { it.status == "AVAILABLE" && it.rateMicros != null &&
+                it.rateLocalDate == transaction.localDate && it.baseCurrencyCode == entry.currencyCode }?.let { rate ->
+                rate.copy(convertedAmountMinor = com.northstar.money.domain.model.convertCurrencyMinor(
+                    entry.amountMinor, entry.currencyCode, rate.quoteCurrencyCode, requireNotNull(rate.rateMicros)))
+            }
+        }
+        deleteTransactionRates(transaction.id)
         require(updateTransactionEntity(transaction) == 1) { "Transaction could not be updated" }
         require(entries.isNotEmpty() && updateTransactionEntries(entries) == entries.size) {
             "Transaction entries could not be updated"
         }
+        preservedRates.forEach { upsertTransactionExchangeRate(it) }
     }
 
     @Query(
         """
         SELECT COUNT(*) FROM transactions t
         JOIN transaction_entries e ON e.transactionId = t.id
-        WHERE t.localDate = :localDate AND t.payee = :payee
+        WHERE t.deletedAt IS NULL AND t.localDate = :localDate AND t.payee = :payee
           AND e.accountId = :accountId AND e.categoryId = :categoryId
           AND e.amountMinor = :amountMinor AND e.currencyCode = :currencyCode
         """
@@ -880,6 +992,7 @@ abstract class FinanceDao {
             ) {
                 duplicates++
             } else {
+                validateEntry(item.transaction, item.entry)
                 insertTransactionEntity(item.transaction)
                 insertEntry(item.entry)
                 imported++
@@ -999,6 +1112,7 @@ abstract class FinanceDao {
     @Transaction
     open suspend fun exportSnapshot(): DatabaseSnapshot = DatabaseSnapshot(
         accounts = getAllAccountsForBackup(),
+        accountExchangeRates = getAllAccountExchangeRates(),
         categories = getAllCategoriesForBackup(),
         transactions = getAllTransactionsForBackup(),
         transactionEntries = getAllTransactionEntriesForBackup(),
@@ -1014,6 +1128,7 @@ abstract class FinanceDao {
 
     @Transaction
     open suspend fun replaceWithSnapshot(snapshot: DatabaseSnapshot) {
+        deleteAllAccountExchangeRates()
         deleteAllReconciliations()
         deleteAllBudgetAllocations()
         deleteAllRecurringSchedules()
@@ -1028,6 +1143,7 @@ abstract class FinanceDao {
         deleteAllAccounts()
 
         restoreAccounts(snapshot.accounts)
+        snapshot.accountExchangeRates.forEach { upsertAccountExchangeRate(it) }
         restoreCategories(snapshot.categories)
         restoreTransactions(snapshot.transactions)
         restoreTransactionEntries(snapshot.transactionEntries)
@@ -1039,5 +1155,74 @@ abstract class FinanceDao {
         restoreDebtProfiles(snapshot.debtProfiles)
         restoreReceiptAttachments(snapshot.receiptAttachments)
         restoreTransactionExchangeRates(snapshot.transactionExchangeRates)
+    }
+
+    @Query("DELETE FROM transaction_exchange_rates WHERE transactionId = :id")
+    protected abstract suspend fun deleteTransactionRates(id: String)
+
+    @Query("DELETE FROM account_exchange_rates WHERE accountId = :id")
+    protected abstract suspend fun deleteAccountRate(id: String)
+
+    @Query("""SELECT COALESCE(target.name, c.name) AS categoryName,
+        -SUM(CASE WHEN e.currencyCode = :currency THEN e.amountMinor ELSE fx.convertedAmountMinor END) AS amountMinor
+        FROM transaction_entries e JOIN transactions t ON t.id = e.transactionId
+        JOIN accounts a ON a.id = e.accountId
+        LEFT JOIN categories c ON c.id = e.categoryId LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id AND fx.status = 'AVAILABLE'
+            AND fx.quoteCurrencyCode = :currency AND fx.baseCurrencyCode = e.currencyCode
+        WHERE t.deletedAt IS NULL AND t.kind = 'EXPENSE' AND a.archivedAt IS NULL
+            AND (:accountId IS NULL OR e.accountId = :accountId)
+            AND (e.currencyCode = :currency OR fx.id IS NOT NULL)
+        GROUP BY COALESCE(target.id, c.id) ORDER BY amountMinor DESC""")
+    abstract fun observeCategorySpending(accountId: String?, currency: String): Flow<List<CategorySpendingRow>>
+
+    @Query("""SELECT substr(t.localDate, 1, 7) || '-01' AS monthStart,
+        COALESCE(-SUM(CASE WHEN e.currencyCode = :currency THEN e.amountMinor ELSE fx.convertedAmountMinor END), 0) AS amountMinor
+        FROM transaction_entries e JOIN transactions t ON t.id = e.transactionId
+        JOIN categories c ON c.id = e.categoryId LEFT JOIN categories target ON target.id = c.mergedIntoCategoryId
+        LEFT JOIN transaction_exchange_rates fx ON fx.entryId = e.id AND fx.status = 'AVAILABLE'
+            AND fx.quoteCurrencyCode = :currency AND fx.baseCurrencyCode = e.currencyCode
+        WHERE t.deletedAt IS NULL AND t.kind = 'EXPENSE' AND COALESCE(target.id, c.id) = :categoryId
+            AND t.localDate >= :start AND t.localDate < :end
+        GROUP BY substr(t.localDate, 1, 7) ORDER BY monthStart""")
+    abstract fun observeMonthlyExpenses(categoryId: String, currency: String, start: String, end: String): Flow<List<MonthlyExpenseRow>>
+
+    private suspend fun validateEntry(transaction: TransactionEntity, entry: TransactionEntryEntity) {
+        require(getActiveAccountCurrency(entry.accountId) == entry.currencyCode) { "Account is missing, archived or has a different currency" }
+        require(entry.transactionId == transaction.id)
+        entry.categoryId?.let { require(getActiveCategoryKind(it) == transaction.kind) { "Category is missing, archived or incompatible" } }
+    }
+
+    @Query("SELECT * FROM accounts WHERE archivedAt IS NULL")
+    abstract suspend fun getActiveAccountsForRates(): List<AccountEntity>
+
+    @Query("SELECT * FROM account_exchange_rates ORDER BY accountId")
+    abstract suspend fun getAllAccountExchangeRates(): List<AccountExchangeRateEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    abstract suspend fun upsertAccountExchangeRate(item: AccountExchangeRateEntity)
+
+    @Query("DELETE FROM account_exchange_rates")
+    protected abstract suspend fun deleteAllAccountExchangeRates()
+
+    @Transaction
+    open suspend fun replaceWithRecovery(snapshot: DatabaseSnapshot, saveRecovery: suspend (DatabaseSnapshot) -> Unit) {
+        // Hold Room's writer transaction from snapshot capture through replacement.
+        saveRecovery(exportSnapshot())
+        replaceWithSnapshot(snapshot)
+    }
+
+    @Transaction
+    open suspend fun storeRateIfUnchanged(rate: TransactionExchangeRateEntity, expected: TransactionEntryEntity, localDate: String): Boolean {
+        val transaction = getActiveTransaction(rate.transactionId) ?: return false
+        if (transaction.localDate != localDate || getTransactionEntries(transaction.id).none { it == expected }) return false
+        upsertTransactionExchangeRate(rate)
+        return true
+    }
+
+    @Transaction
+    open suspend fun storeOpeningRateIfUnchanged(rate: AccountExchangeRateEntity) {
+        val account = getActiveAccount(rate.accountId) ?: return
+        if (account.currencyCode == rate.baseCurrencyCode && account.openingBalanceMinor == rate.openingBalanceMinor) upsertAccountExchangeRate(rate)
     }
 }

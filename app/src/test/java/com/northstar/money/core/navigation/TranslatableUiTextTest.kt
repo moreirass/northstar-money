@@ -43,13 +43,14 @@ class TranslatableUiTextTest {
     }
 
     @Test
-    fun appDoesNotGloballyBlockScreenshots() {
+    fun appProtectsScreenshotsWhenPrivacyIsEnabled() {
         val activity = File(
             findAppDirectory(),
             "src/main/java/com/northstar/money/MainActivity.kt",
         ).readText()
 
-        assertFalse("FLAG_SECURE would block every screenshot", activity.contains("FLAG_SECURE"))
+        assertTrue(activity.contains("lockEnabled || settings.moneyValuesHidden"))
+        assertTrue(activity.contains("clearFlags(WindowManager.LayoutParams.FLAG_SECURE)"))
     }
 
     @Test

@@ -16,13 +16,30 @@ import com.northstar.money.domain.model.DebtProfile
 import com.northstar.money.domain.model.ReceiptAttachment
 import com.northstar.money.domain.model.HistoricalExchangeRate
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import com.northstar.money.domain.model.TransactionWindow
+import com.northstar.money.domain.model.TransactionPage
+import com.northstar.money.domain.model.CategorySpending
 
 interface FinanceRepository {
+    suspend fun writeFullBackup(output: java.io.OutputStream, password: CharArray)
     fun observeAccounts(): Flow<List<Account>>
     fun observeArchivedAccounts(): Flow<List<Account>>
     fun observeCategories(): Flow<List<Category>>
     fun observeArchivedCategories(): Flow<List<ArchivedCategory>>
     fun observeTransactions(): Flow<List<TransactionItem>>
+    fun observeRecentTransactions(): Flow<List<TransactionItem>> = observeTransactions().map { it.take(3) }
+    suspend fun requestExchangeRateRefresh() { refreshPendingExchangeRates() }
+    fun observeTransactionWindow(window: TransactionWindow): Flow<TransactionPage> = observeTransactions().map { items ->
+        val filtered = items.filter { (window.startDate == null || it.localDate >= window.startDate) &&
+            (window.endDate == null || it.localDate < window.endDate) && (window.categoryId == null || it.categoryId == window.categoryId) }
+        TransactionPage(filtered.take(window.limit), filtered.size > window.limit)
+    }
+    fun observeMonthSummary(monthStart: String, currency: String): Flow<FinanceSummary> = observeSummary()
+    fun observeCategorySpending(accountId: String?, currency: String): Flow<List<CategorySpending>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    fun observeMonthlyExpenses(categoryId: String, currency: String, start: String, end: String): Flow<List<com.northstar.money.domain.model.MonthlyExpense>> = kotlinx.coroutines.flow.flowOf(emptyList())
+    suspend fun allTransactions(): List<TransactionItem> = observeTransactions().first()
     fun observeDeletedTransactions(): Flow<List<TransactionItem>>
     fun observeReceiptAttachments(): Flow<List<ReceiptAttachment>>
     fun observeHistoricalExchangeRates(): Flow<List<HistoricalExchangeRate>>

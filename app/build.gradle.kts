@@ -23,6 +23,14 @@ android {
 
     buildFeatures.compose = true
 
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
     sourceSets["androidTest"].assets.srcDir("$projectDir/schemas")
 
     compileOptions {

@@ -2,9 +2,17 @@ package com.northstar.money.data.backup
 
 import com.northstar.money.core.database.DatabaseSnapshot
 import java.time.LocalDate
+import com.northstar.money.domain.model.validCurrency
+import com.northstar.money.data.exchange.HistoricalRateClient
 
 class DatabaseSnapshotValidator {
     fun validate(snapshot: DatabaseSnapshot) {
+        val recordCount = listOf(snapshot.accounts.size, snapshot.categories.size, snapshot.transactions.size,
+            snapshot.transactionEntries.size, snapshot.receiptAttachments.size, snapshot.transactionExchangeRates.size,
+            snapshot.goals.size, snapshot.goalContributions.size, snapshot.recurringSchedules.size,
+            snapshot.budgetAllocations.size, snapshot.reconciliations.size, snapshot.debtProfiles.size).sum()
+        require(recordCount <= 500_000) { "Backup contains too many records" }
+        require(snapshot.receiptAttachments.sumOf { it.byteSize } <= 32L * 1024 * 1024) { "Backup receipts are too large" }
         requireUniqueIds("accounts", snapshot.accounts.map { it.id })
         requireUniqueIds("categories", snapshot.categories.map { it.id })
         requireUniqueIds("transactions", snapshot.transactions.map { it.id })
@@ -30,7 +38,7 @@ class DatabaseSnapshotValidator {
         require(snapshot.categories.distinctBy { it.kind to it.name }.size == snapshot.categories.size) {
             "Backup contains duplicate category names for the same type"
         }
-        require(snapshot.budgetAllocations.distinctBy { it.monthStart to it.categoryId }.size == snapshot.budgetAllocations.size) {
+        require(snapshot.budgetAllocations.distinctBy { Triple(it.monthStart, it.categoryId, it.currencyCode) }.size == snapshot.budgetAllocations.size) {
             "Backup contains duplicate budget allocations"
         }
         require(snapshot.debtProfiles.distinctBy { it.accountId }.size == snapshot.debtProfiles.size) {
@@ -57,6 +65,7 @@ class DatabaseSnapshotValidator {
         snapshot.transactions.forEach {
             require(it.kind in TRANSACTION_KINDS) { "Backup contains an invalid transaction type" }
             require(it.deletedAt == null || it.deletedAt >= 0) { "Backup contains an invalid deletion timestamp" }
+            require(it.payee.length <= 4096 && it.note.length <= 4096) { "Backup transaction text is too long" }
             requireDate(it.localDate, "transaction")
         }
         snapshot.transactionEntries.forEach {
@@ -65,6 +74,9 @@ class DatabaseSnapshotValidator {
             }
             require(it.categoryId == null || it.categoryId in categoryIds) {
                 "Backup contains a transaction entry with a missing category"
+            }
+            require(it.categoryId == null || categoriesById.getValue(it.categoryId).kind == transactionsById.getValue(it.transactionId).kind) {
+                "Backup transaction category does not match its type"
             }
             require(it.currencyCode.isCurrencyCode()) { "Backup contains an invalid transaction currency" }
             require(it.currencyCode == accountCurrencies[it.accountId]) {
@@ -77,14 +89,15 @@ class DatabaseSnapshotValidator {
         snapshot.transactions.forEach { transaction ->
             val entries = entriesByTransaction.getValue(transaction.id)
             when (transaction.kind) {
-                "INCOME" -> require(entries.all { it.amountMinor > 0 }) { "Backup contains invalid income entries" }
-                "EXPENSE" -> require(entries.all { it.amountMinor < 0 }) { "Backup contains invalid expense entries" }
+                "INCOME" -> require(entries.size == 1 && entries.all { it.amountMinor > 0 }) { "Backup contains invalid income entries" }
+                "EXPENSE" -> require(entries.size == 1 && entries.all { it.amountMinor < 0 && it.amountMinor != Long.MIN_VALUE }) { "Backup contains invalid expense entries" }
                 "TRANSFER" -> {
                     val source = entries.singleOrNull { it.amountMinor < 0 }
                     val destination = entries.singleOrNull { it.amountMinor > 0 }
                     require(entries.size == 2 && entries.all { it.categoryId == null } && source != null && destination != null) {
                         "Backup contains an invalid transfer"
                     }
+                    require(source.accountId != destination.accountId && source.amountMinor != Long.MIN_VALUE) { "Backup transfer accounts must differ" }
                     if (source.currencyCode == destination.currencyCode) {
                         require(Math.addExact(source.amountMinor, destination.amountMinor) == 0L) {
                             "Backup contains an unbalanced transfer"
@@ -113,7 +126,7 @@ class DatabaseSnapshotValidator {
             }
         }
         snapshot.budgetAllocations.forEach {
-            require(it.categoryId in categoryIds && it.plannedMinor >= 0) { "Backup contains an invalid budget allocation" }
+            require(it.categoryId in categoryIds && categoriesById[it.categoryId]?.kind == "EXPENSE" && it.plannedMinor >= 0 && validCurrency(it.currencyCode)) { "Backup contains an invalid budget allocation" }
             requireDate(it.monthStart, "budget allocation")
             require(LocalDate.parse(it.monthStart).dayOfMonth == 1) { "Backup contains a budget outside a month boundary" }
         }
@@ -139,7 +152,8 @@ class DatabaseSnapshotValidator {
                     it.currencyCode.isCurrencyCode() && it.accountId in accountIds &&
                     it.currencyCode == accountCurrencies[it.accountId] &&
                     (it.categoryId == null || it.categoryId in categoryIds) && it.frequency in FREQUENCIES &&
-                    it.intervalCount > 0,
+                    it.intervalCount in 1..1_000 && it.anchorDay in 1..31 && it.anchorMonth in 1..12 &&
+                    it.categoryId != null && categoriesById[it.categoryId]?.kind == it.kind,
             ) { "Backup contains an invalid recurring schedule" }
             require(it.deletedAt == null || it.deletedAt >= 0) {
                 "Backup contains an invalid recurring deletion timestamp"
@@ -159,8 +173,12 @@ class DatabaseSnapshotValidator {
                     it.content.size.toLong() == it.byteSize && it.byteSize <= 8L * 1024 * 1024 &&
                     it.ocrStatus in setOf("PENDING", "PROCESSING", "COMPLETE", "FAILED"),
             ) { "Backup contains an invalid receipt attachment" }
+            require(it.byteSize <= 1_000_000) { "Backup receipt must be normalized" }
+            require(it.detectedAmountMinor == null || it.detectedAmountMinor > 0) { "Invalid detected receipt amount" }
+            require(it.detectedCurrencyCode == null || validCurrency(it.detectedCurrencyCode)) { "Invalid detected receipt currency" }
             it.detectedLocalDate?.let { date -> requireDate(date, "receipt") }
         }
+        val entriesById = snapshot.transactionEntries.associateBy { it.id }
         val entryIds = snapshot.transactionEntries.mapTo(mutableSetOf()) { it.id }
         require(snapshot.transactionExchangeRates.distinctBy { it.entryId }.size == snapshot.transactionExchangeRates.size) {
             "Backup contains duplicate exchange rates for an entry"
@@ -173,7 +191,21 @@ class DatabaseSnapshotValidator {
                     (it.rateMicros == null || it.rateMicros > 0) &&
                     (it.status != "AVAILABLE" || (it.rateMicros != null && it.convertedAmountMinor != null)),
             ) { "Backup contains an invalid historical exchange rate" }
+            val entry = entriesById.getValue(it.entryId)
+            require(entry.transactionId == it.transactionId && entry.currencyCode == it.baseCurrencyCode) { "Exchange rate does not match its entry" }
+            require(it.rateLocalDate == transactionsById.getValue(it.transactionId).localDate) { "Exchange rate date does not match its transaction" }
+            if (it.status == "AVAILABLE") require(it.convertedAmountMinor == HistoricalRateClient.convertMinor(
+                entry.amountMinor, it.baseCurrencyCode, it.quoteCurrencyCode, requireNotNull(it.rateMicros))) { "Exchange conversion is inconsistent" }
             requireDate(it.rateLocalDate, "exchange rate")
+        }
+        require(snapshot.accountExchangeRates.distinctBy { it.accountId }.size == snapshot.accountExchangeRates.size) { "Duplicate opening balance rates" }
+        val accountsById = snapshot.accounts.associateBy { it.id }
+        snapshot.accountExchangeRates.forEach { rate ->
+            val account = requireNotNull(accountsById[rate.accountId]) { "Missing account for opening rate" }
+            require(rate.baseCurrencyCode == account.currencyCode && validCurrency(rate.quoteCurrencyCode) && rate.rateMicros > 0)
+            require(rate.openingBalanceMinor == account.openingBalanceMinor && rate.convertedAmountMinor ==
+                HistoricalRateClient.convertMinor(account.openingBalanceMinor, account.currencyCode, rate.quoteCurrencyCode, rate.rateMicros)) { "Invalid opening conversion" }
+            requireDate(rate.rateLocalDate, "opening rate")
         }
     }
 
@@ -187,7 +219,7 @@ class DatabaseSnapshotValidator {
         runCatching { LocalDate.parse(value) }.getOrElse { throw IllegalArgumentException("Backup contains an invalid $label date", it) }
     }
 
-    private fun String.isCurrencyCode(): Boolean = length == 3 && all(Char::isUpperCase)
+    private fun String.isCurrencyCode(): Boolean = validCurrency(this)
 
     companion object {
         private val ACCOUNT_TYPES = setOf("CASH", "CHECKING", "SAVINGS", "CREDIT")

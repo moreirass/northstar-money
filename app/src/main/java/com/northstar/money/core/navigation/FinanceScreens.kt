@@ -97,6 +97,8 @@ import com.northstar.money.domain.model.DebtProfile
 import com.northstar.money.feature.finance.FinanceUiState
 import com.northstar.money.feature.finance.FinanceViewModel
 import com.northstar.money.feature.finance.FinanceViewModelFactory
+import com.northstar.money.data.importing.readBounded
+import com.northstar.money.data.importing.ImportLimits
 import com.northstar.money.data.backup.SecureBackupCodec
 import kotlin.math.roundToInt
 
@@ -219,37 +221,41 @@ internal fun TransactionRow(item: TransactionItem, modifier: Modifier = Modifier
 internal fun MoreScreen(
     state: FinanceUiState,
     padding: PaddingValues,
-    onCreateAccount: (String, AccountType, String, String) -> Unit,
+    onCreateAccount: (String, AccountType, String, String, () -> Unit) -> Unit,
     onEditAccount: (String) -> Unit,
     onArchiveAccount: (String) -> Unit,
     onRestoreAccount: (String) -> Unit,
-    onReconcile: (String, String, String, Boolean) -> Unit,
-    onCreateGoal: (String, String, String, String?) -> Unit,
+    onReconcile: (String, String, String, Boolean, () -> Unit) -> Unit,
+    onCreateGoal: (String, String, String, String?, () -> Unit) -> Unit,
     onEditGoal: (String) -> Unit,
-    onAddGoalContribution: (String, String, String, String) -> Unit,
+    onAddGoalContribution: (String, String, String, String, () -> Unit) -> Unit,
     onEditGoalContribution: (String) -> Unit,
     onDeleteGoalContribution: (String) -> Unit,
     onRestoreGoalContribution: (String) -> Unit,
-    onCreateRecurring: (String, TransactionKind, String, String, String?, String, String) -> Unit,
+    onCreateRecurring: (String, TransactionKind, String, String, String?, String, String, () -> Unit) -> Unit,
     onEditRecurring: (String) -> Unit,
     onPauseRecurring: (String) -> Unit,
     onResumeRecurring: (String) -> Unit,
     onDeleteRecurring: (String) -> Unit,
     onRestoreRecurring: (String) -> Unit,
-    onCreateDebt: (String, String, String, String) -> Unit,
+    onCreateDebt: (String, String, String, String, () -> Unit) -> Unit,
     onEditDebt: (String) -> Unit,
     onImportCsv: (String) -> Unit,
     onSetAppLock: (Boolean) -> Unit,
     onSetReminders: (Boolean) -> Unit,
     onSetMoneyValuesHidden: (Boolean) -> Unit,
     onShowOnboarding: () -> Unit,
-    onCreateCategory: (String, CategoryKind) -> Unit,
-    onRenameCategory: (String, String) -> Unit,
+    onCreateCategory: (String, CategoryKind, () -> Unit) -> Unit,
+    onRenameCategory: (String, String, () -> Unit) -> Unit,
     onArchiveCategory: (String) -> Unit,
     onRestoreCategory: (String) -> Unit,
     onMergeCategory: (String, String) -> Unit,
     onUndoCategoryMerge: (String) -> Unit,
     onCreateFullBackup: suspend () -> String,
+    onWriteFullBackup: suspend (java.io.OutputStream, CharArray) -> Unit = { output, password ->
+        output.write(SecureBackupCodec().encrypt(onCreateFullBackup(), password))
+    },
+    onExportTransactions: suspend () -> List<TransactionItem> = { state.transactions },
     onRestoreFullBackup: suspend (String, CharArray) -> Unit,
     onUndoFullRestore: suspend (CharArray) -> Unit,
     onRecoverTransaction: (String) -> Unit,
@@ -257,72 +263,73 @@ internal fun MoreScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val exportLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("text/csv")
-    ) { uri ->
-        uri?.let {
-            context.contentResolver.openOutputStream(it)?.bufferedWriter()?.use { writer ->
-                writer.appendLine("date,type,payee,category,account,amount,currency")
-                state.transactions.forEach { transaction ->
-                    val values = listOf(
-                        transaction.localDate, transaction.kind.name, transaction.payee,
-                        transaction.categoryName.orEmpty(), transaction.accountName,
-                        transaction.amount.minor.toString(), transaction.amount.currencyCode,
-                    ).joinToString(",") { value -> "\"${value.replace("\"", "\"\"")}\"" }
-                    writer.appendLine(values)
+    fun documentOperation(operation: suspend () -> Unit) {
+        scope.launch {
+            runSuspendCatching { operation() }.onFailure {
+                android.widget.Toast.makeText(context, context.getString(R.string.operation_failed_generic), android.widget.Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+    val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+        if (uri != null) documentOperation {
+            withContext(Dispatchers.IO) {
+                requireNotNull(context.contentResolver.openOutputStream(uri)).bufferedWriter().use {
+                    com.northstar.money.data.exporting.CsvExporter.write(it, onExportTransactions())
                 }
             }
         }
     }
     val xlsxLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    ) { uri ->
-        if (uri != null) scope.launch {
+        ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")) { uri ->
+        if (uri != null) documentOperation {
             withContext(Dispatchers.IO) {
-                val workbook = com.northstar.money.data.exporting.FormattedXlsxExporter().export(
-                    state.transactions,
-                    state.accounts,
-                    state.budgets,
-                    state.summary,
-                    state.historicalExchangeRates,
-                )
-                requireNotNull(context.contentResolver.openOutputStream(uri)).use { it.write(workbook) }
+                requireNotNull(context.contentResolver.openOutputStream(uri)).use { output ->
+                    com.northstar.money.data.exporting.FormattedXlsxExporter().write(output,
+                        onExportTransactions(), state.accounts, state.budgets, state.summary, state.historicalExchangeRates)
+                }
             }
         }
     }
-    val importLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri?.let {
-            context.contentResolver.openInputStream(it)?.bufferedReader()?.use { reader ->
-                onImportCsv(reader.readText())
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) documentOperation {
+            val csv = withContext(Dispatchers.IO) {
+                requireNotNull(context.contentResolver.openInputStream(uri)).use { it.readBounded(ImportLimits.CSV_BYTES).toString(Charsets.UTF_8) }
             }
+            onImportCsv(csv)
         }
     }
-    val pdfLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        uri?.let {
-            val document = android.graphics.pdf.PdfDocument()
-            val page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, 1).create())
-            val paint = android.graphics.Paint().apply { textSize = 18f; isAntiAlias = true }
-            page.canvas.drawText(context.getString(R.string.ui_northstar_monthly_summary), 48f, 64f, paint)
-            paint.textSize = 14f
-            page.canvas.drawText(context.getString(R.string.report_balance, state.summary.balance.formatted()), 48f, 100f, paint)
-            page.canvas.drawText(context.getString(R.string.report_income, state.summary.incomeThisMonth.formatted()), 48f, 126f, paint)
-            page.canvas.drawText(context.getString(R.string.report_expenses, state.summary.expensesThisMonth.formatted()), 48f, 152f, paint)
-            page.canvas.drawText(context.getString(R.string.report_projection, state.forecast.projectedBalance.formatted()), 48f, 178f, paint)
-            var y = 220f
-            state.budgets.take(15).forEach { budget ->
-                page.canvas.drawText(
-                    context.getString(R.string.report_budget_line, budget.categoryName, budget.spent.formatted(), budget.planned.formatted()),
-                    48f, y, paint,
-                )
-                y += 22f
+    val pdfLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/pdf")) { uri ->
+        if (uri != null) documentOperation {
+            withContext(Dispatchers.IO) {
+                android.graphics.pdf.PdfDocument().useDocument { document ->
+                    val paint = android.graphics.Paint().apply { textSize = 14f; isAntiAlias = true }
+                    val lines = listOf(
+                        context.getString(R.string.ui_northstar_monthly_summary),
+                        context.getString(R.string.report_balance, state.summary.balance.formatted()),
+                        context.getString(R.string.report_income, state.summary.incomeThisMonth.formatted()),
+                        context.getString(R.string.report_expenses, state.summary.expensesThisMonth.formatted()),
+                        context.getString(R.string.report_projection, state.forecast.projectedBalance.formatted()),
+                    ) + (if (state.summary.missingConversions > 0 || state.forecast.missingConversions > 0) listOf(context.getString(R.string.incomplete_totals)) else emptyList()) +
+                        state.budgets.map { context.getString(R.string.report_budget_line, it.categoryName, it.spent.formatted(), it.planned.formatted()) }
+                    // Wrap long category names and paginate every line, with no silent truncation.
+                    val wrapped = lines.flatMap { line ->
+                        val result = mutableListOf<String>()
+                        var remaining = line
+                        while (remaining.isNotEmpty()) {
+                            val count = paint.breakText(remaining, true, 495f, null).coerceAtLeast(1)
+                            result += remaining.take(count)
+                            remaining = remaining.drop(count)
+                        }
+                        result
+                    }
+                    wrapped.chunked(31).forEachIndexed { index, pageLines ->
+                        val page = document.startPage(android.graphics.pdf.PdfDocument.PageInfo.Builder(595, 842, index + 1).create())
+                        pageLines.forEachIndexed { row, line -> page.canvas.drawText(line, 48f, 64f + row * 22f, paint) }
+                        document.finishPage(page)
+                    }
+                    requireNotNull(context.contentResolver.openOutputStream(uri)).use(document::writeTo)
+                }
             }
-            document.finishPage(page)
-            context.contentResolver.openOutputStream(it)?.use(document::writeTo)
-            document.close()
         }
     }
     val backupCodec = remember { SecureBackupCodec() }
@@ -340,11 +347,10 @@ internal fun MoreScreen(
         val password = pendingBackupPassword
         if (uri != null && password != null) {
             scope.launch {
-                runSuspendCatching {
+                try { runSuspendCatching {
                     withContext(Dispatchers.IO) {
-                        val encrypted = backupCodec.encrypt(onCreateFullBackup(), password)
                         requireNotNull(context.contentResolver.openOutputStream(uri)).use { output ->
-                            output.write(encrypted)
+                            onWriteFullBackup(output, password)
                         }
                     }
                 }.onSuccess {
@@ -359,10 +365,7 @@ internal fun MoreScreen(
                         context.getString(R.string.backup_failed, error.message ?: context.getString(R.string.unknown_error)),
                         android.widget.Toast.LENGTH_LONG,
                     ).show()
-                }.also {
-                    password.fill('\u0000')
-                    pendingBackupPassword = null
-                }
+                } } finally { password.fill('\u0000'); pendingBackupPassword = null }
             }
         } else {
             password?.fill('\u0000')
@@ -380,10 +383,12 @@ internal fun MoreScreen(
     fun decryptSelectedBackup(password: CharArray) {
         val uri = pendingRestoreUri ?: return
         scope.launch {
+            var retained = false
+            try {
             val result = runSuspendCatching {
                 withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openInputStream(uri)).use { input ->
-                        backupCodec.decrypt(input.readBytes(), password)
+                        backupCodec.decrypt(input.readBounded(ImportLimits.BACKUP_BYTES), password)
                     }
                 }
             }
@@ -391,6 +396,7 @@ internal fun MoreScreen(
                 if (decrypted.trimStart().startsWith("{")) {
                     pendingRestoreDocument = decrypted
                     pendingRestorePassword = password
+                    retained = true
                     showRestoreConfirmation = true
                 } else {
                     onImportCsv(decrypted)
@@ -405,6 +411,7 @@ internal fun MoreScreen(
                 ).show()
             }
             pendingRestoreUri = null
+            } finally { if (!retained) password.fill('\u0000') }
         }
     }
     fun performFullRestore() {
@@ -414,7 +421,7 @@ internal fun MoreScreen(
         pendingRestorePassword = null
         showRestoreConfirmation = false
         scope.launch {
-            runSuspendCatching {
+            try { runSuspendCatching {
                 withContext(Dispatchers.IO) { onRestoreFullBackup(document, password) }
             }.onSuccess {
                 android.widget.Toast.makeText(
@@ -428,14 +435,12 @@ internal fun MoreScreen(
                     context.getString(R.string.restore_unchanged, error.message ?: context.getString(R.string.restore_failed)),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
-            }.also {
-                password.fill('\u0000')
-            }
+            } } finally { password.fill('\u0000') }
         }
     }
     fun undoFullRestore(password: CharArray) {
         scope.launch {
-            runSuspendCatching {
+            try { runSuspendCatching {
                 withContext(Dispatchers.IO) { onUndoFullRestore(password) }
             }.onSuccess {
                 android.widget.Toast.makeText(context, context.getString(R.string.toast_previous_data_restored), android.widget.Toast.LENGTH_LONG).show()
@@ -445,9 +450,7 @@ internal fun MoreScreen(
                     context.getString(R.string.restore_undo_failed, error.message ?: context.getString(R.string.unknown_error)),
                     android.widget.Toast.LENGTH_LONG,
                 ).show()
-            }.also {
-                password.fill('\u0000')
-            }
+            } } finally { password.fill('\u0000') }
         }
     }
     val notificationPermissionLauncher = rememberLauncherForActivityResult(
@@ -661,12 +664,17 @@ internal fun MoreScreen(
         item {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    val net = state.summary.incomeThisMonth.minor - state.summary.expensesThisMonth.minor
+                    val net = Math.subtractExact(state.summary.incomeThisMonth.minor, state.summary.expensesThisMonth.minor)
+                    if (state.summary.missingConversions > 0 || state.forecast.missingConversions > 0) Text(stringResource(R.string.incomplete_totals))
                     Text(stringResource(R.string.ui_income_versus_expenses), fontWeight = FontWeight.Medium)
                     Text(stringResource(R.string.report_income_value, state.summary.incomeThisMonth.displayValue()))
                     Text(stringResource(R.string.report_expenses_value, state.summary.expensesThisMonth.displayValue()))
                     IncomeExpenseChart(state.summary.incomeThisMonth, state.summary.expensesThisMonth)
-                    Text(stringResource(R.string.report_net_value, Money(net).displayValue()), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.report_net_value, Money(net, state.summary.balance.currencyCode).displayValue()), fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.report_projection, state.forecast.projectedBalance.displayValue()))
+                    if (state.recurring.any { it.amount.currencyCode != state.summary.balance.currencyCode }) {
+                        Text(stringResource(R.string.estimated_forecast), style = MaterialTheme.typography.bodySmall)
+                    }
                 }
             }
         }
@@ -857,7 +865,7 @@ internal fun MoreScreen(
     }
     }
     if (showAbout) {
-        AlertDialog(
+        if (LocalAppUnlocked.current) AlertDialog(
             onDismissRequest = { showAbout = false },
             title = { Text(stringResource(R.string.more_about)) },
             text = { Text(stringResource(R.string.more_about_body)) },
@@ -867,7 +875,7 @@ internal fun MoreScreen(
         )
     }
     if (showHelp) {
-        AlertDialog(
+        if (LocalAppUnlocked.current) AlertDialog(
             onDismissRequest = { showHelp = false },
             title = { Text(stringResource(R.string.more_help)) },
             text = { Text(stringResource(R.string.more_help_body)) },
@@ -905,7 +913,7 @@ internal fun MoreScreen(
         )
     }
     if (showRestoreConfirmation) {
-        AlertDialog(
+        if (LocalAppUnlocked.current) AlertDialog(
             onDismissRequest = {
                 pendingRestorePassword?.fill('\u0000')
                 pendingRestorePassword = null
@@ -945,10 +953,10 @@ internal fun MoreScreen(
     }
     if (showGoal) {
         GoalDialog(
+            currencyCode = state.settings.baseCurrencyCode,
             onDismiss = { showGoal = false },
             onSave = { name, target, saved, date ->
-                onCreateGoal(name, target, saved, date)
-                showGoal = false
+                onCreateGoal(name, target, saved, date) { showGoal = false }
             },
         )
     }
@@ -957,8 +965,7 @@ internal fun MoreScreen(
             state = state,
             onDismiss = { showRecurring = false },
             onSave = { name, kind, amount, account, category, frequency, date ->
-                onCreateRecurring(name, kind, amount, account, category, frequency, date)
-                showRecurring = false
+                onCreateRecurring(name, kind, amount, account, category, frequency, date) { showRecurring = false }
             },
         )
     }
@@ -967,8 +974,7 @@ internal fun MoreScreen(
             state = state,
             onDismiss = { showDebt = false },
             onSave = { account, rate, payment, day ->
-                onCreateDebt(account, rate, payment, day)
-                showDebt = false
+                onCreateDebt(account, rate, payment, day) { showDebt = false }
             },
         )
     }
@@ -976,8 +982,7 @@ internal fun MoreScreen(
         CategoryDialog(
             onDismiss = { showCategory = false },
             onSave = { name, kind ->
-                onCreateCategory(name, kind)
-                showCategory = false
+                onCreateCategory(name, kind) { showCategory = false }
             },
         )
     }
@@ -989,8 +994,7 @@ internal fun MoreScreen(
                 currentName = category.name,
                 onDismiss = { renameCategoryId = null },
                 onSave = { name ->
-                    onRenameCategory(id, name)
-                    renameCategoryId = null
+                    onRenameCategory(id, name) { renameCategoryId = null }
                 },
             )
         }
@@ -998,7 +1002,7 @@ internal fun MoreScreen(
     archiveCategoryId?.let { id ->
         val category = state.categories.firstOrNull { it.id == id }
         if (category != null) {
-            AlertDialog(
+            if (LocalAppUnlocked.current) AlertDialog(
                 onDismissRequest = { archiveCategoryId = null },
                 title = { Text(stringResource(R.string.confirm_archive_named, category.name)) },
                 text = { Text(stringResource(R.string.ui_existing_transactions_keep_their_category_you_can_re)) },
@@ -1031,7 +1035,7 @@ internal fun MoreScreen(
     archiveAccountId?.let { id ->
         val account = state.accounts.firstOrNull { it.id == id }
         if (account != null) {
-            AlertDialog(
+            if (LocalAppUnlocked.current) AlertDialog(
                 onDismissRequest = { archiveAccountId = null },
                 title = { Text(stringResource(R.string.confirm_archive_named, account.name)) },
                 text = {
@@ -1052,7 +1056,7 @@ internal fun MoreScreen(
     deleteRecurringId?.let { id ->
         val item = (state.recurring + state.pausedRecurring).firstOrNull { it.id == id }
         if (item != null) {
-            AlertDialog(
+            if (LocalAppUnlocked.current) AlertDialog(
                 onDismissRequest = { deleteRecurringId = null },
                 title = { Text(stringResource(R.string.confirm_delete_named, item.name)) },
                 text = {
@@ -1077,8 +1081,7 @@ internal fun MoreScreen(
                 goal = goal,
                 onDismiss = { contributionGoalId = null },
                 onSave = { amount, date, note ->
-                    onAddGoalContribution(goalId, amount, date, note)
-                    contributionGoalId = null
+                    onAddGoalContribution(goalId, amount, date, note) { contributionGoalId = null }
                 },
             )
         }
@@ -1086,7 +1089,7 @@ internal fun MoreScreen(
     deleteContributionId?.let { id ->
         val contribution = state.goalContributions.firstOrNull { it.id == id }
         if (contribution != null) {
-            AlertDialog(
+            if (LocalAppUnlocked.current) AlertDialog(
                 onDismissRequest = { deleteContributionId = null },
                 title = { Text(stringResource(R.string.ui_delete_contribution)) },
                 text = {
@@ -1109,8 +1112,7 @@ internal fun MoreScreen(
         AccountDialog(
             onDismiss = { showCreate = false },
             onSave = { name, type, opening, currency ->
-                onCreateAccount(name, type, opening, currency)
-                showCreate = false
+                onCreateAccount(name, type, opening, currency) { showCreate = false }
             },
         )
     }
@@ -1123,8 +1125,7 @@ internal fun MoreScreen(
                 clearedBalance = account.clearedBalance,
                 onDismiss = { reconcileAccountId = null },
                 onSave = { date, amount, adjustment ->
-                    onReconcile(id, date, amount, adjustment)
-                    reconcileAccountId = null
+                    onReconcile(id, date, amount, adjustment) { reconcileAccountId = null }
                 },
             )
         }

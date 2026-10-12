@@ -35,6 +35,18 @@ class ForecastCurrencyIntegrityTest {
         assertEquals(9_000L, forecast.projectedBalance.minor)
         assertEquals("EUR", forecast.projectedBalance.currencyCode)
         assertEquals(1, forecast.scheduledEvents)
+        assertEquals(1, forecast.missingConversions)
+    }
+
+    @Test
+    fun forecastConvertsForeignBillsUsingAnAvailableQuote() {
+        val today = LocalDate.of(2026, 10, 1)
+        val schedule = RecurringItem("usd", "Bill", TransactionKind.EXPENSE, Money(1000, "USD"), today.toString(), "MONTHLY")
+        val rate = com.northstar.money.domain.model.HistoricalExchangeRate("r", "tx", "entry", "USD", "EUR",
+            900_000, -900, today.toString(), "Test", "AVAILABLE")
+        val forecast = calculateForecast(Money(10_000), listOf(schedule), today, listOf(rate))
+        assertEquals(9_100L, forecast.projectedBalance.minor)
+        assertEquals(0, forecast.missingConversions)
     }
 
     @Test

@@ -28,15 +28,15 @@ class OnboardingUiTest {
         composeRule.setContent {
             NorthstarTheme {
                 OnboardingScreen(
-                    onCurrencySelected = { selectedCurrency = it },
-                    onInitialAccountSubmitted = { name, balance ->
+                    onCurrencySelected = { currency, completed -> selectedCurrency = currency; completed() },
+                    onInitialAccountSubmitted = { name, balance, completed ->
                         submittedAccountName = name
                         submittedBalance = balance
-                    },
-                    onBudgetSubmitted = { amount, period, _, _ ->
+                    ; completed() },
+                    onBudgetSubmitted = { amount, period, _, _, completed ->
                         submittedBudgetAmount = amount
                         submittedBudgetPeriod = period
-                    },
+                    ; completed() },
                     onComplete = { completed = true },
                 )
             }

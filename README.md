@@ -57,7 +57,7 @@ Built with Kotlin and Jetpack Compose. Your financial data stays on the device u
 
 - Password-protected, portable full-database backups
 - Validated, atomic restore with an encrypted on-device recovery copy and undo support
-- Room schema history with tested migrations through database version 9
+- Room schema history with migration tests through database version 10
 - Optional biometric or device-credential app lock
 - Persistent control for masking monetary values on screen
 - Optional daily financial-review reminders
@@ -109,11 +109,13 @@ P4 was implemented and validated in this fixed order:
 
 The receipt attachment, camera, OCR, Excel export, and home-screen widget flows have been tested on an emulator. Database migrations from versions 8 and 1 to version 9 are covered by passing instrumented tests, including preservation of existing data.
 
-Historical exchange rates are captured when transactions are created normally, transferred, reconciled, generated from recurring schedules, or imported from CSV. When a transaction is edited, its stored rate is retained unless a replacement rate is fetched successfully, so an offline or failed request does not regress it to a pending state.
+Historical exchange rates are queued for background processing after transactions, transfers, reconciliations, recurring posting, and CSV imports. Rates for the same date and currencies can be reused when an amount changes. A changed date or reporting currency requires a matching rate; incomplete totals are indicated while it is unavailable.
+
+Database version 10 stores budget currencies, recurrence calendar anchors, and opening-balance conversions. See [hardening and verification](docs/07-hardening-and-verification.md) for migration behavior, privacy protections, import limits, and regression coverage.
 
 > Multi-device support, cloud sync, bank/Open Banking sync, shared couple spaces, ML-based categorization, and advanced subscription/anomaly detection are **outside the current roadmap**. They must not be planned or implemented without a new, explicit scope decision.
 
-The repository contains JVM tests plus Room and Compose instrumented tests. The checked-in GitHub Actions workflow is still a placeholder and does not yet build or test the app, so local verification remains required.
+The repository contains JVM tests plus Room and Compose instrumented tests. The GitHub Actions workflow now builds debug and release, runs JVM tests and lint, and schedules instrumented tests on API 29 and 35. Local verification remains useful; adding the workflow does not imply that a remote CI run has already passed.
 
 ---
 
@@ -121,7 +123,7 @@ The repository contains JVM tests plus Room and Compose instrumented tests. The 
 
 ### Prerequisites
 
-- JDK 17
+- JDK 21 for the Gradle daemon (application bytecode targets Java 17)
 - Android Studio with Android SDK 36 installed
 - An Android 8.0+ device or emulator (for running the app and instrumented tests)
 

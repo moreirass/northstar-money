@@ -1,5 +1,7 @@
 package com.northstar.money.core.navigation
 
+import androidx.compose.material3.TextButton
+
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -56,6 +58,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.northstar.money.domain.model.magnitude
+import com.northstar.money.domain.model.convertedTo
+import com.northstar.money.domain.model.HistoricalExchangeRate
 import com.northstar.money.domain.model.Money
 import com.northstar.money.R
 import com.northstar.money.domain.model.TransactionItem
@@ -84,7 +89,7 @@ internal data class TransactionMonthSummary(
     val expenses: Money,
     val income: Money,
 ) {
-    val balance: Money get() = Money(income.minor - expenses.minor, income.currencyCode)
+    val balance: Money get() = Money(Math.subtractExact(income.minor, expenses.minor), income.currencyCode)
 }
 
 internal fun transactionsInMonth(items: List<TransactionItem>, month: YearMonth): List<TransactionItem> =
@@ -95,10 +100,11 @@ internal fun transactionsInMonth(items: List<TransactionItem>, month: YearMonth)
 internal fun transactionMonthSummary(
     items: List<TransactionItem>,
     currencyCode: String,
+    rates: List<HistoricalExchangeRate> = emptyList(),
 ): TransactionMonthSummary {
-    val compatible = items.filter { it.amount.currencyCode == currencyCode }
+    val compatible = items.mapNotNull { item -> item.convertedTo(currencyCode, rates)?.let { item.copy(amount = it) } }
     return TransactionMonthSummary(
-        expenses = Money(compatible.filter { it.kind == TransactionKind.EXPENSE }.sumOf { it.amount.minor }, currencyCode),
+        expenses = Money(compatible.filter { it.kind == TransactionKind.EXPENSE }.sumOf { it.amount.magnitude().minor }, currencyCode),
         income = Money(compatible.filter { it.kind == TransactionKind.INCOME }.sumOf { it.amount.minor }, currencyCode),
     )
 }
@@ -110,12 +116,16 @@ internal fun ActivityScreen(
     onEdit: (String) -> Unit,
     onSetCleared: (String, Boolean) -> Unit,
     onDelete: (String) -> Unit,
+    onMonthSelected: (String) -> Unit = {},
+    onLoadMore: () -> Unit = {},
 ) {
     var monthText by rememberSaveable { mutableStateOf(YearMonth.now().toString()) }
+    androidx.compose.runtime.LaunchedEffect(monthText) { onMonthSelected(monthText) }
     val month = remember(monthText) { YearMonth.parse(monthText) }
     val monthTransactions = remember(state.transactions, month) { transactionsInMonth(state.transactions, month) }
     val currencyCode = state.summary.balance.currencyCode
-    val summary = remember(monthTransactions, currencyCode) { transactionMonthSummary(monthTransactions, currencyCode) }
+    val summary = state.selectedMonthSummary?.takeIf { state.selectedMonthStart == month.atDay(1).toString() }?.let { TransactionMonthSummary(it.expensesThisMonth, it.incomeThisMonth) }
+        ?: remember(monthTransactions, currencyCode, state.historicalExchangeRates) { transactionMonthSummary(monthTransactions, currencyCode, state.historicalExchangeRates) }
     val grouped = remember(monthTransactions) {
         monthTransactions.groupBy { it.localDate }.toSortedMap(compareByDescending { it })
     }
@@ -133,6 +143,7 @@ internal fun ActivityScreen(
             )
         }
         item { MonthSummaryCard(summary) }
+        if (state.hasMoreTransactions) item { TextButton(onClick = onLoadMore) { Text(stringResource(R.string.load_more_transactions)) } }
         if (grouped.isEmpty()) {
             item {
                 Text(
@@ -275,7 +286,7 @@ private fun DesignedTransactionRow(
         TransactionKind.TRANSFER -> TransactionsBalance
     }
     val icon = transactionIcon(transaction)
-    val displayedAmount = transaction.amount.displayValue()
+    val displayedAmount = (if (transaction.kind == TransactionKind.TRANSFER) transaction.amount else transaction.amount.magnitude()).displayValue()
     val signedAmount = when (transaction.kind) {
         TransactionKind.INCOME -> "+ $displayedAmount"
         TransactionKind.EXPENSE -> "- $displayedAmount"
@@ -330,7 +341,7 @@ private fun DesignedTransactionRow(
                 Text(transactionTime(transaction), color = TransactionsTertiary, fontSize = 10.sp)
             }
         }
-        DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
+        if (LocalAppUnlocked.current) DropdownMenu(expanded = actionsExpanded, onDismissRequest = { actionsExpanded = false }) {
             DropdownMenuItem(
                 text = {
                     Text(

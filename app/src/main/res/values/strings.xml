@@ -324,4 +324,18 @@
     <string name="widget_recent_title">Recent transactions</string>
     <string name="widget_no_transactions">No transactions yet</string>
     <string name="widget_balance_placeholder">€0.00</string>
+    <string name="incomplete_totals">Some amounts are missing exchange rates. Totals and forecasts may be incomplete.</string>
+    <string name="estimated_forecast">Forecasts in other currencies use the latest available rate and are estimates.</string>
+    <string name="home_all_accounts">All accounts</string>
+    <string name="home_recent">RECENT TRANSACTIONS</string>
+    <string name="home_view_all">View all</string>
+    <string name="home_first_transaction">Add your first transaction to see your activity.</string>
+    <string name="home_create_budget">Create budget</string>
+    <string name="home_total_spent">Total spent</string>
+    <string name="home_no_expenses">No expenses</string>
+    <string name="home_spending_distribution">Spending by category</string>
+    <string name="home_other">Other</string>
+    <string name="load_more_transactions">Load more transactions</string>
+    <string name="home_balance_description">Balance for %1$s: %2$s</string>
+    <string name="security_use_device_lock">Use screen lock</string>
 </resources>

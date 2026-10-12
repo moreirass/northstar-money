@@ -27,6 +27,9 @@ class TransactionCsvValidator {
         accounts: List<AccountBalanceRow>,
         categories: List<CategoryEntity>,
     ): CsvValidationResult {
+        if (csv.length > ImportLimits.CSV_BYTES) return CsvValidationResult(emptyList(), 0, 1)
+        val accountsByName = accounts.groupBy { it.name }
+        val categoriesByName = categories.groupBy { it.name to it.kind }
         val rows = try {
             parseCsv(csv)
         } catch (_: IllegalArgumentException) {
@@ -44,7 +47,7 @@ class TransactionCsvValidator {
         var errors = 0
         rows.drop(1).filterNot { row -> row.all(String::isBlank) }.forEach { columns ->
             val transaction = try {
-                validateRow(columns, accounts, categories)
+                validateRow(columns, accountsByName, categoriesByName)
             } catch (_: RuntimeException) {
                 null
             }
@@ -67,29 +70,29 @@ class TransactionCsvValidator {
 
     private fun validateRow(
         columns: List<String>,
-        accounts: List<AccountBalanceRow>,
-        categories: List<CategoryEntity>,
+        accounts: Map<String, List<AccountBalanceRow>>,
+        categories: Map<Pair<String, String>, List<CategoryEntity>>,
     ): ValidatedCsvTransaction {
-        require(columns.size == HEADER.size)
+        require(columns.size == HEADER.size && columns.all { it.length <= ImportLimits.FIELD_CHARS })
         val date = LocalDate.parse(columns[0].trim()).toString()
         val kind = TransactionKind.valueOf(columns[1].trim())
         require(kind != TransactionKind.TRANSFER)
-        val payee = columns[2].trim()
-        val categoryName = columns[3].trim()
-        val accountName = columns[4].trim()
-        val matchingAccounts = accounts.filter { it.name == accountName }
+        val payee = columns[2].trim().removePrefix("'").takeIf { columns[2].trimStart().startsWith("'") && columns[2].trimStart().drop(1).trimStart().firstOrNull() in listOf('=', '+', '-', '@') } ?: columns[2].trim()
+        val categoryName = decodedText(columns[3])
+        val accountName = decodedText(columns[4])
+        val matchingAccounts = accounts[accountName].orEmpty()
         require(matchingAccounts.size == 1)
         val account = matchingAccounts.single()
-        val matchingCategories = categories.filter { it.name == categoryName && it.kind == kind.name }
+        val matchingCategories = categories[categoryName to kind.name].orEmpty()
         require(matchingCategories.size == 1)
         val category = matchingCategories.single()
         val amountMinor = columns[5].trim().toLong()
         require(
-            (kind == TransactionKind.EXPENSE && amountMinor < 0) ||
+            (kind == TransactionKind.EXPENSE && amountMinor < 0 && amountMinor != Long.MIN_VALUE) ||
                 (kind == TransactionKind.INCOME && amountMinor > 0),
         )
         val currencyCode = columns[6].trim()
-        require(currencyCode.length == 3 && currencyCode.all(Char::isUpperCase))
+        require(com.northstar.money.domain.model.validCurrency(currencyCode))
         require(currencyCode == account.currencyCode)
         return ValidatedCsvTransaction(
             localDate = date,
@@ -111,6 +114,8 @@ class TransactionCsvValidator {
         var index = 0
 
         fun finishField() {
+            require(row.size < HEADER.size) { "Too many CSV columns" }
+            require(field.length <= ImportLimits.FIELD_CHARS) { "CSV field is too long" }
             row += field.toString()
             field.clear()
             closedQuote = false
@@ -118,11 +123,13 @@ class TransactionCsvValidator {
 
         fun finishRow() {
             finishField()
+            require(rows.size <= MAX_ROWS) { "Too many CSV rows" }
             rows += row.toList()
             row.clear()
         }
 
         while (index < csv.length) {
+            require(field.length <= ImportLimits.FIELD_CHARS) { "CSV field is too long" }
             val char = csv[index]
             when {
                 inQuotes && char == '"' && index + 1 < csv.length && csv[index + 1] == '"' -> {
@@ -151,6 +158,12 @@ class TransactionCsvValidator {
         return rows.filterNot { candidate -> candidate.size == 1 && candidate.single().isEmpty() }
     }
 
+    private fun decodedText(value: String): String {
+        val trimmed = value.trim()
+        val original = trimmed.removePrefix("'")
+        return if (trimmed.startsWith("'") && (original.trimStart().firstOrNull() in listOf('=', '+', '-', '@') || original.firstOrNull() in listOf('\t', '\r', '\n'))) original else trimmed
+    }
+
     private data class ImportSignature(
         val localDate: String,
         val payee: String,
@@ -162,6 +175,6 @@ class TransactionCsvValidator {
 
     companion object {
         private val HEADER = listOf("date", "type", "payee", "category", "account", "amount", "currency")
-        private const val MAX_ROWS = 100_000
+        private const val MAX_ROWS = ImportLimits.ROWS
     }
 }

@@ -154,6 +154,45 @@ class DatabaseSnapshotValidatorTest {
         assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
     }
 
+    @Test fun rejectsUnsupportedCurrencyAndMultipleExpenseEntries() {
+        val base = validSnapshot()
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(accounts = base.accounts.map { it.copy(currencyCode = "ZZZ") }))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(transactionEntries = base.transactionEntries + base.transactionEntries.single().copy(id = "second")))
+        }
+    }
+
+    @Test fun rejectsExpenseAssignedToAnIncomeCategory() {
+        val base = validSnapshot()
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(categories = base.categories.map { it.copy(kind = "INCOME") }))
+        }
+    }
+
+    @Test fun rejectsInconsistentExchangeConversionAndWrongTransactionDate() {
+        val base = validSnapshot()
+        val rate = com.northstar.money.core.database.TransactionExchangeRateEntity(
+            "rate", "transaction", "entry", "EUR", "USD", 2_000_000, -200, "2026-08-01", "Test", "AVAILABLE", 1)
+        validator.validate(base.copy(transactionExchangeRates = listOf(rate)))
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(transactionExchangeRates = listOf(rate.copy(convertedAmountMinor = -999))))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(transactionExchangeRates = listOf(rate.copy(rateLocalDate = "2026-08-02"))))
+        }
+    }
+
+    @Test fun rejectsTransferBetweenTheSameAccount() {
+        val base = validSnapshot()
+        assertThrows(IllegalArgumentException::class.java) {
+            validator.validate(base.copy(transactions = base.transactions.map { it.copy(kind = "TRANSFER") },
+                transactionEntries = listOf(base.transactionEntries.single().copy(categoryId = null),
+                    base.transactionEntries.single().copy(id = "destination", categoryId = null, amountMinor = 100))))
+        }
+    }
+
     private fun validSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),
         categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 0)),

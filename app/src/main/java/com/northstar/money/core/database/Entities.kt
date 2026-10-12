@@ -1,5 +1,6 @@
 package com.northstar.money.core.database
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -110,7 +111,7 @@ data class TransactionEntryEntity(
 data class ReceiptAttachmentEntity(
     @PrimaryKey val id: String,
     val transactionId: String,
-    val content: ByteArray,
+    @Serializable(with = com.northstar.money.data.backup.ReceiptBytesSerializer::class) val content: ByteArray,
     val originalName: String,
     val mimeType: String,
     val byteSize: Long,
@@ -177,6 +178,9 @@ data class EntryRateCandidate(
 )
 
 data class TransactionRow(
+    val accountId: String,
+    val destinationAccountId: String?,
+    val categoryId: String?,
     val id: String,
     val payee: String,
     val kind: String,
@@ -190,6 +194,7 @@ data class TransactionRow(
 )
 
 data class SummaryRow(
+    val missingConversions: Int,
     val balanceMinor: Long,
     val incomeMinor: Long,
     val expenseMinor: Long,
@@ -243,13 +248,14 @@ data class ReconciliationEntity(
         childColumns = ["categoryId"],
         onDelete = ForeignKey.CASCADE,
     )],
-    indices = [Index("categoryId"), Index(value = ["monthStart", "categoryId"], unique = true)],
+    indices = [Index("categoryId"), Index(value = ["monthStart", "categoryId", "currencyCode"], unique = true)],
 )
 data class BudgetAllocationEntity(
     @PrimaryKey val id: String,
     val monthStart: String,
     val categoryId: String,
     val plannedMinor: Long,
+    @ColumnInfo(defaultValue = "'EUR'") val currencyCode: String = "EUR",
 )
 
 @Serializable
@@ -298,6 +304,7 @@ data class GoalContributionRow(
 )
 
 data class BudgetRow(
+    val missingConversions: Int,
     val categoryId: String,
     val categoryName: String,
     val allocatedMinor: Long,
@@ -329,6 +336,8 @@ data class RecurringScheduleEntity(
     val active: Boolean,
     val createdAt: Long,
     val deletedAt: Long? = null,
+    @ColumnInfo(defaultValue = "1") val anchorDay: Int = java.time.LocalDate.parse(nextLocalDate).dayOfMonth,
+    @ColumnInfo(defaultValue = "1") val anchorMonth: Int = java.time.LocalDate.parse(nextLocalDate).monthValue,
 )
 
 @Serializable
@@ -360,3 +369,27 @@ data class DebtProfileRow(
     val createdAt: Long,
     val currencyCode: String,
 )
+
+/** UI projection deliberately excludes the receipt image and raw OCR text. */
+data class ReceiptMetadataRow(
+    val id: String, val transactionId: String, val originalName: String, val mimeType: String,
+    val byteSize: Long, val createdAt: Long, val ocrStatus: String,
+    val detectedAmountMinor: Long?, val detectedCurrencyCode: String?,
+    val detectedLocalDate: String?, val detectedMerchant: String?,
+)
+
+@Serializable
+@Entity(tableName = "account_exchange_rates", foreignKeys = [ForeignKey(
+    entity = AccountEntity::class, parentColumns = ["id"], childColumns = ["accountId"],
+    onDelete = ForeignKey.CASCADE,
+)])
+data class AccountExchangeRateEntity(
+    @PrimaryKey val accountId: String,
+    val baseCurrencyCode: String, val quoteCurrencyCode: String,
+    val openingBalanceMinor: Long, val convertedAmountMinor: Long,
+    val rateMicros: Long, val rateLocalDate: String,
+)
+
+data class CategorySpendingRow(val categoryName: String?, val amountMinor: Long)
+
+data class MonthlyExpenseRow(val monthStart: String, val amountMinor: Long)

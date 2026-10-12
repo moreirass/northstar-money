@@ -74,7 +74,7 @@ internal fun budgetStatusColor(percent: Int): Color = when {
 internal fun PlanScreen(
     state: FinanceUiState,
     padding: PaddingValues,
-    onSetBudget: (String, String) -> Unit,
+    onSetBudget: (String, String, () -> Unit) -> Unit,
     onOpenBudget: (String) -> Unit,
 ) {
     var editingCategoryId by remember { mutableStateOf<String?>(null) }
@@ -145,11 +145,11 @@ internal fun PlanScreen(
         if (budget != null) {
             AmountDialog(
                 title = stringResource(R.string.budget_for_named, budget.categoryName),
-                initial = if (budget.allocated.minor == 0L) "" else budget.allocated.minor.toBigDecimal().movePointLeft(2).toPlainString(),
+                currencyCode = budget.allocated.currencyCode,
+                initial = if (budget.allocated.minor == 0L) "" else budget.allocated.minor.toBigDecimal().movePointLeft(java.util.Currency.getInstance(budget.allocated.currencyCode).defaultFractionDigits).toPlainString(),
                 onDismiss = { editingCategoryId = null },
                 onSave = {
-                    onSetBudget(id, it)
-                    editingCategoryId = null
+                    onSetBudget(id, it) { editingCategoryId = null }
                 },
             )
         }
@@ -255,7 +255,7 @@ private fun BudgetCategoryPicker(
     onDismiss: () -> Unit,
     onSelected: (String) -> Unit,
 ) {
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.budgets_choose_category)) },
         text = {

@@ -1,5 +1,7 @@
 package com.northstar.money.core.navigation
 
+import com.northstar.money.domain.model.convertedTo
+
 import android.annotation.SuppressLint
 import com.northstar.money.R
 import androidx.annotation.StringRes
@@ -134,6 +136,14 @@ fun NorthstarApp() {
         factory = FinanceViewModelFactory(application.financeRepository, application.userPreferences),
     )
     val state by financeViewModel.uiState.collectAsStateWithLifecycle()
+    val snackbarHostState = remember { SnackbarHostState() }
+    val onboardingCompleted by androidx.compose.runtime.rememberUpdatedState(state.settings.onboardingCompleted)
+    LaunchedEffect(financeViewModel, snackbarHostState) {
+        financeViewModel.events.collect { event ->
+            if (!onboardingCompleted) android.widget.Toast.makeText(context, context.getString(event.messageRes), android.widget.Toast.LENGTH_LONG).show()
+            else snackbarHostState.showSnackbar(context.getString(event.messageRes))
+        }
+    }
     if (!state.isLoading && !state.loadFailed && !state.settings.onboardingCompleted) {
         OnboardingScreen(
             initialCurrencyCode = state.settings.baseCurrencyCode,
@@ -144,12 +154,16 @@ fun NorthstarApp() {
         )
         return
     }
-    CompositionLocalProvider(LocalMoneyValuesHidden provides state.settings.moneyValuesHidden) {
+    CompositionLocalProvider(LocalMoneyValuesHidden provides state.settings.moneyValuesHidden, LocalSavingState provides state.isSaving) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val isBudgetDetail = backStackEntry?.destination?.route == BudgetDetailRoute
     val destination = Destination.entries.firstOrNull { it.route == backStackEntry?.destination?.route }
         ?: Destination.Home
+    LaunchedEffect(destination, isBudgetDetail) {
+        financeViewModel.setRecoveryVisible(destination == Destination.More)
+        if (destination != Destination.Activity && !isBudgetDetail) financeViewModel.showRecentTransactions()
+    }
     var showAdd by remember { mutableStateOf(false) }
     var editingTransaction by remember { mutableStateOf<EditableTransaction?>(null) }
     var editingAccount by remember { mutableStateOf<EditableAccount?>(null) }
@@ -157,14 +171,7 @@ fun NorthstarApp() {
     var editingGoal by remember { mutableStateOf<EditableGoal?>(null) }
     var editingGoalContribution by remember { mutableStateOf<GoalContribution?>(null) }
     var editingDebt by remember { mutableStateOf<DebtProfile?>(null) }
-    val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-
-    LaunchedEffect(financeViewModel, snackbarHostState) {
-        financeViewModel.events.collect { event ->
-            snackbarHostState.showSnackbar(context.getString(event.messageRes))
-        }
-    }
 
     BoxWithConstraints {
     val widthClass = classifyWindowWidth(maxWidth.value.toInt())
@@ -275,6 +282,7 @@ fun NorthstarApp() {
                 FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
                     AdaptiveContentPane(widthClass) {
                         HomeScreen(
+                            onAccountSelected = financeViewModel::selectHomeAccount,
                             state = state,
                             padding = padding,
                             onOpenTransactions = { navController.navigate(Destination.Activity.route) },
@@ -297,12 +305,20 @@ fun NorthstarApp() {
             }
             composable(BudgetDetailRoute) { entry ->
                 FinanceScreenState(state.isLoading, state.loadFailed, financeViewModel::retryLoading) {
+                    LaunchedEffect(entry.arguments?.getString("categoryId"), state.asOfLocalDate.take(7)) {
+                        entry.arguments?.getString("categoryId")?.let(financeViewModel::showBudgetTransactions)
+                    }
                     AdaptiveContentPane(widthClass) {
                         BudgetDetailScreen(
+                            onLoadMore = financeViewModel::loadMoreTransactions,
+                            hasMore = state.hasMoreTransactions,
+                            monthlyExpenses = state.budgetMonthlyExpenses,
                             budget = state.budgets.firstOrNull {
                                 it.categoryId == entry.arguments?.getString("categoryId")
                             },
-                            transactions = state.transactions,
+                            transactions = state.transactions.mapNotNull { item ->
+                                item.convertedTo(state.settings.baseCurrencyCode, state.historicalExchangeRates)?.let { item.copy(amount = it) }
+                            },
                             padding = padding,
                             onBack = navController::popBackStack,
                             onEditTransaction = { id ->
@@ -320,6 +336,8 @@ fun NorthstarApp() {
                 state.loadFailed,
                 financeViewModel::retryLoading,
             ) { AdaptiveContentPane(widthClass) { ActivityScreen(
+                            onMonthSelected = financeViewModel::showTransactionMonth,
+                            onLoadMore = financeViewModel::loadMoreTransactions,
                 state = state,
                 padding = padding,
                 onEdit = { id ->
@@ -436,6 +454,8 @@ fun NorthstarApp() {
                 onMergeCategory = financeViewModel::mergeCategory,
                 onUndoCategoryMerge = financeViewModel::undoCategoryMerge,
                 onCreateFullBackup = financeViewModel::createFullBackup,
+                onWriteFullBackup = financeViewModel::writeFullBackup,
+                onExportTransactions = financeViewModel::allTransactions,
                 onRestoreFullBackup = financeViewModel::restoreFullBackup,
                 onUndoFullRestore = financeViewModel::undoLastFullRestore,
                 onRefreshExchangeRates = financeViewModel::refreshExchangeRates,
@@ -458,8 +478,7 @@ fun NorthstarApp() {
             state = state,
             onDismiss = { editingTransaction = null },
             onSave = {
-                financeViewModel.updateTransaction(it)
-                editingTransaction = null
+                financeViewModel.updateTransaction(it) { editingTransaction = null }
             },
             onAttachReceipt = { name, mimeType, content ->
                 financeViewModel.addReceiptAttachment(transaction.id, name, mimeType, content)
@@ -475,8 +494,7 @@ fun NorthstarApp() {
             account = account,
             onDismiss = { editingAccount = null },
             onSave = {
-                financeViewModel.updateAccount(it)
-                editingAccount = null
+                financeViewModel.updateAccount(it) { editingAccount = null }
             },
         )
     }
@@ -487,8 +505,7 @@ fun NorthstarApp() {
             state = state,
             onDismiss = { editingRecurring = null },
             onSave = {
-                financeViewModel.updateRecurring(it)
-                editingRecurring = null
+                financeViewModel.updateRecurring(it) { editingRecurring = null }
             },
         )
     }
@@ -498,8 +515,7 @@ fun NorthstarApp() {
             goal = goal,
             onDismiss = { editingGoal = null },
             onSave = {
-                financeViewModel.updateGoal(it)
-                editingGoal = null
+                financeViewModel.updateGoal(it) { editingGoal = null }
             },
         )
     }
@@ -511,8 +527,7 @@ fun NorthstarApp() {
             goals = state.goals,
             onDismiss = { editingGoalContribution = null },
             onSave = {
-                financeViewModel.updateGoalContribution(it)
-                editingGoalContribution = null
+                financeViewModel.updateGoalContribution(it) { editingGoalContribution = null }
             },
         )
     }
@@ -524,8 +539,7 @@ fun NorthstarApp() {
                 ?: stringResource(R.string.fallback_account),
             onDismiss = { editingDebt = null },
             onSave = {
-                financeViewModel.updateDebt(it)
-                editingDebt = null
+                financeViewModel.updateDebt(it) { editingDebt = null }
             },
         )
     }
@@ -536,11 +550,10 @@ fun NorthstarApp() {
             onDismiss = { showAdd = false },
             onSave = { kind, amount, destinationAmount, account, destinationAccount, category, payee ->
                 if (kind == TransactionKind.TRANSFER) {
-                    financeViewModel.transfer(amount, destinationAmount, account, destinationAccount, payee)
+                    financeViewModel.transfer(amount, destinationAmount, account, destinationAccount, payee) { showAdd = false }
                 } else {
-                    financeViewModel.addTransaction(kind, amount, account, category, payee)
+                    financeViewModel.addTransaction(kind, amount, account, category, payee) { showAdd = false }
                 }
-                showAdd = false
             },
         )
     }

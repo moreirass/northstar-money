@@ -324,4 +324,18 @@
     <string name="widget_recent_title">Últimas transações</string>
     <string name="widget_no_transactions">Ainda não existem transações</string>
     <string name="widget_balance_placeholder">0,00 €</string>
+    <string name="incomplete_totals">Faltam taxas de câmbio para alguns valores. Os totais e as previsões podem estar incompletos.</string>
+    <string name="estimated_forecast">As previsões noutras moedas usam a taxa disponível mais recente e são estimativas.</string>
+    <string name="home_all_accounts">Todas as contas</string>
+    <string name="home_recent">TRANSAÇÕES RECENTES</string>
+    <string name="home_view_all">Ver tudo</string>
+    <string name="home_first_transaction">Adiciona a primeira transação para veres a tua atividade.</string>
+    <string name="home_create_budget">Criar orçamento</string>
+    <string name="home_total_spent">Total gasto</string>
+    <string name="home_no_expenses">Sem gastos</string>
+    <string name="home_spending_distribution">Distribuição dos gastos por categoria</string>
+    <string name="home_other">Outros</string>
+    <string name="load_more_transactions">Carregar mais transações</string>
+    <string name="home_balance_description">Saldo de %1$s: %2$s</string>
+    <string name="security_use_device_lock">Usar bloqueio do dispositivo</string>
 </resources>

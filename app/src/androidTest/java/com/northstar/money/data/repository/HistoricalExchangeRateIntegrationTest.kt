@@ -76,10 +76,9 @@ class HistoricalExchangeRateIntegrationTest {
     }
 
     @Test
-    fun failedRateRefreshDuringEditRetainsAvailableRateAndRecalculatesAmount() = runBlocking {
+    fun changedDateDoesNotReuseAnAvailableRateForTheWrongDay() = runBlocking {
         repository.addTransaction(TransactionKind.EXPENSE, Money(1_000, "USD"), "usd-account", "food", "Shop")
         val transaction = repository.observeTransactions().first().single()
-        val originalRate = database.financeDao().exportSnapshot().transactionExchangeRates.single()
         rateProvider.fail = true
 
         repository.updateTransaction(
@@ -90,10 +89,10 @@ class HistoricalExchangeRateIntegrationTest {
         )
 
         val retained = database.financeDao().exportSnapshot().transactionExchangeRates.single()
-        assertEquals("AVAILABLE", retained.status)
-        assertEquals(originalRate.rateMicros, retained.rateMicros)
-        assertEquals(originalRate.rateLocalDate, retained.rateLocalDate)
-        assertEquals(-3_000L, retained.convertedAmountMinor)
+        assertEquals("PENDING", retained.status)
+        assertEquals(null, retained.rateMicros)
+        assertEquals(LocalDate.now().minusDays(1).toString(), retained.rateLocalDate)
+        assertEquals(null, retained.convertedAmountMinor)
     }
 
     @Test

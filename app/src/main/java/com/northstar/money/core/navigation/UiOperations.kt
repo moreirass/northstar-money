@@ -96,6 +96,9 @@ internal suspend fun <T> runSuspendCatching(block: suspend () -> T): Result<T> =
     Result.failure(error)
 }
 
+internal inline fun <T> android.graphics.pdf.PdfDocument.useDocument(block: (android.graphics.pdf.PdfDocument) -> T): T =
+    try { block(this) } finally { close() }
+
 internal enum class DeleteUndoOutcome { DELETED, RESTORED, RESTORE_FAILED }
 
 internal suspend fun performTransactionDeleteWithUndo(

@@ -7,6 +7,7 @@ import java.util.Currency
 import java.util.Locale
 
 data class Money(val minor: Long, val currencyCode: String = "EUR") {
+    init { require(validCurrency(currencyCode)) { "Unsupported monetary currency: $currencyCode" } }
     operator fun plus(other: Money): Money {
         require(currencyCode == other.currencyCode)
         return copy(minor = Math.addExact(minor, other.minor))
@@ -72,6 +73,9 @@ data class TransactionItem(
     val localDate: String,
     val cleared: Boolean,
     val createdAt: Long = 0L,
+    val accountId: String = "",
+    val destinationAccountId: String? = null,
+    val categoryId: String? = null,
 )
 
 data class EditableTransaction(
@@ -117,6 +121,7 @@ data class FinanceSummary(
     val balance: Money = Money(0),
     val incomeThisMonth: Money = Money(0),
     val expensesThisMonth: Money = Money(0),
+    val missingConversions: Int = 0,
 )
 
 data class BudgetProgress(
@@ -126,6 +131,7 @@ data class BudgetProgress(
     val spent: Money,
     val allocated: Money = planned,
     val rollover: Money = Money(0, planned.currencyCode),
+    val missingConversions: Int = 0,
 )
 
 data class SavingsGoal(
@@ -162,6 +168,8 @@ data class RecurringItem(
     val nextLocalDate: String,
     val frequency: String,
     val intervalCount: Int = 1,
+    val anchorDay: Int = java.time.LocalDate.parse(nextLocalDate).dayOfMonth,
+    val anchorMonth: Int = java.time.LocalDate.parse(nextLocalDate).monthValue,
 )
 
 data class EditableRecurring(
@@ -189,6 +197,14 @@ data class CashFlowForecast(
     val lowestBalance: Money,
     val lowestDate: String,
     val scheduledEvents: Int,
+    val missingConversions: Int = 0,
 )
 
 data class ImportResult(val imported: Int, val skippedDuplicates: Int, val errors: Int)
+
+data class TransactionWindow(val startDate: String? = null, val endDate: String? = null,
+    val categoryId: String? = null, val limit: Int = 200)
+data class TransactionPage(val items: List<TransactionItem>, val hasMore: Boolean)
+data class CategorySpending(val categoryName: String?, val amount: Money)
+
+data class MonthlyExpense(val monthStart: String, val amount: Money)

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.northstar.money.R
 import com.northstar.money.domain.model.BudgetProgress
+import com.northstar.money.domain.model.magnitude
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
@@ -72,7 +73,7 @@ internal fun transactionsForBudgetMonth(
     month: YearMonth,
 ): List<TransactionItem> = items.filter { item ->
     item.kind == TransactionKind.EXPENSE &&
-        item.categoryName.equals(categoryName, ignoreCase = true) &&
+        item.categoryName == categoryName &&
         runCatching { YearMonth.from(LocalDate.parse(item.localDate)) }.getOrNull() == month
 }
 
@@ -84,7 +85,7 @@ internal fun budgetTrend(
     val month = endMonth.minusMonths(offset.toLong())
     BudgetTrendPoint(
         month = month,
-        spentMinor = transactionsForBudgetMonth(items, categoryName, month).sumOf { it.amount.minor },
+        spentMinor = transactionsForBudgetMonth(items, categoryName, month).sumOf { it.amount.magnitude().minor },
     )
 }
 
@@ -105,12 +106,20 @@ internal fun BudgetDetailScreen(
     padding: PaddingValues,
     onBack: () -> Unit,
     onEditTransaction: (String) -> Unit,
+    hasMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
+    monthlyExpenses: List<com.northstar.money.domain.model.MonthlyExpense>? = null,
 ) {
-    val currentMonth = remember { YearMonth.now() }
+    val currentMonth = YearMonth.now()
     val currentTransactions = remember(transactions, budget, currentMonth) {
         budget?.let { transactionsForBudgetMonth(transactions, it.categoryName, currentMonth) }.orEmpty()
     }
-    val trend = remember(transactions, budget, currentMonth) {
+    val trend = monthlyExpenses?.let { expenses ->
+        (5 downTo 0).map { offset ->
+            val month = currentMonth.minusMonths(offset.toLong())
+            BudgetTrendPoint(month, expenses.firstOrNull { it.monthStart == month.atDay(1).toString() }?.amount?.minor ?: 0L)
+        }
+    } ?: remember(transactions, budget, currentMonth) {
         budget?.let { budgetTrend(transactions, it.categoryName, currentMonth) }.orEmpty()
     }
 
@@ -131,6 +140,8 @@ internal fun BudgetDetailScreen(
         } else {
             item { BudgetHighlight(budget) }
             item { BudgetTrendPanel(trend, budget.planned.minor) }
+            if (hasMore) item { androidx.compose.material3.TextButton(onClick = onLoadMore) { Text(stringResource(R.string.load_more_transactions)) } }
+            if (budget.missingConversions > 0) item { Text(stringResource(R.string.incomplete_totals)) }
             item {
                 Text(
                     stringResource(R.string.budget_detail_transactions),

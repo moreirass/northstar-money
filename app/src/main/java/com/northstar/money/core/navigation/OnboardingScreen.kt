@@ -113,9 +113,9 @@ private val legacyOnboardingPages = listOf(
 @Composable
 internal fun OnboardingScreen(
     initialCurrencyCode: String = "EUR",
-    onCurrencySelected: (String) -> Unit = {},
-    onInitialAccountSubmitted: (String, String) -> Unit = { _, _ -> },
-    onBudgetSubmitted: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+    onCurrencySelected: (String, () -> Unit) -> Unit = { _, done -> done() },
+    onInitialAccountSubmitted: (String, String, () -> Unit) -> Unit = { _, _, done -> done() },
+    onBudgetSubmitted: (String, String, String, String, () -> Unit) -> Unit = { _, _, _, _, done -> done() },
     onComplete: () -> Unit,
 ) {
     var pageIndex by rememberSaveable { mutableIntStateOf(0) }
@@ -126,22 +126,19 @@ internal fun OnboardingScreen(
             selectedCurrencyCode = selectedCurrencyCode,
             onCurrencySelected = { selectedCurrencyCode = it },
             onContinue = {
-                onCurrencySelected(selectedCurrencyCode)
-                pageIndex = 2
+                onCurrencySelected(selectedCurrencyCode) { pageIndex = 2 }
             },
         )
         2 -> BalanceOnboardingPage(
             currencyCode = selectedCurrencyCode,
             onContinue = { accountName, balance ->
-                onInitialAccountSubmitted(accountName, balance)
-                pageIndex = 3
+                onInitialAccountSubmitted(accountName, balance) { pageIndex = 3 }
             },
         )
         3 -> BudgetOnboardingPage(
             currencyCode = selectedCurrencyCode,
             onFinish = { amount, period, startDate, endDate ->
-                onBudgetSubmitted(amount, period, startDate, endDate)
-                onComplete()
+                onBudgetSubmitted(amount, period, startDate, endDate) { onComplete() }
             },
         )
         else -> LegacyOnboardingPageScreen(
@@ -282,7 +279,7 @@ internal fun BudgetOnboardingPage(
         val pickerState = androidx.compose.material3.rememberDatePickerState(
             initialSelectedDateMillis = current.atStartOfDay().toInstant(ZoneOffset.UTC).toEpochMilli(),
         )
-        DatePickerDialog(
+        if (LocalAppUnlocked.current) DatePickerDialog(
             onDismissRequest = { editingStartDate = null },
             confirmButton = {
                 TextButton(onClick = {

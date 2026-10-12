@@ -1,5 +1,10 @@
 package com.northstar.money.core.navigation
 
+import androidx.compose.ui.res.stringResource
+import com.northstar.money.R
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.heightIn
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -56,6 +61,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import com.northstar.money.domain.model.Account
 import com.northstar.money.domain.model.BudgetProgress
+import com.northstar.money.domain.model.magnitude
+import com.northstar.money.domain.model.convertedTo
 import com.northstar.money.domain.model.Money
 import com.northstar.money.domain.model.TransactionItem
 import com.northstar.money.domain.model.TransactionKind
@@ -89,20 +96,22 @@ internal data class HomeCategoryShare(
     val color: Color,
 )
 
-internal fun homeCategoryShares(transactions: List<TransactionItem>): List<HomeCategoryShare> {
+internal fun homeCategoryShares(transactions: List<TransactionItem>, otherLabel: String = "Outros"): List<HomeCategoryShare> {
     val totals = transactions
         .asSequence()
-        .filter { it.kind == TransactionKind.EXPENSE && it.amount.minor > 0 }
-        .groupBy { it.categoryName?.takeIf(String::isNotBlank) ?: "Outros" }
-        .mapValues { (_, entries) -> entries.sumOf { it.amount.minor } }
+        .filter { it.kind == TransactionKind.EXPENSE && it.amount.minor != 0L }
+        .groupBy { it.categoryName?.takeIf(String::isNotBlank) ?: otherLabel }
+        .mapValues { (_, entries) -> entries.fold(0L) { total, item -> Math.addExact(total, item.amount.magnitude().minor) } }
         .entries
         .sortedByDescending { it.value }
     val total = totals.sumOf { it.value }
-    return totals.take(5).mapIndexed { index, entry ->
+    val visible = totals.take(5).map { it.key to it.value }.toMutableList()
+    if (totals.size > 5) visible += otherLabel to totals.drop(5).sumOf { it.value }
+    return visible.mapIndexed { index, entry ->
         HomeCategoryShare(
-            name = entry.key,
-            amountMinor = entry.value,
-            fraction = if (total == 0L) 0f else entry.value.toFloat() / total.toFloat(),
+            name = entry.first,
+            amountMinor = entry.second,
+            fraction = if (total == 0L) 0f else entry.second.toFloat() / total.toFloat(),
             color = CategoryPalette[index % CategoryPalette.size],
         )
     }
@@ -114,15 +123,24 @@ internal fun HomeScreen(
     padding: PaddingValues,
     onOpenTransactions: () -> Unit,
     onOpenBudgets: () -> Unit,
+    onAccountSelected: (String?) -> Unit = {},
 ) {
     var selectedAccountId by rememberSaveable { mutableStateOf<String?>(null) }
+    androidx.compose.runtime.LaunchedEffect(selectedAccountId) { onAccountSelected(selectedAccountId) }
     val selectedAccount = state.accounts.firstOrNull { it.id == selectedAccountId }
     val visibleTransactions = remember(state.transactions, selectedAccountId) {
-        selectedAccount?.let { account -> state.transactions.filter { it.accountName == account.name } }
+        selectedAccount?.let { account -> state.transactions.filter { it.accountId == account.id || it.destinationAccountId == account.id } }
             ?: state.transactions
     }
-    val categoryShares = remember(visibleTransactions) { homeCategoryShares(visibleTransactions) }
     val shownBalance = selectedAccount?.balance ?: state.summary.balance
+    val otherLabel = stringResource(R.string.home_other)
+    val categoryShares = remember(visibleTransactions, shownBalance.currencyCode, state.historicalExchangeRates, state.categorySpending, otherLabel) {
+        homeCategoryShares((if (state.categorySpendingLoaded) state.categorySpending.mapIndexed { index, spending ->
+            TransactionItem("category-$index", "", spending.categoryName, "", TransactionKind.EXPENSE, spending.amount, LocalDate.now().toString(), false)
+        } else visibleTransactions).filter { it.kind == TransactionKind.EXPENSE }.mapNotNull { item ->
+            item.convertedTo(shownBalance.currencyCode, state.historicalExchangeRates)?.let { item.copy(amount = it) }
+        }, otherLabel)
+    }
 
     LazyColumn(
         modifier = Modifier
@@ -137,8 +155,11 @@ internal fun HomeScreen(
                 accounts = state.accounts,
                 selectedAccount = selectedAccount,
                 balance = shownBalance,
-                onAccountSelected = { selectedAccountId = it?.id },
+                onAccountSelected = { selectedAccountId = it?.id; onAccountSelected(it?.id) },
             )
+        }
+        if (state.summary.missingConversions > 0) item {
+            Text(stringResource(R.string.incomplete_totals), Modifier.padding(horizontal = 24.dp), color = MaterialTheme.colorScheme.error)
         }
         item {
             BudgetCarousel(
@@ -151,15 +172,15 @@ internal fun HomeScreen(
         }
         item {
             SectionHeader(
-                title = "TRANSAÇÕES RECENTES",
-                action = "Ver tudo",
+                title = stringResource(R.string.home_recent),
+                action = stringResource(R.string.home_view_all),
                 onAction = onOpenTransactions,
             )
         }
         if (visibleTransactions.isEmpty()) {
             item {
                 Text(
-                    text = "Adiciona a primeira transação para veres a tua atividade.",
+                    text = stringResource(R.string.home_first_transaction),
                     color = TextSecondary,
                     fontSize = 13.sp,
                     modifier = Modifier
@@ -185,14 +206,15 @@ private fun BalanceHeader(
     onAccountSelected: (Account?) -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
-    val accountLabel = selectedAccount?.name ?: accounts.singleOrNull()?.name ?: "Todas as contas"
+    val accountLabel = selectedAccount?.name ?: accounts.singleOrNull()?.name ?: stringResource(R.string.home_all_accounts)
     val displayedBalance = balance.displayValue()
+    val balanceDescription = stringResource(R.string.home_balance_description, accountLabel, displayedBalance)
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .semantics(mergeDescendants = true) {
-                contentDescription = "Saldo de $accountLabel: $displayedBalance"
+                contentDescription = balanceDescription
             },
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -210,10 +232,10 @@ private fun BalanceHeader(
                     Icon(Icons.Default.ExpandMore, contentDescription = null, tint = TextSecondary, modifier = Modifier.size(14.dp))
                 }
             }
-            DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+            if (LocalAppUnlocked.current) DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                 if (accounts.size > 1) {
                     DropdownMenuItem(
-                        text = { Text("Todas as contas") },
+                        text = { Text(stringResource(R.string.home_all_accounts)) },
                         onClick = {
                             onAccountSelected(null)
                             menuExpanded = false
@@ -270,7 +292,7 @@ private fun BudgetCard(budget: BudgetProgress, color: Color, onClick: () -> Unit
     Column(
         modifier = Modifier
             .width(160.dp)
-            .height(105.dp)
+            .heightIn(min = 105.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceStrong)
             .clickable(onClick = onClick)
@@ -317,7 +339,7 @@ private fun CreateBudgetCard(onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .width(140.dp)
-            .height(105.dp)
+            .heightIn(min = 105.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(SurfaceStrong.copy(alpha = 0.35f))
             .drawBehind {
@@ -337,7 +359,7 @@ private fun CreateBudgetCard(onClick: () -> Unit) {
     ) {
         Icon(Icons.Default.Add, contentDescription = null, tint = Positive, modifier = Modifier.size(24.dp))
         Spacer(Modifier.height(10.dp))
-        Text("Criar orçamento", color = Positive, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+        Text(stringResource(R.string.home_create_budget), color = Positive, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
     }
 }
 
@@ -361,7 +383,7 @@ private fun CategorySpendingCard(shares: List<HomeCategoryShare>, currencyCode: 
             Box(Modifier.size(130.dp), contentAlignment = Alignment.Center) {
                 SpendingDonut(shares, Modifier.fillMaxSize())
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Total gasto", color = TextSecondary, fontSize = 11.sp)
+                    Text(stringResource(R.string.home_total_spent), color = TextSecondary, fontSize = 11.sp)
                     Text(
                         currency,
                         color = TextPrimary,
@@ -373,7 +395,7 @@ private fun CategorySpendingCard(shares: List<HomeCategoryShare>, currencyCode: 
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (shares.isEmpty()) {
-                    Text("Sem gastos", color = TextSecondary, fontSize = 12.sp)
+                    Text(stringResource(R.string.home_no_expenses), color = TextSecondary, fontSize = 12.sp)
                 } else {
                     shares.forEach { share ->
                         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -403,7 +425,8 @@ private fun CategorySpendingCard(shares: List<HomeCategoryShare>, currencyCode: 
 
 @Composable
 private fun SpendingDonut(shares: List<HomeCategoryShare>, modifier: Modifier = Modifier) {
-    Canvas(modifier.semantics { contentDescription = "Distribuição dos gastos por categoria" }) {
+    val description = stringResource(R.string.home_spending_distribution)
+    Canvas(modifier.semantics { contentDescription = description }) {
         val stroke = Stroke(width = 18.dp.toPx(), cap = StrokeCap.Butt)
         if (shares.isEmpty()) {
             drawArc(Divider, -90f, 360f, false, style = stroke)
@@ -452,12 +475,13 @@ private fun HomeTransactionRow(transaction: TransactionItem) {
     val positive = transaction.kind == TransactionKind.INCOME
     val accent = if (positive) Positive else Negative
     val icon: ImageVector = if (positive) Icons.Default.AccountBalanceWallet else Icons.Default.ShoppingBag
-    val displayedAmount = transaction.amount.displayValue()
+    val displayedAmount = transaction.amount.magnitude().displayValue()
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     Row(
         modifier = Modifier
             .padding(horizontal = 24.dp)
             .fillMaxWidth()
-            .height(60.dp)
+            .heightIn(min = 60.dp)
             .background(SurfaceSoft, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp)
             .semantics(mergeDescendants = true) {
@@ -500,18 +524,17 @@ private fun HomeTransactionRow(transaction: TransactionItem) {
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
             )
-            Text(homeDateLabel(transaction.localDate), color = TextTertiary, fontSize = 10.sp)
+            Text(homeDateLabel(transaction.localDate, locale = locale), color = TextTertiary, fontSize = 10.sp)
         }
     }
 }
 
-internal fun homeDateLabel(value: String, today: LocalDate = LocalDate.now()): String {
+internal fun homeDateLabel(value: String, today: LocalDate = LocalDate.now(), locale: Locale = Locale.forLanguageTag("pt-PT")): String {
     val date = runCatching { LocalDate.parse(value) }.getOrNull() ?: return value
     return when (date) {
-        today -> "Hoje"
-        today.minusDays(1) -> "Ontem"
+        today -> if (locale.language == "pt") "Hoje" else "Today"
+        today.minusDays(1) -> if (locale.language == "pt") "Ontem" else "Yesterday"
         else -> {
-            val locale = Locale.forLanguageTag("pt-PT")
             val (day, month) = date.format(DateTimeFormatter.ofPattern("d MMM", locale))
                 .replace(".", "")
                 .split(" ", limit = 2)

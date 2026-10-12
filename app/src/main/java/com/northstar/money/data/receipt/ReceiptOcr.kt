@@ -78,16 +78,17 @@ class ReceiptOcrEngine {
             "The selected receipt is not a supported image"
         }
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val task = recognizer.process(InputImage.fromBitmap(bitmap, 0))
         return try {
             val text = suspendCancellableCoroutine { continuation ->
-                recognizer.process(InputImage.fromBitmap(bitmap, 0))
-                    .addOnSuccessListener { result -> continuation.resume(result.text) }
-                    .addOnFailureListener { error -> continuation.resumeWithException(error) }
+                task.addOnSuccessListener { result -> if (continuation.isActive) continuation.resume(result.text) }
+                    .addOnFailureListener { error -> if (continuation.isActive) continuation.resumeWithException(error) }
             }
             ReceiptOcrParser.parse(text, currencyCode)
         } finally {
-            recognizer.close()
-            bitmap.recycle()
+            // Cancellation does not cancel ML Kit's task; release its bitmap only after it finishes.
+            fun release() { recognizer.close(); if (!bitmap.isRecycled) bitmap.recycle() }
+            if (task.isComplete) release() else task.addOnCompleteListener { release() }
         }
     }
 }
@@ -136,7 +137,7 @@ object ReceiptOcrParser {
 
     private fun validDate(year: String, month: String, day: String): String? = try {
         LocalDate.of(year.toInt(), month.toInt(), day.toInt()).format(DateTimeFormatter.ISO_LOCAL_DATE)
-    } catch (_: DateTimeParseException) {
+    } catch (_: java.time.DateTimeException) {
         null
     } catch (_: IllegalArgumentException) {
         null

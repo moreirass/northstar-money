@@ -65,6 +65,7 @@ class UserPreferences(private val context: Context) {
     }
 
     suspend fun setAppLock(enabled: Boolean) {
+        require(!enabled || com.northstar.money.core.security.AppAuthentication.available(context)) { "Set up a screen lock or biometrics before enabling app lock" }
         context.settingsDataStore.edit { it[lockKey] = enabled }
     }
 

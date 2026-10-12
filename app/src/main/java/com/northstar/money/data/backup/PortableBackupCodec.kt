@@ -14,6 +14,7 @@ class PortableBackupCodec(
 ) {
     fun encrypt(plainText: String, password: CharArray): ByteArray {
         validatePassword(password)
+        require(plainText.length <= com.northstar.money.data.importing.ImportLimits.BACKUP_BYTES - 64) { "Backup is too large" }
         val salt = ByteArray(SALT_SIZE).also(secureRandom::nextBytes)
         val iv = ByteArray(IV_SIZE).also(secureRandom::nextBytes)
         val header = header(PBKDF2_ITERATIONS, salt.size, iv.size)
@@ -21,12 +22,15 @@ class PortableBackupCodec(
         val key = deriveKey(password, salt, PBKDF2_ITERATIONS)
         cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_SIZE_BITS, iv))
         cipher.updateAAD(header)
-        val encrypted = cipher.doFinal(plainText.toByteArray(Charsets.UTF_8))
+        val bytes = plainText.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= com.northstar.money.data.importing.ImportLimits.BACKUP_BYTES - 64) { "Backup is too large" }
+        val encrypted = cipher.doFinal(bytes)
         return header + salt + iv + encrypted
     }
 
     fun decrypt(payload: ByteArray, password: CharArray): String {
         validatePassword(password)
+        require(payload.size <= com.northstar.money.data.importing.ImportLimits.BACKUP_BYTES) { "Backup is too large" }
         require(payload.size >= HEADER_SIZE + SALT_SIZE + IV_SIZE + TAG_SIZE_BYTES) {
             "Backup is truncated"
         }
@@ -61,6 +65,31 @@ class PortableBackupCodec(
 
     fun isPortable(payload: ByteArray): Boolean =
         payload.size >= HEADER_SIZE && payload.copyOfRange(0, MAGIC.size).contentEquals(MAGIC)
+
+    /** Stream export so receipt-heavy backups never need a full JSON String in memory. */
+    fun encryptTo(output: java.io.OutputStream, password: CharArray, writePlaintext: (java.io.OutputStream) -> Unit) {
+        validatePassword(password)
+        val salt = ByteArray(SALT_SIZE).also(secureRandom::nextBytes)
+        val iv = ByteArray(IV_SIZE).also(secureRandom::nextBytes)
+        val header = header(PBKDF2_ITERATIONS, salt.size, iv.size)
+        val cipher = Cipher.getInstance(CIPHER_TRANSFORMATION)
+        cipher.init(Cipher.ENCRYPT_MODE, deriveKey(password, salt, PBKDF2_ITERATIONS), GCMParameterSpec(TAG_SIZE_BITS, iv))
+        cipher.updateAAD(header)
+        val limited = object : java.io.FilterOutputStream(output) {
+            private var count = 0L
+            override fun write(value: Int) {
+                require(++count <= com.northstar.money.data.importing.ImportLimits.BACKUP_BYTES) { "Backup is too large" }
+                out.write(value)
+            }
+            override fun write(bytes: ByteArray, offset: Int, length: Int) {
+                count += length
+                require(count <= com.northstar.money.data.importing.ImportLimits.BACKUP_BYTES) { "Backup is too large" }
+                out.write(bytes, offset, length)
+            }
+        }
+        limited.write(header); limited.write(salt); limited.write(iv)
+        javax.crypto.CipherOutputStream(limited, cipher).use(writePlaintext)
+    }
 
     private fun deriveKey(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec {
         val spec = PBEKeySpec(password, salt, iterations, KEY_SIZE_BITS)

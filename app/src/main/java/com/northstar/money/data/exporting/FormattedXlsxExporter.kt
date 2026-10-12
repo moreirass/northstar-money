@@ -6,6 +6,7 @@ import com.northstar.money.domain.model.FinanceSummary
 import com.northstar.money.domain.model.HistoricalExchangeRate
 import com.northstar.money.domain.model.TransactionItem
 import java.io.ByteArrayOutputStream
+import java.io.OutputStream
 import java.util.Currency
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -18,9 +19,17 @@ class FormattedXlsxExporter {
         summary: FinanceSummary,
         rates: List<HistoricalExchangeRate>,
     ): ByteArray {
+        return ByteArrayOutputStream().use { output ->
+            write(output, transactions, accounts, budgets, summary, rates)
+            output.toByteArray()
+        }
+    }
+
+    fun write(output: OutputStream, transactions: List<TransactionItem>, accounts: List<Account>,
+        budgets: List<BudgetProgress>, summary: FinanceSummary, rates: List<HistoricalExchangeRate>) {
         val sheets = listOf(
             Sheet("Transactions", listOf("Date", "Type", "Merchant", "Category", "Account", "Amount", "Currency"),
-                transactions.map { transaction ->
+                transactions.asSequence().map { transaction ->
                     listOf(
                         Cell.Text(transaction.localDate), Cell.Text(transaction.kind.name), Cell.Text(transaction.payee),
                         Cell.Text(transaction.categoryName.orEmpty()), Cell.Text(transaction.accountName),
@@ -29,7 +38,7 @@ class FormattedXlsxExporter {
                     )
                 }),
             Sheet("Accounts", listOf("Account", "Type", "Balance", "Cleared balance", "Currency"),
-                accounts.map { account ->
+                accounts.asSequence().map { account ->
                     listOf(
                         Cell.Text(account.name), Cell.Text(account.type.name),
                         Cell.Number(major(account.balance.minor, account.currencyCode)),
@@ -37,7 +46,7 @@ class FormattedXlsxExporter {
                     )
                 }),
             Sheet("Budgets", listOf("Category", "Allocated", "Rollover", "Planned", "Spent", "Currency"),
-                budgets.map { budget ->
+                budgets.asSequence().map { budget ->
                     listOf(
                         Cell.Text(budget.categoryName), Cell.Number(major(budget.allocated.minor, budget.allocated.currencyCode)),
                         Cell.Number(major(budget.rollover.minor, budget.rollover.currencyCode)),
@@ -49,47 +58,47 @@ class FormattedXlsxExporter {
                 listOf(Cell.Text("Current balance"), Cell.Number(major(summary.balance.minor, summary.balance.currencyCode)), Cell.Text(summary.balance.currencyCode)),
                 listOf(Cell.Text("Income this month"), Cell.Number(major(summary.incomeThisMonth.minor, summary.incomeThisMonth.currencyCode)), Cell.Text(summary.incomeThisMonth.currencyCode)),
                 listOf(Cell.Text("Expenses this month"), Cell.Number(major(summary.expensesThisMonth.minor, summary.expensesThisMonth.currencyCode)), Cell.Text(summary.expensesThisMonth.currencyCode)),
-            )),
+            ).asSequence()),
             Sheet("Exchange rates", listOf("Date", "Base", "Quote", "Rate", "Source", "Status", "Transaction ID"),
-                rates.map { rate -> listOf(
+                rates.asSequence().map { rate -> listOf(
                     Cell.Text(rate.rateLocalDate), Cell.Text(rate.baseCurrencyCode), Cell.Text(rate.quoteCurrencyCode),
                     rate.rateMicros?.let { Cell.Number(it.toBigDecimal().movePointLeft(6).toPlainString()) } ?: Cell.Text(""),
                     Cell.Text(rate.source), Cell.Text(rate.status), Cell.Text(rate.transactionId),
                 ) }),
         )
-        return ByteArrayOutputStream().use { bytes ->
-            ZipOutputStream(bytes).use { zip ->
-                write(zip, "[Content_Types].xml", contentTypes(sheets.size))
-                write(zip, "_rels/.rels", ROOT_RELS)
-                write(zip, "xl/workbook.xml", workbook(sheets))
-                write(zip, "xl/_rels/workbook.xml.rels", workbookRels(sheets.size))
-                write(zip, "xl/styles.xml", STYLES)
-                sheets.forEachIndexed { index, sheet -> write(zip, "xl/worksheets/sheet${index + 1}.xml", worksheet(sheet)) }
+        ZipOutputStream(output).use { zip ->
+            write(zip, "[Content_Types].xml", contentTypes(sheets.size))
+            write(zip, "_rels/.rels", ROOT_RELS)
+            write(zip, "xl/workbook.xml", workbook(sheets))
+            write(zip, "xl/_rels/workbook.xml.rels", workbookRels(sheets.size))
+            write(zip, "xl/styles.xml", STYLES)
+            sheets.forEachIndexed { index, sheet ->
+                zip.putNextEntry(ZipEntry("xl/worksheets/sheet${index + 1}.xml"))
+                val writer = zip.writer(Charsets.UTF_8)
+                worksheet(sheet, writer)
+                writer.flush()
+                zip.closeEntry()
             }
-            bytes.toByteArray()
         }
     }
 
-    private fun worksheet(sheet: Sheet): String {
-        val rows = buildList {
-            add(sheet.headers.map { Cell.Header(it) })
-            addAll(sheet.rows)
-        }
+    private fun worksheet(sheet: Sheet, writer: java.io.Writer) {
         val lastColumn = columnName(sheet.headers.size)
-        val xmlRows = rows.mapIndexed { rowIndex, row ->
-            val number = rowIndex + 1
-            row.mapIndexed { columnIndex, cell -> cellXml("${columnName(columnIndex + 1)}$number", cell) }
-                .joinToString("", "<row r=\"$number\">", "</row>")
-        }.joinToString("")
-        val widths = sheet.headers.indices.joinToString("") { index ->
+        writer.write(XML + """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>""")
+        sheet.headers.indices.forEach { index ->
             val width = when (index) { 0 -> 18; 2 -> 26; else -> 16 }
-            "<col min=\"${index + 1}\" max=\"${index + 1}\" width=\"$width\" customWidth=\"1\"/>"
+            writer.write("<col min=\"${index + 1}\" max=\"${index + 1}\" width=\"$width\" customWidth=\"1\"/>")
         }
-        return XML + """<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
-            <sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>
-            <cols>$widths</cols><sheetData>$xmlRows</sheetData>
-            <autoFilter ref="A1:$lastColumn${rows.size.coerceAtLeast(1)}"/>
-        </worksheet>""".trimIndent()
+        writer.write("</cols><sheetData>")
+        fun row(number: Int, cells: List<Cell>) {
+            writer.write("<row r=\"$number\">")
+            cells.forEachIndexed { index, cell -> writer.write(cellXml("${columnName(index + 1)}$number", cell)) }
+            writer.write("</row>")
+        }
+        row(1, sheet.headers.map { Cell.Header(it) })
+        var lastRow = 1
+        sheet.rows.forEach { cells -> lastRow++; row(lastRow, cells) }
+        writer.write("</sheetData><autoFilter ref=\"A1:$lastColumn$lastRow\"/></worksheet>")
     }
 
     private fun cellXml(reference: String, cell: Cell): String = when (cell) {
@@ -126,9 +135,9 @@ class FormattedXlsxExporter {
         return result
     }
 
-    private fun escape(value: String) = value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+    private fun escape(value: String) = value.filter { it == '\t' || it == '\n' || it == '\r' || it.code >= 0x20 }.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
-    private data class Sheet(val name: String, val headers: List<String>, val rows: List<List<Cell>>)
+    private data class Sheet(val name: String, val headers: List<String>, val rows: Sequence<List<Cell>>)
     private sealed interface Cell {
         data class Header(val value: String) : Cell
         data class Text(val value: String) : Cell

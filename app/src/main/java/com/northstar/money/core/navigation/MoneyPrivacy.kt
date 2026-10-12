@@ -6,6 +6,10 @@ import androidx.compose.ui.res.stringResource
 import com.northstar.money.R
 import com.northstar.money.domain.model.Money
 
+internal val LocalAppUnlocked = staticCompositionLocalOf { true }
+
+internal val LocalSavingState = staticCompositionLocalOf { false }
+
 internal val LocalMoneyValuesHidden = staticCompositionLocalOf { false }
 
 internal fun moneyDisplayValue(hidden: Boolean, formattedValue: String, hiddenValue: String): String =
@@ -14,6 +18,6 @@ internal fun moneyDisplayValue(hidden: Boolean, formattedValue: String, hiddenVa
 @Composable
 internal fun Money.displayValue(): String = moneyDisplayValue(
     hidden = LocalMoneyValuesHidden.current,
-    formattedValue = formatted(),
+    formattedValue = formatted(androidx.compose.ui.platform.LocalConfiguration.current.locales[0]),
     hiddenValue = stringResource(R.string.money_hidden_value),
 )

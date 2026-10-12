@@ -48,6 +48,17 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import com.northstar.money.core.database.AccountExchangeRateEntity
+import com.northstar.money.core.database.ReceiptMetadataRow
+import com.northstar.money.domain.model.nextOccurrence
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -61,8 +72,10 @@ class OfflineFinanceRepository(
     private val receiptOcrEngine: ReceiptOcrEngine = ReceiptOcrEngine(),
     private val historicalRateProvider: HistoricalRateProvider = HistoricalRateClient(),
     private val baseCurrencyCode: Flow<String> = flowOf(DEFAULT_BASE_CURRENCY_CODE),
+    private val scheduleRateRefresh: (() -> Unit)? = null,
 ) : FinanceRepository {
     private val restoreMutex = Mutex()
+    private val rateRefreshMutex = Mutex()
 
     override fun observeAccounts(): Flow<List<Account>> = dao.observeAccounts().map { rows ->
         rows.map {
@@ -106,6 +119,27 @@ class OfflineFinanceRepository(
             rows.map(::transactionRowToDomain)
         }
 
+    override fun observeTransactionWindow(window: com.northstar.money.domain.model.TransactionWindow): Flow<com.northstar.money.domain.model.TransactionPage> =
+        dao.observeTransactionWindow(window.startDate, window.endDate, window.categoryId, window.limit + 1).map { rows ->
+            com.northstar.money.domain.model.TransactionPage(rows.take(window.limit).map(::transactionRowToDomain), rows.size > window.limit)
+        }
+
+    override fun observeMonthSummary(monthStart: String, currency: String): Flow<FinanceSummary> = dao.observeSummary(monthStart, currency).map {
+        FinanceSummary(Money(it.balanceMinor, currency), Money(it.incomeMinor, currency), Money(it.expenseMinor, currency), it.missingConversions)
+    }
+
+    override fun observeCategorySpending(accountId: String?, currency: String): Flow<List<com.northstar.money.domain.model.CategorySpending>> =
+        dao.observeCategorySpending(accountId, currency).map { rows -> rows.map { com.northstar.money.domain.model.CategorySpending(it.categoryName, Money(it.amountMinor, currency)) } }
+
+    override fun observeMonthlyExpenses(categoryId: String, currency: String, start: String, end: String): Flow<List<com.northstar.money.domain.model.MonthlyExpense>> =
+        dao.observeMonthlyExpenses(categoryId, currency, start, end).map { rows -> rows.map { com.northstar.money.domain.model.MonthlyExpense(it.monthStart, Money(it.amountMinor, currency)) } }
+
+    override fun observeRecentTransactions(): Flow<List<TransactionItem>> = dao.observeRecentTransactions().map { rows -> rows.map(::transactionRowToDomain) }
+
+    override suspend fun requestExchangeRateRefresh() {
+        if (scheduleRateRefresh != null) scheduleRateRefresh.invoke() else refreshPendingExchangeRates()
+    }
+
     override fun observeDeletedTransactions(): Flow<List<TransactionItem>> =
         dao.observeDeletedTransactions().map { rows -> rows.map(::transactionRowToDomain) }
 
@@ -117,17 +151,23 @@ class OfflineFinanceRepository(
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun observeSummary(): Flow<FinanceSummary> {
-        val monthStart = LocalDate.now().withDayOfMonth(1).toString()
-        return baseCurrencyCode.distinctUntilChanged().flatMapLatest { currencyCode ->
-            dao.observeSummary(monthStart, currencyCode).map {
-                FinanceSummary(
-                    Money(it.balanceMinor, currencyCode),
-                    Money(it.incomeMinor, currencyCode),
-                    Money(it.expenseMinor, currencyCode),
-                )
+        return currentDates().combine(baseCurrencyCode.distinctUntilChanged()) { date, currency -> date to currency }
+            .flatMapLatest { (date, currencyCode) ->
+                dao.observeSummary(date.withDayOfMonth(1).toString(), currencyCode).map {
+                    FinanceSummary(Money(it.balanceMinor, currencyCode), Money(it.incomeMinor, currencyCode),
+                        Money(it.expenseMinor, currencyCode), it.missingConversions)
+                }
             }
-        }
     }
+
+    private fun currentDates() = kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(LocalDate.now())
+            val now = java.time.ZonedDateTime.now()
+            val next = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
+            kotlinx.coroutines.delay(java.time.Duration.between(now, next).toMillis().coerceIn(1_000L, 60_000L))
+        }
+    }.distinctUntilChanged()
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     override fun observeBudgets() = kotlinx.coroutines.flow.flow {
@@ -136,7 +176,7 @@ class OfflineFinanceRepository(
             val now = java.time.ZonedDateTime.now()
             val nextDay = now.toLocalDate().plusDays(1).atStartOfDay(now.zone)
             kotlinx.coroutines.delay(
-                java.time.Duration.between(now, nextDay).toMillis().coerceAtLeast(1_000L),
+                java.time.Duration.between(now, nextDay).toMillis().coerceIn(1_000L, 60_000L),
             )
         }
     }.distinctUntilChanged().combine(baseCurrencyCode.distinctUntilChanged()) { month, currencyCode ->
@@ -156,6 +196,7 @@ class OfflineFinanceRepository(
                 spent = Money(it.spentMinor, currencyCode),
                 allocated = Money(it.allocatedMinor, currencyCode),
                 rollover = Money(it.rolloverMinor, currencyCode),
+                missingConversions = it.missingConversions,
             )
         }
     }
@@ -234,7 +275,7 @@ class OfflineFinanceRepository(
             TransactionEntity(id, kind.name, localDate, payee.trim(), "", now, now),
             entry,
         )
-        recordHistoricalRate(id, entry, localDate)
+        requestHistoricalRate(id, entry, localDate)
     }
 
     override suspend fun deleteTransaction(id: String) {
@@ -355,7 +396,7 @@ class OfflineFinanceRepository(
             )
         }
         dao.updateTransaction(updatedTransaction, updatedEntries)
-        updatedEntries.forEach { recordHistoricalRate(transaction.id, it, localDate) }
+        updatedEntries.forEach { requestHistoricalRate(transaction.id, it, localDate) }
     }
 
     override suspend fun addReceiptAttachment(
@@ -367,7 +408,7 @@ class OfflineFinanceRepository(
         require(content.isNotEmpty() && content.size <= MAX_RECEIPT_BYTES) { "Receipt images must be 8 MB or smaller" }
         require(mimeType.startsWith("image/")) { "Only receipt images are supported" }
         val stored = dao.getTransactionForEdit(transactionId)
-        val normalizedContent = ReceiptImageNormalizer.normalize(content)
+        val normalizedContent = withContext(Dispatchers.Default) { ReceiptImageNormalizer.normalize(content) }
         val attachment = ReceiptAttachmentEntity(
             id = UUID.randomUUID().toString(),
             transactionId = transactionId,
@@ -409,33 +450,46 @@ class OfflineFinanceRepository(
         )
     }
 
-    override suspend fun refreshPendingExchangeRates(): Int {
+    override suspend fun refreshPendingExchangeRates(): Int = rateRefreshMutex.withLock {
+        val currency = baseCurrencyCode.first()
         var refreshed = 0
-        dao.getEntriesMissingExchangeRates().forEach { candidate ->
-            runCatching {
-                recordHistoricalRate(
-                    candidate.transactionId,
-                    TransactionEntryEntity(
-                        id = candidate.entryId,
-                        transactionId = candidate.transactionId,
-                        accountId = candidate.accountId,
-                        categoryId = candidate.categoryId,
-                        amountMinor = candidate.amountMinor,
-                        currencyCode = candidate.currencyCode,
-                        cleared = candidate.cleared,
-                    ),
-                    candidate.localDate,
-                )
-            }.onSuccess { refreshed++ }
+        val slots = Semaphore(4)
+        val candidates = dao.getEntriesMissingExchangeRates(currency)
+        // Limit queued coroutine objects as well as concurrent HTTP requests.
+        candidates.chunked(64).forEach { batch ->
+            val results = coroutineScope {
+                batch.map { candidate -> async {
+                    slots.withPermit {
+                        try {
+                            recordHistoricalRate(candidate.transactionId, TransactionEntryEntity(
+                                candidate.entryId, candidate.transactionId, candidate.accountId, candidate.categoryId,
+                                candidate.amountMinor, candidate.currencyCode, candidate.cleared,
+                            ), candidate.localDate)
+                        } catch (error: CancellationException) { throw error }
+                        catch (_: Exception) { false }
+                    }
+                } }.awaitAll()
+            }
+            refreshed += results.count { it }
         }
-        dao.getPendingTransactionExchangeRates().forEach { pending ->
-            runCatching {
-                val stored = dao.getTransactionForEdit(pending.transactionId)
-                val entry = stored.entries.first { it.id == pending.entryId }
-                recordHistoricalRate(pending.transactionId, entry, stored.transaction.localDate)
-            }.onSuccess { refreshed++ }
+        val storedRates = dao.getAllAccountExchangeRates().associateBy { it.accountId }
+        dao.getActiveAccountsForRates().filter { it.currencyCode != currency && it.openingBalanceMinor != 0L }.forEach { account ->
+            val existing = storedRates[account.id]
+            if (existing?.quoteCurrencyCode == currency && existing.baseCurrencyCode == account.currencyCode &&
+                existing.openingBalanceMinor == account.openingBalanceMinor) return@forEach
+            try {
+                val date = Instant.ofEpochMilli(account.createdAt).atZone(java.time.ZoneId.systemDefault()).toLocalDate().toString()
+                val quote = historicalRateProvider.getRate(account.currencyCode, currency, date)
+                if (baseCurrencyCode.first() == currency) {
+                    dao.storeOpeningRateIfUnchanged(AccountExchangeRateEntity(account.id, account.currencyCode, currency,
+                        account.openingBalanceMinor, HistoricalRateClient.convertMinor(account.openingBalanceMinor,
+                            account.currencyCode, currency, quote.rateMicros), quote.rateMicros, date))
+                    refreshed++
+                }
+            } catch (error: CancellationException) { throw error }
+            catch (_: Exception) { /* Summary exposes missing conversions; retry when online. */ }
         }
-        return refreshed
+        refreshed
     }
 
     override suspend fun createAccount(name: String, type: AccountType, openingBalance: Money) {
@@ -452,6 +506,7 @@ class OfflineFinanceRepository(
                 updatedAt = now,
             )
         )
+        scheduleRateRefresh?.invoke()
     }
 
     override suspend fun configureInitialAccount(name: String, openingBalance: Money) {
@@ -494,6 +549,7 @@ class OfflineFinanceRepository(
                 updatedAt = System.currentTimeMillis(),
             ),
         )
+        scheduleRateRefresh?.invoke()
     }
 
     override suspend fun archiveAccount(id: String) {
@@ -536,7 +592,7 @@ class OfflineFinanceRepository(
             TransactionEntity(id, TransactionKind.TRANSFER.name, localDate, "Transfer", note.trim(), now, now),
             entries,
         )
-        entries.forEach { recordHistoricalRate(id, it, localDate) }
+        entries.forEach { requestHistoricalRate(id, it, localDate) }
     }
 
     override suspend fun setTransactionCleared(id: String, cleared: Boolean) {
@@ -564,16 +620,18 @@ class OfflineFinanceRepository(
             adjustmentEntryId = UUID.randomUUID().toString(),
             completedAt = now,
         )
-        adjustmentEntry?.let { recordHistoricalRate(it.transactionId, it, date.toString()) }
+        adjustmentEntry?.let { requestHistoricalRate(it.transactionId, it, date.toString()) }
     }
 
     override suspend fun setBudget(categoryId: String, planned: Money) {
         val currencyCode = baseCurrencyCode.first()
         require(planned.currencyCode == currencyCode) { "Budgets use $currencyCode" }
+        require(planned.minor >= 0) { "Budget must not be negative" }
+        require(dao.getActiveCategoryKind(categoryId) == "EXPENSE") { "Choose an active expense category" }
         val month = LocalDate.now().withDayOfMonth(1).toString()
         dao.upsertBudget(
             com.northstar.money.core.database.BudgetAllocationEntity(
-                "$month|$categoryId", month, categoryId, planned.minor
+                "$month|$categoryId|$currencyCode", month, categoryId, planned.minor, currencyCode
             )
         )
     }
@@ -729,7 +787,7 @@ class OfflineFinanceRepository(
         require(recurring.kind == TransactionKind.INCOME || recurring.kind == TransactionKind.EXPENSE) {
             "Recurring transfers are not supported"
         }
-        require(recurring.frequency in FREQUENCIES && recurring.intervalCount > 0) {
+        require(recurring.frequency in FREQUENCIES && recurring.intervalCount in 1..1_000) {
             "Unsupported recurring frequency"
         }
         LocalDate.parse(recurring.nextLocalDate)
@@ -750,6 +808,8 @@ class OfflineFinanceRepository(
                 frequency = recurring.frequency,
                 intervalCount = recurring.intervalCount,
                 nextLocalDate = recurring.nextLocalDate,
+                anchorDay = if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).dayOfMonth else stored.anchorDay,
+                anchorMonth = if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).monthValue else stored.anchorMonth,
             ),
         )
     }
@@ -783,7 +843,7 @@ class OfflineFinanceRepository(
         dao.getDueRecurringSchedules(throughDate.toString()).forEach { initial ->
             var occurrenceDate = LocalDate.parse(initial.nextLocalDate)
             while (occurrenceDate <= throughDate && posted < MAX_RECURRING_POSTS_PER_RUN) {
-                val nextDate = nextRecurringDate(occurrenceDate, initial.frequency, initial.intervalCount)
+                val nextDate = nextOccurrence(occurrenceDate, initial.frequency, initial.intervalCount, initial.anchorDay, initial.anchorMonth)
                 val occurrenceKey = "${initial.id}:${occurrenceDate}"
                 val transactionId = UUID.nameUUIDFromBytes("transaction:$occurrenceKey".toByteArray()).toString()
                 val entryId = UUID.nameUUIDFromBytes("entry:$occurrenceKey".toByteArray()).toString()
@@ -797,7 +857,7 @@ class OfflineFinanceRepository(
                 )
                 if (!inserted) return@forEach
                 val stored = dao.getTransactionForEdit(transactionId)
-                recordHistoricalRate(transactionId, stored.entries.single(), occurrenceDate.toString())
+                requestHistoricalRate(transactionId, stored.entries.single(), occurrenceDate.toString())
                 posted += 1
                 occurrenceDate = nextDate
             }
@@ -884,9 +944,9 @@ class OfflineFinanceRepository(
         }
         val writeResult = dao.importTransactions(items)
         items.forEach { item ->
-            runCatching { dao.getTransactionForEdit(item.transaction.id) }
+            suspendResult { dao.getTransactionForEdit(item.transaction.id) }
                 .getOrNull()
-                ?.let { stored -> recordHistoricalRate(stored.transaction.id, stored.entries.single(), stored.transaction.localDate) }
+                ?.let { stored -> requestHistoricalRate(stored.transaction.id, stored.entries.single(), stored.transaction.localDate) }
         }
         return com.northstar.money.domain.model.ImportResult(
             imported = writeResult.imported,
@@ -929,7 +989,18 @@ class OfflineFinanceRepository(
     override suspend fun createFullBackup(): String = backupCodec.encode(
         snapshot = dao.exportSnapshot(),
         databaseVersion = NorthstarDatabase.VERSION,
+        baseCurrencyCode = baseCurrencyCode.first(),
     )
+
+    override suspend fun writeFullBackup(output: java.io.OutputStream, password: CharArray) {
+        val snapshot = dao.exportSnapshot()
+        val currency = baseCurrencyCode.first()
+        withContext(Dispatchers.IO) {
+            portableBackupCodec.encryptTo(output, password) { plaintext ->
+                backupCodec.encodeTo(plaintext, snapshot, NorthstarDatabase.VERSION, currency)
+            }
+        }
+    }
 
     override suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray) = restoreMutex.withLock {
         restoreFullBackupLocked(backup, recoveryPassword)
@@ -947,16 +1018,22 @@ class OfflineFinanceRepository(
         require(document.databaseVersion <= NorthstarDatabase.VERSION) {
             "Backup requires a newer Northstar Money database version"
         }
-        val snapshot = normalizeLegacyGoalSavings(document.toSnapshot())
+        val rawSnapshot = if (document.databaseVersion < 10) normalizeLegacySnapshot(document.toSnapshot()) else document.toSnapshot()
+        val snapshot = normalizeLegacyGoalSavings(if (document.databaseVersion < 10) rawSnapshot.copy(
+            budgetAllocations = rawSnapshot.budgetAllocations.map { it.copy(currencyCode = document.baseCurrencyCode ?: baseCurrencyCode.first()) },
+        ) else rawSnapshot)
         snapshotValidator.validate(snapshot)
 
         val recoveryStore = requireNotNull(restoreRecoveryStore) { "Restore recovery storage is unavailable" }
-        val recoveryDocument = backupCodec.encode(
-            snapshot = dao.exportSnapshot(),
-            databaseVersion = NorthstarDatabase.VERSION,
-        )
-        recoveryStore.save(portableBackupCodec.encrypt(recoveryDocument, recoveryPassword))
-        dao.replaceWithSnapshot(snapshot)
+        dao.replaceWithRecovery(snapshot) { previous ->
+            val currency = baseCurrencyCode.first()
+            withContext(Dispatchers.IO) {
+                recoveryStore.write { output -> portableBackupCodec.encryptTo(output, recoveryPassword) { plaintext ->
+                    backupCodec.encodeTo(plaintext, previous, NorthstarDatabase.VERSION, currency)
+                } }
+            }
+        }
+        scheduleRateRefresh?.invoke()
     }
 
     private fun normalizeLegacyGoalSavings(snapshot: DatabaseSnapshot): DatabaseSnapshot {
@@ -985,6 +1062,41 @@ class OfflineFinanceRepository(
         )
     }
 
+    private fun normalizeLegacySnapshot(snapshot: DatabaseSnapshot): DatabaseSnapshot {
+        require(snapshot.categories.size <= 10_000) { "Backup contains too many categories" }
+        val categories = snapshot.categories.associateBy { it.id }
+        val entries = snapshot.transactionEntries.associateBy { it.id }
+        val transactions = snapshot.transactions.associateBy { it.id }
+        return snapshot.copy(
+            categories = snapshot.categories.map { category ->
+                var target = category.mergedIntoCategoryId
+                val visited = mutableSetOf(category.id)
+                while (target != null) {
+                    require(visited.size < 100) { "Backup category merge chain is too long" }
+                    require(visited.add(target)) { "Backup contains a category merge cycle" }
+                    val next = requireNotNull(categories[target]) { "Backup category merge target is missing" }
+                    require(next.kind == category.kind) { "Backup category merge types differ" }
+                    if (next.mergedIntoCategoryId == null) {
+                        if (next.archivedAt != null) target = null
+                        break
+                    }
+                    target = next.mergedIntoCategoryId
+                }
+                category.copy(mergedIntoCategoryId = target)
+            },
+            transactionExchangeRates = snapshot.transactionExchangeRates.map { rate ->
+                val entry = entries[rate.entryId]
+                val transaction = entry?.let { transactions[it.transactionId] }
+                if (entry != null && transaction != null && (rate.transactionId != transaction.id ||
+                    rate.rateLocalDate != transaction.localDate || rate.baseCurrencyCode != entry.currencyCode)) {
+                    rate.copy(transactionId = transaction.id, rateLocalDate = transaction.localDate,
+                        baseCurrencyCode = entry.currencyCode, rateMicros = null, convertedAmountMinor = null,
+                        status = "PENDING", fetchedAt = null)
+                } else rate
+            },
+        )
+    }
+
     private fun transactionRowToDomain(row: com.northstar.money.core.database.TransactionRow) = TransactionItem(
         id = row.id,
         payee = row.payee,
@@ -995,9 +1107,10 @@ class OfflineFinanceRepository(
         localDate = row.localDate,
         cleared = row.cleared,
         createdAt = row.createdAt,
+        accountId = row.accountId, destinationAccountId = row.destinationAccountId, categoryId = row.categoryId,
     )
 
-    private fun receiptAttachmentToDomain(row: ReceiptAttachmentEntity) = ReceiptAttachment(
+    private fun receiptAttachmentToDomain(row: ReceiptMetadataRow) = ReceiptAttachment(
         id = row.id,
         transactionId = row.transactionId,
         originalName = row.originalName,
@@ -1027,7 +1140,7 @@ class OfflineFinanceRepository(
 
     private suspend fun processReceiptOcr(attachment: ReceiptAttachmentEntity, currencyCode: String) {
         dao.updateReceiptAttachment(attachment.copy(ocrStatus = "PROCESSING"))
-        runCatching { receiptOcrEngine.recognize(attachment.content, currencyCode) }
+        suspendResult { receiptOcrEngine.recognize(attachment.content, currencyCode) }
             .onSuccess { parsed ->
                 dao.updateReceiptAttachment(
                     attachment.copy(
@@ -1045,83 +1158,40 @@ class OfflineFinanceRepository(
             }
     }
 
-    private suspend fun recordHistoricalRate(
-        transactionId: String,
-        entry: TransactionEntryEntity,
-        localDate: String,
-    ) {
-        val existing = dao.getTransactionExchangeRate(entry.id)
-        val quoteCurrencyCode = baseCurrencyCode.first()
-        if (
-            existing?.status == "AVAILABLE" && existing.rateMicros != null &&
-            existing.baseCurrencyCode == entry.currencyCode &&
-            existing.quoteCurrencyCode == quoteCurrencyCode &&
-            existing.rateLocalDate == localDate
-        ) {
-            dao.upsertTransactionExchangeRate(
-                existing.copy(
-                    transactionId = transactionId,
-                    convertedAmountMinor = HistoricalRateClient.convertMinor(
-                        entry.amountMinor,
-                        entry.currencyCode,
-                        quoteCurrencyCode,
-                        existing.rateMicros,
-                    ),
-                ),
-            )
-            return
-        }
-        val pending = TransactionExchangeRateEntity(
-            id = "rate-${entry.id}",
-            transactionId = transactionId,
-            entryId = entry.id,
-            baseCurrencyCode = entry.currencyCode,
-            quoteCurrencyCode = quoteCurrencyCode,
-            rateMicros = null,
-            convertedAmountMinor = null,
-            rateLocalDate = localDate,
-            source = HistoricalRateClient.SOURCE,
-            status = "PENDING",
-            fetchedAt = null,
-        )
-        runCatching {
-            historicalRateProvider.getRate(entry.currencyCode, pending.quoteCurrencyCode, localDate)
-        }.onSuccess { quote ->
-            dao.upsertTransactionExchangeRate(
-                pending.copy(
-                    rateMicros = quote.rateMicros,
-                    convertedAmountMinor = HistoricalRateClient.convertMinor(
-                        entry.amountMinor,
-                        entry.currencyCode,
-                        pending.quoteCurrencyCode,
-                        quote.rateMicros,
-                    ),
-                    rateLocalDate = localDate,
-                    source = if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
-                    status = "AVAILABLE",
-                    fetchedAt = System.currentTimeMillis(),
-                ),
-            )
-        }.onFailure {
-            if (existing?.status == "AVAILABLE" && existing.rateMicros != null &&
-                existing.baseCurrencyCode == entry.currencyCode && existing.quoteCurrencyCode == quoteCurrencyCode
-            ) {
-                dao.upsertTransactionExchangeRate(
-                    existing.copy(
-                        transactionId = transactionId,
-                        convertedAmountMinor = HistoricalRateClient.convertMinor(
-                            entry.amountMinor,
-                            entry.currencyCode,
-                            quoteCurrencyCode,
-                            existing.rateMicros,
-                        ),
-                    ),
-                )
-            } else {
-                dao.upsertTransactionExchangeRate(pending)
-            }
-        }
+    private suspend fun requestHistoricalRate(transactionId: String, entry: TransactionEntryEntity, localDate: String) {
+        if (scheduleRateRefresh != null) scheduleRateRefresh.invoke()
+        else recordHistoricalRate(transactionId, entry, localDate)
     }
+
+    private suspend fun recordHistoricalRate(transactionId: String, entry: TransactionEntryEntity, localDate: String): Boolean {
+        val currency = baseCurrencyCode.first()
+        val existing = dao.getTransactionExchangeRate(entry.id)
+        val pending = TransactionExchangeRateEntity("rate-${entry.id}", transactionId, entry.id,
+            entry.currencyCode, currency, null, null, localDate, HistoricalRateClient.SOURCE, "PENDING", null)
+        val result = suspendResult {
+            val quote = if (existing?.status == "AVAILABLE" && existing.rateMicros != null &&
+                existing.baseCurrencyCode == entry.currencyCode && existing.quoteCurrencyCode == currency &&
+                existing.rateLocalDate == localDate) {
+                com.northstar.money.data.exchange.RateQuote(localDate, existing.rateMicros, existing.source)
+            } else historicalRateProvider.getRate(entry.currencyCode, currency, localDate)
+            pending.copy(rateMicros = quote.rateMicros, convertedAmountMinor = HistoricalRateClient.convertMinor(
+                entry.amountMinor, entry.currencyCode, currency, quote.rateMicros),
+                source = if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
+                status = "AVAILABLE", fetchedAt = System.currentTimeMillis())
+        }
+        if (baseCurrencyCode.first() != currency) return false
+        val rate = result.getOrElse {
+            // A rate for a different date is an estimate, not the transaction's historical rate.
+            pending
+        }
+        val stored = dao.storeRateIfUnchanged(rate, entry, localDate)
+        return stored && rate.status == "AVAILABLE"
+    }
+
+    private suspend fun <T> suspendResult(operation: suspend () -> T): Result<T> = try {
+        Result.success(operation())
+    } catch (error: CancellationException) { throw error }
+    catch (error: Exception) { Result.failure(error) }
 
     private fun recurringToDomain(row: com.northstar.money.core.database.RecurringScheduleEntity) =
         com.northstar.money.domain.model.RecurringItem(
@@ -1131,7 +1201,7 @@ class OfflineFinanceRepository(
             Money(row.amountMinor, row.currencyCode),
             row.nextLocalDate,
             row.frequency,
-            row.intervalCount,
+            row.intervalCount, row.anchorDay, row.anchorMonth,
         )
 
     private fun goalContributionToDomain(row: com.northstar.money.core.database.GoalContributionRow) =

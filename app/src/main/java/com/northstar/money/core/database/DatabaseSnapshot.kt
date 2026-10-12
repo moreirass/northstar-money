@@ -2,6 +2,7 @@ package com.northstar.money.core.database
 
 data class DatabaseSnapshot(
     val accounts: List<AccountEntity>,
+    val accountExchangeRates: List<AccountExchangeRateEntity> = emptyList(),
     val categories: List<CategoryEntity>,
     val transactions: List<TransactionEntity>,
     val transactionEntries: List<TransactionEntryEntity>,

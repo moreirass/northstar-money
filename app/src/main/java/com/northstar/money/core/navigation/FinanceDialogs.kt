@@ -1,5 +1,8 @@
 package com.northstar.money.core.navigation
 
+import com.northstar.money.data.importing.readBounded
+import com.northstar.money.data.importing.ImportLimits
+
 import com.northstar.money.R
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -104,7 +107,7 @@ internal fun BackupPasswordDialog(
         com.northstar.money.data.backup.PortableBackupCodec.MIN_PASSWORD_LENGTH..
             com.northstar.money.data.backup.PortableBackupCodec.MAX_PASSWORD_LENGTH
     val passwordsMatch = !requireConfirmation || password == confirmation
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -132,7 +135,7 @@ internal fun BackupPasswordDialog(
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(password.toCharArray()) },
-                enabled = lengthIsValid && passwordsMatch,
+                enabled = !LocalSavingState.current && lengthIsValid && passwordsMatch,
             ) { Text(confirmLabel) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -143,7 +146,7 @@ internal fun BackupPasswordDialog(
 internal fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind) -> Unit) {
     var name by remember { mutableStateOf("") }
     var kind by remember { mutableStateOf(CategoryKind.EXPENSE) }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_new_category)) },
         text = {
@@ -157,7 +160,7 @@ internal fun CategoryDialog(onDismiss: () -> Unit, onSave: (String, CategoryKind
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name, kind) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.ui_create)) }
+            TextButton(onClick = { onSave(name, kind) }, enabled = !LocalSavingState.current && name.isNotBlank()) { Text(stringResource(R.string.ui_create)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
@@ -170,7 +173,7 @@ internal fun RenameCategoryDialog(
     onSave: (String) -> Unit,
 ) {
     var name by remember(currentName) { mutableStateOf(currentName) }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_rename_category)) },
         text = {
@@ -182,7 +185,7 @@ internal fun RenameCategoryDialog(
             )
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name) }, enabled = name.isNotBlank()) { Text(stringResource(R.string.ui_rename)) }
+            TextButton(onClick = { onSave(name) }, enabled = !LocalSavingState.current && name.isNotBlank()) { Text(stringResource(R.string.ui_rename)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
     )
@@ -196,7 +199,7 @@ internal fun MergeCategoryDialog(
     onMerge: (String) -> Unit,
 ) {
     var targetId by remember(targets) { mutableStateOf(targets.firstOrNull()?.id) }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.dialog_merge_named, sourceName)) },
         text = {
@@ -217,7 +220,7 @@ internal fun MergeCategoryDialog(
         confirmButton = {
             TextButton(
                 onClick = { targetId?.let(onMerge) },
-                enabled = targetId != null,
+                enabled = !LocalSavingState.current && targetId != null,
             ) { Text(stringResource(R.string.ui_merge)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -237,20 +240,32 @@ internal fun EditTransactionDialog(
 ) {
     val context = LocalContext.current
     val receipts = state.receiptAttachments.filter { it.transactionId == transaction.id }
+    val receiptFailureMessage = stringResource(R.string.operation_failed_generic)
+    val receiptScope = rememberCoroutineScope()
     var cameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    fun attachReceipt(name: String, type: String, open: () -> java.io.InputStream, cleanup: () -> Unit = {}) {
+        receiptScope.launch {
+            try {
+                runSuspendCatching {
+                    val bytes = withContext(Dispatchers.IO) { open().use { it.readBounded(ImportLimits.RECEIPT_BYTES) } }
+                    onAttachReceipt(name, type, bytes)
+                }.onFailure {
+                    android.widget.Toast.makeText(context, receiptFailureMessage, android.widget.Toast.LENGTH_LONG).show()
+                }
+            } finally { withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { cleanup() } }
+        }
+    }
     val receiptPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) {
             val type = context.contentResolver.getType(uri) ?: "image/jpeg"
             val name = uri.lastPathSegment?.substringAfterLast('/') ?: "receipt"
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                onAttachReceipt(name, type, input.readBytes())
-            }
+            attachReceipt(name, type, { requireNotNull(context.contentResolver.openInputStream(uri)) })
         }
     }
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { saved ->
         cameraFile?.let { file ->
-            if (saved && file.exists()) onAttachReceipt(file.name, "image/jpeg", file.readBytes())
-            file.delete()
+            if (saved && file.exists()) attachReceipt(file.name, "image/jpeg", { file.inputStream() }, { file.delete() })
+            else file.delete()
         }
         cameraFile = null
     }
@@ -287,7 +302,7 @@ internal fun EditTransactionDialog(
             categoryId != null && categories.any { it.id == categoryId }
         }
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.dialog_edit_kind, transaction.kind.name.lowercase())) },
         text = {
@@ -426,7 +441,7 @@ internal fun EditTransactionDialog(
                         ),
                     )
                 },
-                enabled = valid,
+                enabled = !LocalSavingState.current && valid,
             ) { Text(stringResource(R.string.ui_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -461,7 +476,7 @@ internal fun EditRecurringDialog(
         runCatching { java.time.LocalDate.parse(nextDate) }.isSuccess &&
         accounts.any { it.id == accountId } && categories.any { it.id == categoryId }
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_edit_recurrence)) },
         text = {
@@ -546,7 +561,7 @@ internal fun EditRecurringDialog(
                         ),
                     )
                 },
-                enabled = valid,
+                enabled = !LocalSavingState.current && valid,
             ) { Text(stringResource(R.string.ui_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -573,7 +588,7 @@ internal fun RecurringDialog(
     val parsedAmount = runCatching {
         Money.parseMajor(amount, account?.currencyCode ?: "EUR")
     }.getOrNull()
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_recurring_transaction)) },
         text = {
@@ -627,7 +642,7 @@ internal fun RecurringDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(name, kind, amount, account!!.id, categoryId, frequency, date) },
-                enabled = name.isNotBlank() && account != null && categories.any { it.id == categoryId } &&
+                enabled = !LocalSavingState.current && name.isNotBlank() && account != null && categories.any { it.id == categoryId } &&
                     parsedAmount?.minor?.let { it > 0 } == true &&
                     runCatching { java.time.LocalDate.parse(date) }.isSuccess,
             ) { Text(stringResource(R.string.ui_create)) }
@@ -651,7 +666,7 @@ internal fun DebtDialog(
     val parsedPayment = runCatching {
         Money.parseMajor(payment, account?.currencyCode ?: "EUR")
     }.getOrNull()
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_debt_profile)) },
         text = {
@@ -683,7 +698,7 @@ internal fun DebtDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(account!!.id, rate, payment, dueDay) },
-                enabled = account != null && rate.toBigDecimalOrNull() != null &&
+                enabled = !LocalSavingState.current && account != null && rate.toBigDecimalOrNull() != null &&
                     parsedPayment?.minor?.let { it >= 0 } == true &&
                     dueDay.toIntOrNull() in 1..31,
             ) { Text(stringResource(R.string.ui_save)) }
@@ -715,7 +730,7 @@ internal fun EditDebtDialog(
     }.getOrNull()
     val parsedDueDay = dueDay.toIntOrNull()
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_edit_debt_profile)) },
         text = {
@@ -755,7 +770,7 @@ internal fun EditDebtDialog(
                         ),
                     )
                 },
-                enabled = basisPoints?.let { it >= 0 } == true &&
+                enabled = !LocalSavingState.current && basisPoints?.let { it >= 0 } == true &&
                     parsedPayment?.minor?.let { it >= 0 } == true && parsedDueDay in 1..31,
             ) { Text(stringResource(R.string.ui_save)) }
         },
@@ -764,9 +779,9 @@ internal fun EditDebtDialog(
 }
 
 @Composable
-internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit, currencyCode: String = "EUR") {
     var amount by remember { mutableStateOf(initial) }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -778,7 +793,7 @@ internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit,
         confirmButton = {
             TextButton(
                 onClick = { onSave(amount) },
-                enabled = runCatching { Money.parseMajor(amount).minor >= 0 }.getOrDefault(false),
+                enabled = !LocalSavingState.current && runCatching { Money.parseMajor(amount, currencyCode).minor >= 0 }.getOrDefault(false),
             ) { Text(stringResource(R.string.ui_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -786,12 +801,12 @@ internal fun AmountDialog(title: String, initial: String, onDismiss: () -> Unit,
 }
 
 @Composable
-internal fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, String?) -> Unit) {
+internal fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, String?) -> Unit, currencyCode: String = "EUR") {
     var name by remember { mutableStateOf("") }
     var target by remember { mutableStateOf("") }
     var saved by remember { mutableStateOf("0") }
     var date by remember { mutableStateOf("") }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_new_savings_goal)) },
         text = {
@@ -805,9 +820,9 @@ internal fun GoalDialog(onDismiss: () -> Unit, onSave: (String, String, String, 
         confirmButton = {
             TextButton(
                 onClick = { onSave(name, target, saved, date.ifBlank { null }) },
-                enabled = name.isNotBlank() &&
-                    runCatching { Money.parseMajor(target).minor > 0 }.getOrDefault(false) &&
-                    runCatching { Money.parseMajor(saved).minor >= 0 }.getOrDefault(false) &&
+                enabled = !LocalSavingState.current && name.isNotBlank() &&
+                    runCatching { Money.parseMajor(target, currencyCode).minor > 0 }.getOrDefault(false) &&
+                    runCatching { Money.parseMajor(saved, currencyCode).minor >= 0 }.getOrDefault(false) &&
                     (date.isBlank() || runCatching { java.time.LocalDate.parse(date) }.isSuccess),
             ) { Text(stringResource(R.string.ui_create)) }
         },
@@ -831,7 +846,7 @@ internal fun EditGoalDialog(
     val parsedTarget = runCatching { Money.parseMajor(target, goal.target.currencyCode) }.getOrNull()
     val validDate = date.isBlank() || runCatching { java.time.LocalDate.parse(date) }.isSuccess
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_edit_savings_goal)) },
         text = {
@@ -880,7 +895,7 @@ internal fun EditGoalDialog(
                         ),
                     )
                 },
-                enabled = name.isNotBlank() && parsedTarget?.minor?.let { it > 0 } == true && validDate,
+                enabled = !LocalSavingState.current && name.isNotBlank() && parsedTarget?.minor?.let { it > 0 } == true && validDate,
             ) { Text(stringResource(R.string.ui_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -899,7 +914,7 @@ internal fun AddGoalContributionDialog(
     val parsedAmount = runCatching { Money.parseMajor(amount, goal.target.currencyCode) }.getOrNull()
     val validDate = runCatching { java.time.LocalDate.parse(date) }.isSuccess
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_add_contribution)) },
         text = {
@@ -919,7 +934,7 @@ internal fun AddGoalContributionDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(amount, date.trim(), note.trim()) },
-                enabled = parsedAmount?.minor?.let { it > 0 } == true && validDate && note.length <= 500,
+                enabled = !LocalSavingState.current && parsedAmount?.minor?.let { it > 0 } == true && validDate && note.length <= 500,
             ) { Text(stringResource(R.string.ui_add)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -946,7 +961,7 @@ internal fun GoalContributionDialog(
     val parsedAmount = runCatching { Money.parseMajor(amount, contribution.amount.currencyCode) }.getOrNull()
     val validDate = runCatching { java.time.LocalDate.parse(date) }.isSuccess
 
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
@@ -987,7 +1002,7 @@ internal fun GoalContributionDialog(
                         ),
                     )
                 },
-                enabled = selectedGoal != null && parsedAmount?.minor?.let { it > 0 } == true &&
+                enabled = !LocalSavingState.current && selectedGoal != null && parsedAmount?.minor?.let { it > 0 } == true &&
                     validDate && note.length <= 500,
             ) { Text(stringResource(R.string.ui_save)) }
         },
@@ -1026,7 +1041,7 @@ internal fun AddTransactionSheet(
         Money.parseMajor(effectiveDestinationAmount, destinationAccount?.currencyCode ?: "EUR").minor > 0
     }.getOrDefault(false)
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    if (LocalAppUnlocked.current) ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp).padding(bottom = 32.dp),
@@ -1118,7 +1133,7 @@ internal fun AddTransactionSheet(
                         payee,
                     )
                 },
-                enabled = validAmount && sourceAccountId.isNotBlank() &&
+                enabled = !LocalSavingState.current && validAmount && sourceAccountId.isNotBlank() &&
                     if (kind == TransactionKind.TRANSFER) {
                         destinationAccountId.isNotBlank() && validDestinationAmount
                     }
@@ -1146,7 +1161,7 @@ internal fun EditAccountDialog(
     val parsedBalance = runCatching {
         Money.parseMajor(openingBalance, account.openingBalance.currencyCode)
     }.getOrNull()
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_edit_account)) },
         text = {
@@ -1182,7 +1197,7 @@ internal fun EditAccountDialog(
                         ),
                     )
                 },
-                enabled = name.isNotBlank() && parsedBalance != null,
+                enabled = !LocalSavingState.current && name.isNotBlank() && parsedBalance != null,
             ) { Text(stringResource(R.string.ui_save)) }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.ui_cancel)) } },
@@ -1199,8 +1214,8 @@ internal fun AccountDialog(
     var type by remember { mutableStateOf(AccountType.CHECKING) }
     var currencyCode by remember { mutableStateOf("EUR") }
     val normalizedCurrency = currencyCode.trim().uppercase()
-    val validCurrency = runCatching { java.util.Currency.getInstance(normalizedCurrency) }.isSuccess
-    AlertDialog(
+    val validCurrency = com.northstar.money.domain.model.validCurrency(normalizedCurrency)
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.ui_new_account)) },
         text = {
@@ -1230,7 +1245,7 @@ internal fun AccountDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(name, type, opening, normalizedCurrency) },
-                enabled = name.isNotBlank() && validCurrency &&
+                enabled = !LocalSavingState.current && name.isNotBlank() && validCurrency &&
                     runCatching { Money.parseMajor(opening, normalizedCurrency) }.isSuccess,
             ) { Text(stringResource(R.string.ui_create)) }
         },
@@ -1249,7 +1264,7 @@ internal fun ReconcileDialog(
     var statement by remember { mutableStateOf("") }
     var statementDate by remember { mutableStateOf(java.time.LocalDate.now().toString()) }
     var adjustment by remember { mutableStateOf(true) }
-    AlertDialog(
+    if (LocalAppUnlocked.current) AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.dialog_reconcile_named, accountName)) },
         text = {
@@ -1279,7 +1294,7 @@ internal fun ReconcileDialog(
         confirmButton = {
             TextButton(
                 onClick = { onSave(statementDate, statement, adjustment) },
-                enabled = runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess &&
+                enabled = !LocalSavingState.current && runCatching { Money.parseMajor(statement, currentBalance.currencyCode) }.isSuccess &&
                     runCatching { java.time.LocalDate.parse(statementDate) }.getOrNull()
                         ?.let { !it.isAfter(java.time.LocalDate.now()) } == true,
             ) { Text(stringResource(R.string.ui_reconcile)) }

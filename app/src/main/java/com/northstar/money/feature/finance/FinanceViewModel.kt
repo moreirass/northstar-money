@@ -33,6 +33,8 @@ import com.northstar.money.domain.repository.FinanceRepository
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -48,6 +50,14 @@ import com.northstar.money.R
 
 data class FinanceUiState(
     val isLoading: Boolean = false,
+    val asOfLocalDate: String = LocalDate.now().toString(),
+    val isSaving: Boolean = false,
+    val hasMoreTransactions: Boolean = false,
+    val selectedMonthSummary: FinanceSummary? = null,
+    val categorySpending: List<com.northstar.money.domain.model.CategorySpending> = emptyList(),
+    val categorySpendingLoaded: Boolean = false,
+    val budgetMonthlyExpenses: List<com.northstar.money.domain.model.MonthlyExpense>? = null,
+    val selectedMonthStart: String? = null,
     val loadFailed: Boolean = false,
     val accounts: List<Account> = emptyList(),
     val archivedAccounts: List<Account> = emptyList(),
@@ -88,31 +98,60 @@ private data class GoalUiState(
 )
 
 private data class AuxiliaryUiState(
+    val isSaving: Boolean,
     val importSummary: CsvImportSummary?,
     val settings: AppSettings,
     val receiptAttachments: List<ReceiptAttachment>,
     val historicalExchangeRates: List<HistoricalExchangeRate>,
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class FinanceViewModel(
     private val repository: FinanceRepository,
     private val preferences: UserPreferences,
 ) : ViewModel() {
+    private val savingOperations = MutableStateFlow(0)
     private val importSummary = kotlinx.coroutines.flow.MutableStateFlow<CsvImportSummary?>(null)
     private val eventChannel = Channel<FinanceUiEvent>(Channel.BUFFERED)
     val events: Flow<FinanceUiEvent> = eventChannel.receiveAsFlow()
+    private val recoveryVisible = MutableStateFlow(false)
+    fun setRecoveryVisible(visible: Boolean) { recoveryVisible.value = visible }
+    private val transactionWindow = MutableStateFlow(com.northstar.money.domain.model.TransactionWindow())
+    private val selectedAccountId = MutableStateFlow<String?>(null)
+    private val transactionPages = transactionWindow.flatMapLatest(repository::observeTransactionWindow)
+    private val selectedMonthSummary = combine(transactionWindow, preferences.settings) { window, settings ->
+        (window.startDate ?: LocalDate.now().withDayOfMonth(1).toString()) to settings.baseCurrencyCode
+    }.flatMapLatest { (month, currency) -> repository.observeMonthSummary(month, currency).map { month to it } }
+    private val categorySpending = combine(selectedAccountId, preferences.settings, repository.observeAccounts()) { id, settings, accounts ->
+        id to (accounts.firstOrNull { it.id == id }?.currencyCode ?: settings.baseCurrencyCode)
+    }.flatMapLatest { (id, currency) -> repository.observeCategorySpending(id, currency) }
+
+    fun showRecentTransactions() { transactionWindow.value = com.northstar.money.domain.model.TransactionWindow() }
+    fun showTransactionMonth(month: String) {
+        val start = java.time.YearMonth.parse(month).atDay(1)
+        transactionWindow.value = com.northstar.money.domain.model.TransactionWindow(start.toString(), start.plusMonths(1).toString())
+    }
+    fun showBudgetTransactions(categoryId: String) {
+        val month = LocalDate.now().withDayOfMonth(1)
+        transactionWindow.value = com.northstar.money.domain.model.TransactionWindow(month.minusMonths(5).toString(), month.plusMonths(1).toString(), categoryId)
+    }
+    fun loadMoreTransactions() { transactionWindow.value = transactionWindow.value.copy(limit = transactionWindow.value.limit + 200) }
+    fun selectHomeAccount(id: String?) { selectedAccountId.value = id }
+    suspend fun allTransactions() = repository.allTransactions()
+
     private val coreState = combine(
         repository.observeAccounts(),
         repository.observeCategories(),
-        repository.observeTransactions(),
+        transactionPages,
         repository.observeSummary(),
-        repository.observeArchivedAccounts(),
+        recoveryVisible.flatMapLatest { if (it) repository.observeArchivedAccounts() else kotlinx.coroutines.flow.flowOf(emptyList()) },
     ) { accounts, categories, transactions, summary, archivedAccounts ->
         FinanceUiState(
             accounts = accounts,
             archivedAccounts = archivedAccounts,
             categories = categories,
-            transactions = transactions,
+            transactions = transactions.items,
+            hasMoreTransactions = transactions.hasMore,
             summary = summary,
         )
     }
@@ -120,15 +159,15 @@ class FinanceViewModel(
     private val goalState = combine(
         repository.observeGoals(),
         repository.observeGoalContributions(),
-        repository.observeDeletedGoalContributions(),
+        recoveryVisible.flatMapLatest { if (it) repository.observeDeletedGoalContributions() else kotlinx.coroutines.flow.flowOf(emptyList()) },
     ) { goals, contributions, deleted -> GoalUiState(goals, contributions, deleted) }
 
     private val planningState = combine(
         coreState,
         repository.observeBudgets(),
         goalState,
-        repository.observeDeletedTransactions(),
-        repository.observeArchivedCategories(),
+        recoveryVisible.flatMapLatest { if (it) repository.observeDeletedTransactions() else kotlinx.coroutines.flow.flowOf(emptyList()) },
+        recoveryVisible.flatMapLatest { if (it) repository.observeArchivedCategories() else kotlinx.coroutines.flow.flowOf(emptyList()) },
     ) { core, budgets, goalState, deletedTransactions, archivedCategories ->
         core.copy(
             budgets = budgets,
@@ -142,19 +181,31 @@ class FinanceViewModel(
 
     private val recurringState = combine(
         repository.observeRecurring(),
-        repository.observePausedRecurring(),
-        repository.observeDeletedRecurring(),
+        recoveryVisible.flatMapLatest { if (it) repository.observePausedRecurring() else kotlinx.coroutines.flow.flowOf(emptyList()) },
+        recoveryVisible.flatMapLatest { if (it) repository.observeDeletedRecurring() else kotlinx.coroutines.flow.flowOf(emptyList()) },
     ) { active, paused, deleted -> RecurringUiState(active, paused, deleted) }
 
     private val auxiliaryState = combine(
+        savingOperations,
         importSummary,
         preferences.settings,
         repository.observeReceiptAttachments(),
         repository.observeHistoricalExchangeRates(),
-    ) { summary, settings, receipts, rates -> AuxiliaryUiState(summary, settings, receipts, rates) }
+    ) { saving, summary, settings, receipts, rates -> AuxiliaryUiState(saving > 0, summary, settings, receipts, rates) }
+
+    private val budgetMonthlyExpenses = combine(transactionWindow, preferences.settings) { window, settings -> window to settings.baseCurrencyCode }
+        .flatMapLatest { (window, currency) ->
+            if (window.categoryId != null && window.startDate != null && window.endDate != null)
+                repository.observeMonthlyExpenses(window.categoryId, currency, window.startDate, window.endDate)
+            else kotlinx.coroutines.flow.flowOf(emptyList())
+        }
+    private val dashboardState = combine(planningState, selectedMonthSummary, categorySpending, budgetMonthlyExpenses) { state, monthly, spending, expenses ->
+        state.copy(selectedMonthSummary = monthly.second, selectedMonthStart = monthly.first,
+            categorySpending = spending, categorySpendingLoaded = true, budgetMonthlyExpenses = expenses)
+    }
 
     private val loadedState: Flow<FinanceUiState> = combine(
-        planningState,
+        dashboardState,
         recurringState,
         repository.observeDebts(),
         auxiliaryState,
@@ -164,7 +215,8 @@ class FinanceViewModel(
             pausedRecurring = recurringState.paused,
             deletedRecurring = recurringState.deleted,
             debts = debts,
-            forecast = calculateForecast(state.summary.balance, recurringState.active),
+            forecast = calculateForecast(state.summary.balance, recurringState.active, rates = auxiliary.historicalExchangeRates),
+            isSaving = auxiliary.isSaving,
             importSummary = auxiliary.importSummary,
             settings = auxiliary.settings,
             receiptAttachments = auxiliary.receiptAttachments,
@@ -188,7 +240,7 @@ class FinanceViewModel(
     init {
         launchOperation {
             repository.seedIfEmpty()
-            repository.refreshPendingExchangeRates()
+            repository.requestExchangeRateRefresh()
         }
     }
 
@@ -198,8 +250,9 @@ class FinanceViewModel(
         accountId: String,
         categoryId: String,
         payee: String,
+        onSuccess: (() -> Unit)? = null,
     ) {
-        launchOperation {
+        launchOperation(onSuccess) {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Transaction account is missing or archived"
             }.currencyCode
@@ -219,8 +272,8 @@ class FinanceViewModel(
 
     suspend fun getTransactionForEdit(id: String): EditableTransaction = repository.getTransactionForEdit(id)
 
-    fun updateTransaction(transaction: EditableTransaction) {
-        launchOperation { repository.updateTransaction(transaction) }
+    fun updateTransaction(transaction: EditableTransaction, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateTransaction(transaction) }
     }
 
     fun addReceiptAttachment(transactionId: String, originalName: String, mimeType: String, content: ByteArray) {
@@ -240,7 +293,7 @@ class FinanceViewModel(
     }
 
     fun refreshExchangeRates() {
-        launchOperation { repository.refreshPendingExchangeRates() }
+        launchOperation { repository.requestExchangeRateRefresh() }
     }
 
     fun setTransactionCleared(id: String, cleared: Boolean) {
@@ -249,8 +302,8 @@ class FinanceViewModel(
         }
     }
 
-    fun createAccount(name: String, type: AccountType, openingBalance: String, currencyCode: String) {
-        launchOperation {
+    fun createAccount(name: String, type: AccountType, openingBalance: String, currencyCode: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
             repository.createAccount(
                 name,
                 type,
@@ -259,19 +312,19 @@ class FinanceViewModel(
         }
     }
 
-    fun configureInitialAccount(name: String, openingBalance: String) {
-        launchOperation {
+    fun configureInitialAccount(name: String, openingBalance: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
             repository.configureInitialAccount(
                 name = name,
-                openingBalance = Money.parseMajor(openingBalance, uiState.value.settings.baseCurrencyCode),
+                openingBalance = Money.parseMajor(openingBalance, preferences.settings.first().baseCurrencyCode),
             )
         }
     }
 
     suspend fun getAccountForEdit(id: String): EditableAccount = repository.getAccountForEdit(id)
 
-    fun updateAccount(account: EditableAccount) {
-        launchOperation { repository.updateAccount(account) }
+    fun updateAccount(account: EditableAccount, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateAccount(account) }
     }
 
     fun archiveAccount(id: String) {
@@ -288,8 +341,9 @@ class FinanceViewModel(
         sourceId: String,
         destinationId: String,
         note: String,
+        onSuccess: (() -> Unit)? = null,
     ) {
-        launchOperation {
+        launchOperation(onSuccess) {
             val sourceCurrency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == sourceId }) {
                 "Transfer source account is missing or archived"
             }.currencyCode
@@ -311,8 +365,9 @@ class FinanceViewModel(
         statementLocalDate: String,
         statementBalance: String,
         createAdjustment: Boolean,
+        onSuccess: (() -> Unit)? = null,
     ) {
-        launchOperation {
+        launchOperation(onSuccess) {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Reconciliation account is missing or archived"
             }.currencyCode
@@ -325,26 +380,26 @@ class FinanceViewModel(
         }
     }
 
-    fun setBudget(categoryId: String, planned: String) {
-        launchOperation {
+    fun setBudget(categoryId: String, planned: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
             repository.setBudget(categoryId, Money.parseMajor(planned, uiState.value.settings.baseCurrencyCode))
         }
     }
 
-    fun createGoal(name: String, target: String, saved: String, targetDate: String?) {
-        launchOperation {
-            repository.createGoal(name, Money.parseMajor(target), Money.parseMajor(saved.ifBlank { "0" }), targetDate)
+    fun createGoal(name: String, target: String, saved: String, targetDate: String?, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
+            repository.createGoal(name, Money.parseMajor(target, uiState.value.settings.baseCurrencyCode), Money.parseMajor(saved.ifBlank { "0" }, uiState.value.settings.baseCurrencyCode), targetDate)
         }
     }
 
     suspend fun getGoalForEdit(id: String): EditableGoal = repository.getGoalForEdit(id)
 
-    fun updateGoal(goal: EditableGoal) {
-        launchOperation { repository.updateGoal(goal) }
+    fun updateGoal(goal: EditableGoal, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateGoal(goal) }
     }
 
-    fun addGoalContribution(goalId: String, amount: String, localDate: String, note: String) {
-        launchOperation {
+    fun addGoalContribution(goalId: String, amount: String, localDate: String, note: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
             val currency = uiState.value.goals.firstOrNull { it.id == goalId }?.target?.currencyCode ?: "EUR"
             repository.addGoalContribution(goalId, Money.parseMajor(amount, currency), localDate, note)
         }
@@ -353,8 +408,8 @@ class FinanceViewModel(
     suspend fun getGoalContributionForEdit(id: String): GoalContribution =
         repository.getGoalContributionForEdit(id)
 
-    fun updateGoalContribution(contribution: GoalContribution) {
-        launchOperation { repository.updateGoalContribution(contribution) }
+    fun updateGoalContribution(contribution: GoalContribution, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateGoalContribution(contribution) }
     }
 
     fun deleteGoalContribution(id: String) {
@@ -368,8 +423,9 @@ class FinanceViewModel(
     fun createRecurring(
         name: String, kind: TransactionKind, amount: String, accountId: String,
         categoryId: String?, frequency: String, nextDate: String,
+        onSuccess: (() -> Unit)? = null,
     ) {
-        launchOperation {
+        launchOperation(onSuccess) {
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Recurring account is missing or archived"
             }.currencyCode
@@ -387,8 +443,8 @@ class FinanceViewModel(
 
     suspend fun getRecurringForEdit(id: String): EditableRecurring = repository.getRecurringForEdit(id)
 
-    fun updateRecurring(recurring: EditableRecurring) {
-        launchOperation { repository.updateRecurring(recurring) }
+    fun updateRecurring(recurring: EditableRecurring, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateRecurring(recurring) }
     }
 
     fun pauseRecurring(id: String) {
@@ -407,8 +463,8 @@ class FinanceViewModel(
         launchOperation { repository.restoreRecurring(id) }
     }
 
-    fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String) {
-        launchOperation {
+    fun createDebt(accountId: String, ratePercent: String, minimumPayment: String, dueDay: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
             val basisPoints = ratePercent.toBigDecimal().movePointRight(2).intValueExact()
             val currency = requireNotNull(uiState.value.accounts.firstOrNull { it.id == accountId }) {
                 "Debt account is missing or archived"
@@ -419,8 +475,8 @@ class FinanceViewModel(
 
     suspend fun getDebtForEdit(id: String): DebtProfile = repository.getDebtForEdit(id)
 
-    fun updateDebt(debt: DebtProfile) {
-        launchOperation { repository.updateDebt(debt) }
+    fun updateDebt(debt: DebtProfile, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.updateDebt(debt) }
     }
 
     fun importCsv(csv: String) {
@@ -446,13 +502,13 @@ class FinanceViewModel(
         launchOperation { preferences.setMoneyValuesHidden(hidden) }
     }
 
-    fun setBaseCurrencyCode(currencyCode: String) {
-        launchOperation { preferences.setBaseCurrencyCode(currencyCode) }
+    fun setBaseCurrencyCode(currencyCode: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { preferences.setBaseCurrencyCode(currencyCode); repository.requestExchangeRateRefresh() }
     }
 
-    fun completeOnboarding(amount: String, period: String, startDate: String, endDate: String) {
-        launchOperation {
-            val currencyCode = uiState.value.settings.baseCurrencyCode
+    fun completeOnboarding(amount: String, period: String, startDate: String, endDate: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) {
+            val currencyCode = preferences.settings.first().baseCurrencyCode
             preferences.setSpendingLimit(
                 SpendingLimit(
                     amountMinor = Money.parseMajor(amount, currencyCode).minor,
@@ -470,12 +526,12 @@ class FinanceViewModel(
         refreshRequests.value += 1
     }
 
-    fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind) {
-        launchOperation { repository.createCategory(name, kind) }
+    fun createCategory(name: String, kind: com.northstar.money.domain.model.CategoryKind, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.createCategory(name, kind) }
     }
 
-    fun renameCategory(id: String, name: String) {
-        launchOperation { repository.renameCategory(id, name) }
+    fun renameCategory(id: String, name: String, onSuccess: (() -> Unit)? = null) {
+        launchOperation(onSuccess) { repository.renameCategory(id, name) }
     }
 
     fun archiveCategory(id: String) {
@@ -496,21 +552,27 @@ class FinanceViewModel(
 
     suspend fun createFullBackup(): String = repository.createFullBackup()
 
+    suspend fun writeFullBackup(output: java.io.OutputStream, password: CharArray) = repository.writeFullBackup(output, password)
+
     suspend fun restoreFullBackup(backup: String, recoveryPassword: CharArray) =
         repository.restoreFullBackup(backup, recoveryPassword)
 
     suspend fun undoLastFullRestore(recoveryPassword: CharArray) =
         repository.undoLastFullRestore(recoveryPassword)
 
-    private fun launchOperation(operation: suspend () -> Unit) {
+    private fun launchOperation(onSuccess: (() -> Unit)? = null, operation: suspend () -> Unit) {
+        val saving = onSuccess != null
+        if (saving && savingOperations.value > 0) return
+        if (saving) savingOperations.value++
         viewModelScope.launch {
             try {
                 operation()
+                onSuccess?.invoke()
             } catch (error: CancellationException) {
                 throw error
             } catch (_: Throwable) {
                 eventChannel.send(FinanceUiEvent(R.string.operation_failed_generic))
-            }
+            } finally { if (saving) savingOperations.value-- }
         }
     }
 
@@ -520,28 +582,48 @@ internal fun calculateForecast(
     balance: Money,
     schedules: List<RecurringItem>,
     today: LocalDate = LocalDate.now(),
+    rates: List<HistoricalExchangeRate> = emptyList(),
 ): CashFlowForecast {
     val end = today.plusDays(30)
     var projected = balance.minor
     var lowest = projected
     var lowestDate = today
     var count = 0
-    schedules.filter {
-        it.amount.currencyCode == balance.currencyCode && it.intervalCount > 0
-    }.flatMap { schedule ->
+    var missing = 0
+    val converted = schedules.mapNotNull { schedule ->
+        if (schedule.amount.currencyCode == balance.currencyCode) schedule else {
+            val rate = rates.filter { it.baseCurrencyCode == schedule.amount.currencyCode &&
+                it.quoteCurrencyCode == balance.currencyCode && it.status == "AVAILABLE" && it.rateMicros != null }
+                .maxByOrNull { it.rateLocalDate }
+            if (rate == null) { missing++; null } else schedule.copy(amount = Money(
+                com.northstar.money.data.exchange.HistoricalRateClient.convertMinor(schedule.amount.minor,
+                    schedule.amount.currencyCode, balance.currencyCode, requireNotNull(rate.rateMicros)), balance.currencyCode))
+        }
+    }
+    converted.filter { it.intervalCount > 0 }.flatMap { schedule ->
         val dates = mutableListOf<LocalDate>()
         var date = LocalDate.parse(schedule.nextLocalDate)
+        // Jump over old occurrences instead of iterating through years on the UI thread.
+        if (date.isBefore(today)) {
+            val steps = when (schedule.frequency) {
+                "WEEKLY" -> java.time.temporal.ChronoUnit.WEEKS.between(date, today) / schedule.intervalCount
+                "YEARLY" -> (today.year - date.year).toLong() / schedule.intervalCount
+                else -> java.time.temporal.ChronoUnit.MONTHS.between(java.time.YearMonth.from(date), java.time.YearMonth.from(today)) / schedule.intervalCount
+            }
+            if (steps > 0) date = when (schedule.frequency) {
+                "WEEKLY" -> date.plusWeeks(steps * schedule.intervalCount)
+                "YEARLY" -> java.time.YearMonth.of(date.year + (steps * schedule.intervalCount).toInt(), schedule.anchorMonth).let { it.atDay(schedule.anchorDay.coerceAtMost(it.lengthOfMonth())) }
+                else -> java.time.YearMonth.from(date).plusMonths(steps * schedule.intervalCount).let { it.atDay(schedule.anchorDay.coerceAtMost(it.lengthOfMonth())) }
+            }
+        }
         while (!date.isAfter(end)) {
             if (!date.isBefore(today)) dates += date
-            date = when (schedule.frequency) {
-                "WEEKLY" -> date.plusWeeks(schedule.intervalCount.toLong())
-                "YEARLY" -> date.plusYears(schedule.intervalCount.toLong())
-                else -> date.plusMonths(schedule.intervalCount.toLong())
-            }
+            date = com.northstar.money.domain.model.nextOccurrence(date, schedule.frequency,
+                schedule.intervalCount, schedule.anchorDay, schedule.anchorMonth)
         }
         dates.map { it to schedule }
     }.sortedBy { it.first }.forEach { (date, schedule) ->
-        projected += if (schedule.kind == TransactionKind.EXPENSE) -schedule.amount.minor else schedule.amount.minor
+        projected = Math.addExact(projected, if (schedule.kind == TransactionKind.EXPENSE) Math.negateExact(schedule.amount.minor) else schedule.amount.minor)
         count++
         if (projected < lowest) {
             lowest = projected
@@ -552,7 +634,7 @@ internal fun calculateForecast(
         Money(projected, balance.currencyCode),
         Money(lowest, balance.currencyCode),
         lowestDate.toString(),
-        count,
+        count, missing,
     )
 }
 

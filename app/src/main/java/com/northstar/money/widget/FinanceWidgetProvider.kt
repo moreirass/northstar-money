@@ -18,10 +18,22 @@ import kotlinx.coroutines.launch
 
 class FinanceWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        (context.applicationContext as NorthstarApplication).refreshWidgetPresence()
         val pending = goAsync()
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            try { update(context, manager, ids) } finally { pending.finish() }
+            try { update(context, manager, ids) }
+            catch (error: kotlinx.coroutines.CancellationException) { throw error }
+            catch (error: Exception) { android.util.Log.e("NorthstarWidget", "Widget update failed", error) }
+            finally { pending.finish() }
         }
+    }
+
+    override fun onEnabled(context: Context) {
+        (context.applicationContext as NorthstarApplication).refreshWidgetPresence()
+    }
+
+    override fun onDisabled(context: Context) {
+        (context.applicationContext as NorthstarApplication).refreshWidgetPresence()
     }
 
     companion object {
@@ -34,11 +46,13 @@ class FinanceWidgetProvider : AppWidgetProvider() {
         private suspend fun update(context: Context, manager: AppWidgetManager, ids: IntArray) {
             val application = context.applicationContext as NorthstarApplication
             val repository = application.financeRepository
-            val summary = repository.observeSummary().first()
-            val transactions = repository.observeTransactions().first().take(3)
-            val hidden = application.userPreferences.settings.first().moneyValuesHidden
-            val amountText = if (hidden) context.getString(R.string.money_hidden_value) else summary.balance.formatted()
-            val recentText = if (transactions.isEmpty()) context.getString(R.string.widget_no_transactions) else
+            val settings = application.userPreferences.settings.first()
+            val protected = settings.appLockEnabled || settings.moneyValuesHidden
+            val summary = if (protected) null else repository.observeSummary().first()
+            val transactions = if (protected) emptyList() else repository.observeRecentTransactions().first()
+            val hidden = protected
+            val amountText = if (hidden) context.getString(R.string.money_hidden_value) else requireNotNull(summary).balance.formatted()
+            val recentText = if (protected) context.getString(R.string.ui_northstar_is_locked) else if (transactions.isEmpty()) context.getString(R.string.widget_no_transactions) else
                 transactions.joinToString("\n") { item ->
                     val amount = if (hidden) context.getString(R.string.money_hidden_value) else item.amount.formatted()
                     "${item.payee} · $amount"
