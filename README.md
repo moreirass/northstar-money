@@ -1,184 +1,337 @@
 # Northstar Money
 
-**A private, local-first personal finance app for Android.**
+Aplicação de finanças pessoais para Android, desenvolvida em Kotlin e Jetpack Compose. Permite gerir contas, movimentos, orçamentos e objetivos com os dados guardados no dispositivo.
 
-Built with Kotlin and Jetpack Compose. Your financial data stays on the device unless you explicitly export it — no account sign-in, no cloud sync, no bank connection, no ads, no analytics.
+**Estado:** alpha · **Versão:** 0.1.0 · **Android:** 8.0 ou superior (API 26+) · **Idiomas:** português e inglês.
 
-![Status](https://img.shields.io/badge/status-alpha-orange)
-![Version](https://img.shields.io/badge/version-0.1.0-blue)
-![Kotlin](https://img.shields.io/badge/Kotlin-2.3-7F52FF?logo=kotlin&logoColor=white)
-![Min SDK](https://img.shields.io/badge/API-26%2B-brightgreen)
-![License](https://img.shields.io/badge/license-unlicensed-lightgrey)
+Este é um projeto pessoal de aprendizagem, desenvolvido com assistência de ferramentas de IA. As funcionalidades implementadas e os testes existentes não equivalem a uma auditoria profissional ou à validação completa para distribuição comercial.
 
-> ⚠️ **Alpha build.** The offline feature set and data-safety foundations are implemented, but release hardening and production distribution are not complete. Keep regular encrypted backups and don't treat this build as the only copy of important financial records.
+## Índice
 
-> 🧪 **About this project.** This is a personal hobby project built for fun and to learn Android development, Kotlin, and Jetpack Compose. Development is done with heavy assistance from AI tools (for code generation, testing, and problem-solving). It is not a professionally audited product — use it at your own discretion, especially with real financial data.
+- [Funcionalidades](#funcionalidades)
+- [Começar a utilizar](#começar-a-utilizar)
+- [Regras financeiras e câmbio](#regras-financeiras-e-câmbio)
+- [Privacidade e segurança](#privacidade-e-segurança)
+- [Backups e recuperação](#backups-e-recuperação)
+- [Importação e exportação](#importação-e-exportação)
+- [Instalação e compilação](#instalação-e-compilação)
+- [Arquitetura e tecnologias](#arquitetura-e-tecnologias)
+- [Base de dados e migrações](#base-de-dados-e-migrações)
+- [Testes e integração contínua](#testes-e-integração-contínua)
+- [Limitações e âmbito](#limitações-e-âmbito)
+- [Documentação e contribuição](#documentação-e-contribuição)
+- [Licença](#licença)
 
----
+## Funcionalidades
 
-## Contents
+### Contas e movimentos
 
-- [What works today](#what-works-today)
-- [Technical overview](#technical-overview)
-- [Project status](#project-status)
-- [Getting started](#getting-started)
-- [Repository layout](#repository-layout)
-- [Contributing](#contributing)
-- [License](#license)
+- Contas de dinheiro, conta corrente, poupança e crédito, com moeda e saldo inicial próprios.
+- Criação e edição de receitas, despesas e transferências.
+- Transferências entre moedas com valores enviados e recebidos separados.
+- Pesquisa e filtros de movimentos, com carregamento de 200 registos por página.
+- Marcação de movimentos como conferidos e reconciliação com extratos.
+- Arquivo e recuperação de contas e recuperação de movimentos eliminados recentemente.
+- Categorias de receitas e despesas, com renomeação, arquivo, restauro e fusões reversíveis.
+- Anexos de recibos, seleção de imagens, fotografia e OCR no dispositivo para extrair comerciante, data e montante.
 
----
+### Planeamento e relatórios
 
-## What works today
+- Orçamentos mensais por categoria, com moeda de alocação explícita e transição do saldo do mês anterior.
+- Objetivos de poupança e histórico de contribuições editável.
+- Perfis de dívida com taxa de juro, pagamento mínimo e dia de vencimento.
+- Movimentos recorrentes com pausa, retoma e lançamento automático das ocorrências vencidas.
+- Resumo de saldos, receitas, despesas e saldo líquido mensal.
+- Gráficos e alternativas de leitura acessíveis.
+- Previsão a 30 dias, com indicação de câmbios estimados ou em falta.
+- Exportação CSV, resumo mensal PDF e livro Excel com movimentos, contas, orçamentos, resumo e taxas de câmbio.
 
-### 💰 Everyday finances
+### Utilização e acessibilidade
 
-- Track cash, checking, savings, and credit accounts in multiple currencies
-- Add and edit income, expenses, and transfers
-- Record cross-currency transfers with separate sent and received amounts
-- Retain transaction-date exchange rates locally and include converted activity in the EUR summary
-- Search transactions, mark them cleared, and reconcile accounts against statements
-- Attach receipt images from storage or the camera and extract amount, date, and merchant with on-device OCR
-- Recover recently deleted transactions and restore archived accounts
-- Manage income/expense categories — archive, restore, and reversible merges
-- Store monetary values as integer minor units, never floating-point
+- Configuração inicial guiada.
+- Navegação adaptada a telemóveis, tablets e dispositivos dobráveis.
+- Interface em português e inglês, com descrições semânticas e suporte para texto maior.
+- Ocultação persistente dos valores monetários.
+- Bloqueio opcional por biometria forte ou credencial do dispositivo.
+- Widget Android com saldo e movimentos recentes, respeitando as opções de privacidade.
+- Lembrete diário opcional de revisão financeira.
 
-### 📊 Planning and reporting
+## Começar a utilizar
 
-- Monthly category budgets with rollover from the previous month
-- Savings goals with editable contribution histories
-- Debt profiles with interest rates, minimum payments, and due dates
-- Recurring transactions — schedule, pause/resume, and auto-post due occurrences
-- Account totals, monthly cash flow, accessible charts, and a 30-day forecast
-- Export transactions to CSV and a monthly summary to PDF
-- Export a formatted Excel workbook with transactions, accounts, budgets, summary, and exchange-rate sheets
-- Atomic CSV import with validation and duplicate detection
+1. Instalar uma compilação debug num dispositivo ou emulador compatível.
+2. Concluir a configuração inicial, escolhendo a moeda de apresentação e criando a primeira conta.
+3. Confirmar as categorias e registar receitas, despesas ou transferências.
+4. Definir orçamentos, objetivos e recorrências conforme necessário.
+5. Nas opções da aplicação, configurar a privacidade e criar um backup completo protegido por palavra-passe.
 
-### 🔒 Privacy, safety, and accessibility
+O registo manual e a consulta dos dados locais funcionam sem ligação à Internet. A obtenção de novas taxas de câmbio precisa de rede. As imagens de recibos podem fornecer sugestões por OCR; os dados extraídos devem ser revistos antes de guardar.
 
-- Password-protected, portable full-database backups
-- Validated, atomic restore with an encrypted on-device recovery copy and undo support
-- Room schema history with migration tests through database version 10
-- Optional biometric or device-credential app lock
-- Persistent control for masking monetary values on screen
-- Optional daily financial-review reminders
-- First-run onboarding and consistent loading/empty/error states
-- English and Portuguese localization
-- Adaptive phone, tablet, and foldable layouts (bottom nav or navigation rail)
-- Privacy-aware Android home-screen widget for balance and recent transactions
-- Large-text support, semantic descriptions, and accessible chart alternatives
+## Regras financeiras e câmbio
 
----
+Os montantes são guardados como inteiros de 64 bits em **unidades mínimas da moeda**. Por exemplo, `12345` representa 123,45 EUR; `12345` JPY representa 12 345 ienes. Os movimentos de despesa têm sinal negativo e os de receita têm sinal positivo. Os totais de despesas apresentam a magnitude positiva.
 
-## Technical overview
+Cada conta mantém a sua moeda. A moeda de apresentação serve para consolidar os relatórios, recorrendo a conversões de movimentos e saldos iniciais estrangeiros. A aplicação consulta o serviço Frankfurter por HTTPS, enviando o par de moedas e a data solicitada. Os montantes, nomes de comerciantes e imagens dos recibos não fazem parte desses pedidos.
 
-| Layer | Technology |
+- As taxas obtidas ficam guardadas localmente e podem ser reutilizadas quando a data e as moedas correspondem.
+- Novas conversões são processadas em segundo plano através de WorkManager, com concorrência e cache limitadas.
+- Uma mudança de data ou de moeda de apresentação exige uma taxa correspondente.
+- Totais com conversões em falta são assinalados como incompletos.
+- Os orçamentos mantêm os valores e a moeda de alocação originais quando a moeda de apresentação muda.
+- As previsões usam taxas disponíveis como estimativas; não garantem o câmbio futuro.
+
+Os cálculos mensais respeitam os limites do mês local. As recorrências preservam o dia e mês de referência para lidar com meses curtos e anos bissextos. O trabalho de lançamento é agendado no arranque e periodicamente a cada seis horas; a execução efetiva depende do agendamento do Android.
+
+## Privacidade e segurança
+
+A aplicação não inclui registo de utilizadores, sincronização na nuvem, ligação bancária, publicidade ou analytics. Os registos ficam no armazenamento privado da aplicação. A configuração Android desativa o backup automático da aplicação (`allowBackup=false`); os backups completos são criados pelo utilizador.
+
+| Proteção | Comportamento |
 |---|---|
-| Language | Kotlin 2.3 |
-| UI | Jetpack Compose · Material 3 · Navigation Compose |
-| Persistence | Room 2.8 · versioned local SQLite schema |
-| Preferences | DataStore |
-| Background work | WorkManager |
-| Security | Android Biometric APIs · password-based AES-GCM backup encryption |
-| Serialization | Kotlin Serialization |
-| Android support | API 26+ (Android 8.0) · compile/target SDK 36 |
+| Bloqueio da aplicação | Biometria forte ou credencial do dispositivo, com nova autenticação depois de sair da atividade |
+| Ocultação de valores | Preferência persistente para mascarar montantes na interface |
+| Captura de ecrã | Protegida enquanto o bloqueio ou a ocultação de valores estiverem ativos |
+| Widget | Oculta montantes e detalhes de comerciantes nas mesmas condições |
+| OCR | Reconhecimento de texto através de ML Kit no dispositivo |
+| Backups completos | Cifra autenticada AES-256-GCM com chave derivada da palavra-passe |
+| Importações | Limites de tamanho e validação antes da escrita ou substituição dos dados |
 
-**Architecture:** Compose UI → `FinanceViewModel` → Repository → Room / DataStore
+**A base de dados Room não usa uma camada adicional de cifra como SQLCipher.** O bloqueio da interface e a cifra dos backups têm funções diferentes: o bloqueio não cifra a base de dados local.
 
----
+A permissão de Internet serve para obter taxas de câmbio. A permissão de notificações permite os lembretes, quando autorizada. A câmara é opcional; a aplicação usa os mecanismos Android de seleção e captura de documentos/imagens.
 
-## Project status
+Ficheiros CSV, Excel e PDF exportados não são cifrados pela aplicação. O destino escolhido no seletor de ficheiros pode pertencer a outro serviço, incluindo um fornecedor de armazenamento na nuvem.
 
-| Stage | Focus | Status |
-|---|---|---|
-| **P0** | Data safety — backups, migrations, validation, recovery, surfaced errors | ✅ Implemented |
-| **P1** | Core completeness — editing, category/account management, rollover, recurring posting, reconciliation | ✅ Implemented |
-| **P2** | UX & accessibility — navigation, adaptive layouts, localization, onboarding, privacy controls | ✅ Implemented |
-| **P3** | Engineering — automated checks, lint, broader regression coverage, CI/CD | 🟡 In progress |
-| **P4** | Personal premium features — receipts/OCR, formatted Excel, Android widgets, historical FX | ✅ Implemented and validated |
-| **P5** | Commercial release — branding, legal/privacy material, signing, store delivery | ⚪ Not started |
+## Backups e recuperação
 
-### P4 scope
+O backup completo contém o snapshot da base de dados: contas, categorias, movimentos e respetivas entradas, reconciliações, orçamentos, objetivos e contribuições, recorrências, dívidas, recibos e taxas de câmbio. Inclui também metadados de versão e moeda de apresentação. Não é uma cópia integral das preferências Android da aplicação.
 
-P4 was implemented and validated in this fixed order:
+O formato portátil atual utiliza AES-256-GCM, salt e IV aleatórios e PBKDF2-HMAC-SHA256 com **600 000 iterações**. A palavra-passe deve ter entre **12 e 128 caracteres**. A exportação de JSON cifrado é feita por streaming.
 
-1. Receipt attachments and photographs
-2. Receipt OCR — extracting amount, date, and merchant from an attached photograph
-3. Formatted Excel (`.xlsx`) export
-4. Android home-screen widgets for the current balance and recent transactions
-5. Multi-currency transactions, retaining the exchange rate for the transaction date from an external rate source
+Ao restaurar, a aplicação:
 
-The receipt attachment, camera, OCR, Excel export, and home-screen widget flows have been tested on an emulator. Database migrations from versions 8 and 1 to version 9 are covered by passing instrumented tests, including preservation of existing data.
+1. Decifra o ficheiro e verifica a autenticidade do conteúdo.
+2. Verifica a compatibilidade da versão e valida referências, moedas, sinais, cardinalidade dos movimentos e conversões.
+3. Cria uma cópia local cifrada do estado anterior dentro da transação de substituição.
+4. Substitui os registos de forma atómica e disponibiliza a recuperação do estado anterior.
 
-Historical exchange rates are queued for background processing after transactions, transfers, reconciliations, recurring posting, and CSV imports. Rates for the same date and currencies can be reused when an amount changes. A changed date or reporting currency requires a matching rate; incomplete totals are indicated while it is unavailable.
+A opção de desfazer o restauro usa a cópia local e a palavra-passe utilizada na recuperação. Essa cópia fica no dispositivo e não substitui um backup externo.
 
-Database version 10 stores budget currencies, recurrence calendar anchors, and opening-balance conversions. See [hardening and verification](docs/07-hardening-and-verification.md) for migration behavior, privacy protections, import limits, and regression coverage.
+Backups antigos sem metadados da moeda de apresentação usam a moeda atualmente selecionada para interpretar as antigas alocações de orçamento. **Selecionar a moeda original antes de restaurar esses ficheiros.** Backups que exigem uma versão de base de dados superior à suportada são rejeitados.
 
-> Multi-device support, cloud sync, bank/Open Banking sync, shared couple spaces, ML-based categorization, and advanced subscription/anomaly detection are **outside the current roadmap**. They must not be planned or implemented without a new, explicit scope decision.
+Não existe um serviço de recuperação da palavra-passe do backup portátil. Guardar a palavra-passe e uma cópia do ficheiro num local adequado; desinstalar a aplicação ou apagar os seus dados elimina o armazenamento local.
 
-The repository contains JVM tests plus Room and Compose instrumented tests. The GitHub Actions workflow now builds debug and release, runs JVM tests and lint, and schedules instrumented tests on API 29 and 35. Local verification remains useful; adding the workflow does not imply that a remote CI run has already passed.
+## Importação e exportação
 
----
+### CSV
 
-## Getting started
+O formato utiliza UTF-8, vírgulas como separador e este cabeçalho, pela ordem indicada:
 
-### Prerequisites
+```csv
+date,type,payee,category,account,amount,currency
+2026-10-12,EXPENSE,Supermercado,Alimentação,Conta principal,-2599,EUR
+2026-10-12,INCOME,Salário,Salário,Conta principal,150000,EUR
+```
 
-- JDK 21 for the Gradle daemon (application bytecode targets Java 17)
-- Android Studio with Android SDK 36 installed
-- An Android 8.0+ device or emulator (for running the app and instrumented tests)
+As datas seguem `AAAA-MM-DD`. O campo `amount` contém um inteiro em unidades mínimas, sem separador decimal. A moeda deve corresponder à moeda da conta.
 
-### Build the debug APK
+A importação aceita `INCOME` e `EXPENSE`. A conta e a categoria têm de existir e ser identificadas sem ambiguidade pelo nome; a categoria deve corresponder ao tipo de movimento. Transferências podem aparecer na exportação, mas **não são importadas pelo formato CSV atual**. O CSV também não contém todos os dados necessários para reconstruir a base de dados, pelo que não substitui o backup completo.
+
+O importador valida os registos, deteta duplicados e faz a escrita de forma atómica. Se houver erros de validação, os movimentos não são importados. Os campos de texto exportados recebem proteção contra interpretação como fórmulas em folhas de cálculo; os valores numéricos mantêm o sinal.
+
+### Excel e PDF
+
+O Excel é escrito como `.xlsx`, com folhas para movimentos, contas, orçamentos, resumo e câmbios. O PDF contém o resumo mensal e pagina as linhas de orçamento. As exportações de movimentos em CSV e Excel incluem o conjunto completo, independentemente da página visível na interface.
+
+### Limites de ficheiros e restauro
+
+| Conteúdo | Limite |
+|---|---|
+| Imagem de recibo selecionada | 8 MiB |
+| Imagem de recibo guardada | 1 000 000 bytes |
+| Ficheiro CSV | 16 MiB |
+| Linhas de dados CSV | 100 000 |
+| Campo CSV | 4 096 caracteres |
+| Backup cifrado | 64 MiB |
+| Conteúdo total de recibos num restauro | 32 MiB |
+| Total de registos num snapshot restaurado | 500 000 |
+
+## Instalação e compilação
+
+### Requisitos
+
+- Android Studio compatível com a configuração Gradle do projeto, ou ferramentas Android de linha de comandos.
+- Android SDK 36 e ferramentas de compilação correspondentes.
+- JDK 21 para o daemon Gradle; o bytecode da aplicação tem como alvo Java 17.
+- Dispositivo ou emulador Android API 26+ para executar a aplicação.
+- Ligação à Internet para descarregar dependências na primeira compilação.
+
+O wrapper fornece **Gradle 9.5.0**. Os critérios do daemon em `gradle/gradle-daemon-jvm.properties` selecionam **JetBrains JDK 21**; a primeira execução pode descarregar essa ferramenta. As versões de dependências estão definidas em `gradle/libs.versions.toml`.
+
+### Obter o projeto
 
 ```bash
 git clone https://github.com/moreirass/northstar-money.git
 cd northstar-money
-./gradlew assembleDebug
 ```
 
-> On Windows, use `gradlew.bat assembleDebug`.
+Abrir a pasta no Android Studio e permitir a sincronização Gradle. Configurar o SDK pelo IDE, pela variável `ANDROID_HOME` ou por `local.properties`, que não deve ser versionado. Exemplos:
 
-The APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
-
-### Run tests and checks
-
-```bash
-# JVM unit tests
-./gradlew testDebugUnitTest
-
-# Instrumented Room and Compose tests (requires a connected device or emulator)
-./gradlew connectedDebugAndroidTest
-
-# Android lint
-./gradlew lintDebug
+```properties
+# Windows: adaptar ao caminho instalado; as barras / evitam escapes.
+sdk.dir=C:/Users/UTILIZADOR/AppData/Local/Android/Sdk
 ```
 
----
+```properties
+# Linux: adaptar ao caminho instalado.
+sdk.dir=/home/UTILIZADOR/Android/Sdk
+```
 
-## Repository layout
+### Compilar e instalar
+
+| Ação | PowerShell / Windows | Linux / macOS |
+|---|---|---|
+| APK debug | `.\gradlew.bat assembleDebug` | `bash ./gradlew assembleDebug` |
+| Instalar debug num dispositivo ligado | `.\gradlew.bat installDebug` | `bash ./gradlew installDebug` |
+| APK release | `.\gradlew.bat assembleRelease` | `bash ./gradlew assembleRelease` |
+
+Artefactos gerados:
 
 ```text
-app/src/main/java/com/northstar/money/
-├── core/       # Room, DataStore, navigation, and design system
-├── data/       # Repository, CSV import, backup/restore, and workers
-├── domain/     # Money models and repository contract
-└── feature/    # Finance state and ViewModel
-
-app/src/test/          # JVM tests
-app/src/androidTest/   # Room migration/repository and Compose UI tests
-app/schemas/           # Exported Room schema history
-docs/                  # Product, UX, architecture, database, and roadmap notes
+app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/release/app-release-unsigned.apk
 ```
 
-> Files in `docs/` describe the original product plan and architectural/UX decisions. Where planning documents differ from the implementation, the source code and this README reflect the current app.
+O APK debug usa a assinatura de desenvolvimento. O build release ativa R8 e redução de recursos, mas **não tem assinatura de distribuição configurada**. O APK release sem assinatura precisa de ser assinado antes da instalação ou distribuição.
 
----
+Se o SDK não for encontrado, confirmar o caminho em `local.properties` ou `ANDROID_HOME`. Se o Gradle não arrancar, verificar a instalação Java e os critérios do daemon. Os testes instrumentados exigem um dispositivo visível em `adb devices`.
 
-## Contributing
+## Arquitetura e tecnologias
 
-This is a personal project under active development. Issues and suggestions are welcome. Before submitting a change, run the relevant JVM tests and, for database or UI changes, the corresponding instrumented tests.
+O projeto contém um módulo Android, `app`, organizado em camadas:
 
----
+```text
+Compose UI → FinanceViewModel → FinanceRepository → OfflineFinanceRepository
+                                                     ├─ Room / SQLite
+                                                     ├─ adaptadores de importação e exportação
+                                                     ├─ backups e OCR
+                                                     └─ cliente de câmbio e workers
+DataStore → preferências de utilização e privacidade
+```
 
-## License
+| Área | Tecnologia / configuração do repositório |
+|---|---|
+| Linguagem | Kotlin 2.3.20 |
+| Build | Android Gradle Plugin 9.3.1 · Gradle 9.5.0 |
+| Interface | Jetpack Compose BOM 2026.06.00 · Material 3 · Navigation Compose |
+| Persistência | Room 2.8.4 · SQLite · esquema versão 10 |
+| Preferências | DataStore 1.2.1 |
+| Trabalho em segundo plano | WorkManager 2.11.2 |
+| Serialização | Kotlin Serialization 1.8.1 |
+| Recibos | ML Kit Text Recognition 16.0.1 |
+| Autenticação | AndroidX Biometric e credencial do dispositivo |
+| SDK | mínimo 26 · compilação e alvo 36 |
 
-No license has been chosen yet. All rights reserved until a license is added.
+As consultas agregadas de categorias e orçamentos são executadas em SQL. A lista de movimentos usa paginação; os observadores de recibos carregam metadados sem imagens ou texto OCR completo. Os observadores do widget só ficam ativos quando existe um widget instalado.
+
+### Estrutura do repositório
+
+```text
+app/
+├─ src/main/java/com/northstar/money/
+│  ├─ core/       # Base de dados, preferências, segurança, navegação e interface
+│  ├─ data/       # Repositório, câmbio, backups, importação/exportação, OCR e workers
+│  ├─ domain/     # Modelos monetários, cálculos e contrato do repositório
+│  ├─ feature/    # Estado financeiro e ViewModel
+│  └─ widget/     # Widget Android
+├─ src/main/res/  # Recursos, traduções e configuração Android
+├─ src/test/      # Testes JVM
+├─ src/androidTest/ # Testes de Room, migrações e Compose
+└─ schemas/       # Histórico dos esquemas Room
+
+gradle/           # Wrapper, catálogo de versões e critérios JVM
+docs/             # Requisitos, UX, arquitetura, modelo de dados e verificações
+.github/workflows/ # Integração contínua
+```
+
+## Base de dados e migrações
+
+A versão atual do esquema Room é **10**. O projeto mantém esquemas exportados e migrações explícitas, incluindo a migração de 9 para 10.
+
+Esta migração acrescenta a moeda das alocações de orçamento, os dias/meses de referência das recorrências e as conversões dos saldos iniciais. As alocações antigas recebem a moeda de apresentação da instalação, mantendo os montantes. As fusões antigas de categorias são normalizadas para o destino final e as taxas incompatíveis com a data do movimento são removidas para posterior atualização.
+
+Quando uma referência de calendário já se perdeu numa versão antiga, a migração utiliza a próxima data guardada; não consegue reconstruir a intenção original. Alterações ao esquema devem incluir migração, esquema exportado e cobertura de preservação de dados.
+
+## Testes e integração contínua
+
+### Comandos locais
+
+```powershell
+# Testes unitários JVM
+.\gradlew.bat testDebugUnitTest
+
+# Análise Android lint
+.\gradlew.bat lintDebug
+
+# Compilar os testes instrumentados sem dispositivo
+.\gradlew.bat compileDebugAndroidTestKotlin
+
+# Executar testes instrumentados num dispositivo/emulador ligado
+.\gradlew.bat connectedDebugAndroidTest
+
+# Compilar ambas as variantes e executar verificações sem dispositivo
+.\gradlew.bat assembleDebug testDebugUnitTest lintDebug assembleRelease
+```
+
+Em Linux/macOS, substituir `.\gradlew.bat` por `bash ./gradlew`.
+
+| Resultado | Localização habitual |
+|---|---|
+| Relatório JVM | `app/build/reports/tests/testDebugUnitTest/` |
+| Resultados JVM em XML | `app/build/test-results/testDebugUnitTest/` |
+| Relatório lint | `app/build/reports/lint-results-debug.html` |
+| Relatórios instrumentados | `app/build/reports/androidTests/` |
+
+A suíte JVM cobre cálculos com despesas negativas, moedas, recorrências, previsões, limites de importação, segurança CSV, cifra e validação de backups e parsing OCR. Os testes instrumentados cobrem migrações Room, integridade dos dados e interações Compose.
+
+### Estado da verificação local
+
+Na verificação de **12 de outubro de 2026**, passaram **74 testes JVM sem falhas**. Foram gerados APKs debug e release sem assinatura. Uma execução local de lint terminou com **0 erros e 48 avisos**. Os testes instrumentados das alterações foram compilados, mas não executados localmente por não existir um dispositivo ou emulador ligado.
+
+Estes resultados descrevem essa revisão; não garantem verificações de alterações posteriores. A autenticação nos diferentes dispositivos e as migrações da revisão atual ainda necessitam de execução dos testes instrumentados.
+
+### GitHub Actions
+
+O workflow `.github/workflows/blank.yml` executa:
+
+- Build debug e release, testes JVM e lint.
+- Testes instrumentados em emuladores API 29 e 35.
+- Publicação dos relatórios como artefactos do workflow.
+
+É acionado em pushes e pull requests para `main`, ou manualmente. A existência da configuração não significa que uma execução remota tenha passado. O workflow não configura assinatura nem publicação na loja.
+
+## Limitações e âmbito
+
+O projeto continua em fase alpha. A assinatura de produção, a publicação na loja, os materiais legais e a validação completa para distribuição comercial estão por concluir. Manter backups regulares de dados importantes.
+
+As taxas dependem da disponibilidade e cobertura do serviço externo. O agendamento de recorrências e lembretes depende do Android e não garante execução numa hora exata. O OCR pode produzir resultados incorretos. Os limites de ficheiros e snapshots também limitam os volumes que podem ser importados ou restaurados.
+
+Sincronização entre dispositivos, serviços na nuvem, ligações bancárias/Open Banking, contas partilhadas, categorização por aprendizagem automática e deteção avançada de subscrições ou anomalias estão fora do âmbito atual. A sua inclusão requer uma decisão explícita de âmbito.
+
+## Documentação e contribuição
+
+| Documento | Conteúdo |
+|---|---|
+| [Requisitos funcionais](docs/02-functional-requirements.md) | Funcionalidades e regras previstas |
+| [Especificação UX/UI](docs/03-ux-ui-specification.md) | Organização e comportamento da interface |
+| [Arquitetura e stack](docs/04-architecture-and-stack.md) | Decisões técnicas |
+| [Modelo de dados](docs/05-database-design.md) | Estrutura e relações da base de dados |
+| [Estrutura e roadmap](docs/06-project-structure-and-roadmap.md) | Organização e plano de desenvolvimento |
+| [Correções e verificação](docs/07-hardening-and-verification.md) | Integridade financeira, segurança, desempenho e limites |
+
+Alguns documentos descrevem o plano original e podem anteceder a implementação atual. O código e a configuração do repositório determinam o comportamento efetivo.
+
+Para propor alterações, descrever o problema e o comportamento esperado, executar os testes relevantes e atualizar a documentação afetada. Alterações à base de dados devem preservar os registos existentes. Não incluir dados financeiros reais, palavras-passe, chaves de assinatura ou ficheiros de configuração local em commits ou relatórios de erros.
+
+## Licença
+
+O repositório não contém uma licença de utilização ou distribuição. Nenhuma licença open source foi atribuída ao projeto; os direitos de terceiros sobre as dependências mantêm-se.
