@@ -16,5 +16,8 @@ O ficheiro local `08-local-improvements-roadmap.md`, quando presente, contém um
 proposta independente. Não é um requisito para compilar nem uma confirmação de
 funcionalidades concluídas.
 
+9. [Migração incremental para Java](09-java-migration.md): fases, compatibilidade e
+   evidências de verificação; a migração integral ainda está em curso.
+
 O esquema exportado em `app/schemas` prevalece sobre os exemplos de desenho
 iniciais. As migrações explícitas mantêm os nomes efetivos de tabelas e colunas.

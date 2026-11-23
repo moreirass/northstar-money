@@ -4,6 +4,10 @@
 
 Aplicação de finanças pessoais para Android, desenvolvida em Kotlin e Jetpack Compose. Permite gerir contas, movimentos, orçamentos e objetivos com os dados guardados no dispositivo.
 
+**Migração para Java em curso:** o núcleo monetário, o envelope cifrado e a
+exportação CSV estão a ser migrados por fases verificadas. A interface continua em
+Compose nesta revisão. Ver [estado e critérios da migração](docs/09-java-migration.md).
+
 **Estado:** alpha · **Versão:** 0.1.0 · **Android:** 8.0 ou superior (API 26+) · **Idiomas:** português e inglês.
 
 Este é um projeto pessoal de aprendizagem, desenvolvido com assistência de ferramentas de IA. As funcionalidades implementadas e os testes existentes não equivalem a uma auditoria profissional ou à validação completa para distribuição comercial.
@@ -215,6 +219,9 @@ O APK debug usa a assinatura de desenvolvimento. O build release ativa R8 e redu
 
 Se o SDK não for encontrado, confirmar o caminho em `local.properties` ou `ANDROID_HOME`. Se o Gradle não arrancar, verificar a instalação Java e os critérios do daemon. Os testes instrumentados exigem um dispositivo visível em `adb devices`.
 
+O perfil `-PreleaseSmoke=true` mantém a minificação da release e usa a assinatura
+debug apenas para os testes locais. Este perfil não produz um APK para distribuição.
+
 ## Arquitetura e tecnologias
 
 O projeto contém um módulo Android, `app`, organizado em camadas:
@@ -287,6 +294,9 @@ Quando uma referência de calendário já se perdeu numa versão antiga, a migra
 
 # Executar testes instrumentados num dispositivo/emulador ligado
 .\gradlew.bat connectedDebugAndroidTest
+
+# Testar o APK release minificado num dispositivo de teste
+.\scripts\release-smoke.ps1
 
 # Compilar ambas as variantes e executar verificações sem dispositivo
 .\gradlew.bat assembleDebug testDebugUnitTest lintDebug assembleRelease
