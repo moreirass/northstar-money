@@ -1,5 +1,7 @@
 # Northstar Money
 
+[![CI](https://github.com/moreirass/northstar-money/actions/workflows/ci.yml/badge.svg)](https://github.com/moreirass/northstar-money/actions/workflows/ci.yml)
+
 Aplicação de finanças pessoais para Android, desenvolvida em Kotlin e Jetpack Compose. Permite gerir contas, movimentos, orçamentos e objetivos com os dados guardados no dispositivo.
 
 **Estado:** alpha · **Versão:** 0.1.0 · **Android:** 8.0 ou superior (API 26+) · **Idiomas:** português e inglês.
@@ -9,6 +11,7 @@ Este é um projeto pessoal de aprendizagem, desenvolvido com assistência de fer
 ## Índice
 
 - [Funcionalidades](#funcionalidades)
+- [Capturas de ecrã](#capturas-de-ecrã)
 - [Começar a utilizar](#começar-a-utilizar)
 - [Regras financeiras e câmbio](#regras-financeiras-e-câmbio)
 - [Privacidade e segurança](#privacidade-e-segurança)
@@ -55,6 +58,13 @@ Este é um projeto pessoal de aprendizagem, desenvolvido com assistência de fer
 - Bloqueio opcional por biometria forte ou credencial do dispositivo.
 - Widget Android com saldo e movimentos recentes, respeitando as opções de privacidade.
 - Lembrete diário opcional de revisão financeira.
+
+## Capturas de ecrã
+
+As capturas verificadas da interface ainda não estão incluídas no repositório.
+Devem mostrar o resumo, os movimentos, os orçamentos e as definições, em português
+e inglês, usando exclusivamente dados sintéticos. A atualização das capturas faz
+parte da validação da migração para Views; não usar maquetes como prova de execução.
 
 ## Começar a utilizar
 
@@ -301,7 +311,7 @@ Estes resultados descrevem essa revisão; não garantem verificações de altera
 
 ### GitHub Actions
 
-O workflow `.github/workflows/blank.yml` executa:
+O workflow `.github/workflows/ci.yml` executa:
 
 - Build debug e release, testes JVM e lint.
 - Testes instrumentados em emuladores API 29 e 35.
@@ -321,6 +331,7 @@ Sincronização entre dispositivos, serviços na nuvem, ligações bancárias/Op
 
 | Documento | Conteúdo |
 |---|---|
+| [Índice da documentação](docs/01-documentation-index.md) | Ordem de leitura e estado dos documentos |
 | [Requisitos funcionais](docs/02-functional-requirements.md) | Funcionalidades e regras previstas |
 | [Especificação UX/UI](docs/03-ux-ui-specification.md) | Organização e comportamento da interface |
 | [Arquitetura e stack](docs/04-architecture-and-stack.md) | Decisões técnicas |
@@ -334,4 +345,5 @@ Para propor alterações, descrever o problema e o comportamento esperado, execu
 
 ## Licença
 
-O repositório não contém uma licença de utilização ou distribuição. Nenhuma licença open source foi atribuída ao projeto; os direitos de terceiros sobre as dependências mantêm-se.
+O projeto mantém **todos os direitos reservados**, conforme [LICENSE](LICENSE).
+Não é concedida uma licença open source; as dependências mantêm as suas próprias licenças.
