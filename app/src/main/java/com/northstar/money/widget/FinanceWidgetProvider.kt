@@ -23,7 +23,8 @@ class FinanceWidgetProvider : AppWidgetProvider() {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             try { update(context, manager, ids) }
             catch (error: kotlinx.coroutines.CancellationException) { throw error }
-            catch (error: Exception) { android.util.Log.e("NorthstarWidget", "Widget update failed", error) }
+            catch (_: java.io.IOException) { android.util.Log.e("NorthstarWidget", "Widget settings unavailable") }
+            catch (_: android.database.sqlite.SQLiteException) { android.util.Log.e("NorthstarWidget", "Widget database unavailable") }
             finally { pending.finish() }
         }
     }

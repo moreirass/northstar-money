@@ -48,7 +48,9 @@ class TransactionCsvValidator {
         rows.drop(1).filterNot { row -> row.all(String::isBlank) }.forEach { columns ->
             val transaction = try {
                 validateRow(columns, accountsByName, categoriesByName)
-            } catch (_: RuntimeException) {
+            } catch (_: IllegalArgumentException) {
+                null
+            } catch (_: java.time.format.DateTimeParseException) {
                 null
             }
             if (transaction == null) {

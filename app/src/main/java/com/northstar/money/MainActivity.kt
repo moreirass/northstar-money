@@ -76,7 +76,7 @@ class MainActivity : FragmentActivity() {
                         if (!lockEnabled) unlock() else if (!unlocked && !authenticating) authenticate()
                     }
                 } catch (error: CancellationException) { throw error }
-                catch (_: Exception) {
+                catch (_: java.io.IOException) {
                     unlocked = false
                     message = getString(R.string.security_settings_unavailable)
                 }

@@ -80,7 +80,8 @@ class NorthstarApplication : Application() {
             }.collect {
                 try { com.northstar.money.widget.FinanceWidgetProvider.updateAll(this@NorthstarApplication) }
                 catch (error: kotlinx.coroutines.CancellationException) { throw error }
-                catch (error: Exception) { android.util.Log.e("NorthstarWidget", "Widget update failed", error) }
+                catch (_: java.io.IOException) { android.util.Log.e("NorthstarWidget", "Widget settings unavailable") }
+                catch (_: android.database.sqlite.SQLiteException) { android.util.Log.e("NorthstarWidget", "Widget database unavailable") }
             }
         }
         applicationScope.launch {
@@ -108,7 +109,7 @@ class NorthstarApplication : Application() {
                 )
             )
         }
-        runCatching {
+        try {
             val workManager = WorkManager.getInstance(this)
             workManager.enqueueUniquePeriodicWork(
                 "financial-review-reminder",
@@ -129,8 +130,8 @@ class NorthstarApplication : Application() {
                 ExistingWorkPolicy.REPLACE,
                 OneTimeWorkRequestBuilder<com.northstar.money.data.worker.RecurringPostingWorker>().build(),
             )
-        }.onFailure { error ->
-            android.util.Log.e("NorthstarApplication", "Could not schedule background financial work", error)
+        } catch (_: IllegalStateException) {
+            android.util.Log.e("NorthstarApplication", "Could not schedule background financial work")
         }
     }
 }

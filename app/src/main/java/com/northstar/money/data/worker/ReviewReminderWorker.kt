@@ -36,13 +36,16 @@ class ReviewReminderWorker(context: Context, params: WorkerParameters) : Corouti
             Result.success()
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Throwable) {
-            android.util.Log.e(TAG, "Financial review reminder failed", error)
+        } catch (_: java.io.IOException) {
+            android.util.Log.e(TAG, "Financial review reminder settings failed")
             if (runAttemptCount < MAX_RETRIES) {
                 Result.retry()
             } else {
                 Result.failure(workDataOf("error" to "review_reminder_failed"))
             }
+        } catch (_: SecurityException) {
+            android.util.Log.e(TAG, "Financial review reminder permission denied")
+            Result.failure(workDataOf("error" to "review_reminder_failed"))
         }
     }
 
