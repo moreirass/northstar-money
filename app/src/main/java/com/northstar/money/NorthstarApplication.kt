@@ -37,6 +37,13 @@ class NorthstarApplication : Application() {
     }
 
     val database by lazy {
+        val migrationCurrency = java.util.concurrent.CompletableFuture<String>()
+        val currencyRead = applicationScope.launch(Dispatchers.IO) {
+            migrationCurrency.complete(userPreferences.settings.first().baseCurrencyCode)
+        }
+        currencyRead.invokeOnCompletion { error ->
+            if (error != null) migrationCurrency.completeExceptionally(error)
+        }
         Room.databaseBuilder(this, NorthstarDatabase::class.java, "northstar.db")
             .addMigrations(com.northstar.money.core.database.MIGRATION_1_2)
             .addMigrations(com.northstar.money.core.database.MIGRATION_2_3)
@@ -46,9 +53,9 @@ class NorthstarApplication : Application() {
             .addMigrations(com.northstar.money.core.database.MIGRATION_6_7)
             .addMigrations(com.northstar.money.core.database.MIGRATION_7_8)
             .addMigrations(com.northstar.money.core.database.MIGRATION_8_9)
-            .addMigrations(com.northstar.money.core.database.migration9To10(
-                kotlinx.coroutines.runBlocking { userPreferences.settings.first().baseCurrencyCode },
-            ))
+            .addMigrations(com.northstar.money.core.database.CurrencyAwareMigration(migrationCurrency) {
+                com.northstar.money.core.database.migration9To10(it)
+            })
             .build()
     }
 
