@@ -23,7 +23,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@0b6dd653ba04f4f93bf581ec31e66cbd7dcb644d # v4
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Build, test and lint
-        run: bash ./gradlew assembleDebug testDebugUnitTest lintDebug assembleRelease --console=plain
+        run: bash ./gradlew assembleDebug testDebugUnitTest lintDebug assembleRelease --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
@@ -55,7 +55,9 @@ jobs:
           api-level: ${{ matrix.api }}
           arch: x86_64
           disable-animations: true
-          script: bash ./gradlew connectedDebugAndroidTest --console=plain
+          script: |
+            bash ./gradlew connectedDebugAndroidTest --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
+            bash ./gradlew connectedReleaseAndroidTest -PreleaseSmoke=true -Pandroid.testInstrumentationRunnerArguments.class=com.northstar.money.release.ReleaseSmokeTest,com.northstar.money.data.backup.FullBackupRepositoryTest,com.northstar.money.data.repository.TransactionEditingTest,com.northstar.money.data.repository.CsvImportAtomicityTest,com.northstar.money.core.database.AsyncCurrencyMigrationTest --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:

@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+val releaseSmoke = providers.gradleProperty("releaseSmoke").map(String::toBoolean).getOrElse(false)
+
 android {
     namespace = "com.northstar.money"
     compileSdk = 36
@@ -22,12 +24,16 @@ android {
     }
 
     buildFeatures.compose = true
+    testBuildType = if (releaseSmoke) "release" else "debug"
 
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            testProguardFiles("proguard-test-rules.pro")
+            // Assinatura local só para instalar o APK minificado no dispositivo de teste.
+            if (releaseSmoke) signingConfig = signingConfigs.getByName("debug")
         }
     }
 

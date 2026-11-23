@@ -1,3 +1,4 @@
-# Room, Compose, WorkManager and ML Kit supply their own consumer rules.
-# Serialization serializers are referenced by the Kotlin compiler plugin.
+# Room, Compose, WorkManager e ML Kit fornecem regras consumer próprias.
+# Os serializers atuais têm referências explícitas geradas pelo compilador Kotlin.
+# O núcleo Java não usa reflexão; não exige regras keep abrangentes.
 -keepattributes Signature,InnerClasses,EnclosingMethod
