@@ -1,4 +1,4 @@
-package com.northstar.money.data.backup
+package com.northstar.money.data.backup.reference
 
 import java.nio.ByteBuffer
 import java.security.SecureRandom
@@ -9,7 +9,7 @@ import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
-class PortableBackupCodec(
+class KotlinPortableBackupCodec(
     private val secureRandom: SecureRandom = SecureRandom(),
 ) {
     fun encrypt(plainText: String, password: CharArray): ByteArray {
