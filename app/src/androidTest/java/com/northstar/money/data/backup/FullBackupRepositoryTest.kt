@@ -189,7 +189,7 @@ class FullBackupRepositoryTest {
         val password = "correct horse battery staple".toCharArray()
         try {
             repository.restoreFullBackup(
-                FullBackupJsonCodec().encode(legacy, databaseVersion = 7),
+                FullBackupJsonCodec().encode(legacy, 7),
                 password,
             )
 

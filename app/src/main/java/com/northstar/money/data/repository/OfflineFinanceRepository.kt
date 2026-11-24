@@ -987,9 +987,7 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun createFullBackup(): String = backupCodec.encode(
-        snapshot = dao.exportSnapshot(),
-        databaseVersion = NorthstarDatabase.VERSION,
-        baseCurrencyCode = baseCurrencyCode.first(),
+        dao.exportSnapshot(), NorthstarDatabase.VERSION, System.currentTimeMillis(), baseCurrencyCode.first(),
     )
 
     override suspend fun writeFullBackup(output: java.io.OutputStream, password: CharArray) {

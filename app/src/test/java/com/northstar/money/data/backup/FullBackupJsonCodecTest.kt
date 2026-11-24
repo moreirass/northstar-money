@@ -20,10 +20,38 @@ class FullBackupJsonCodecTest {
     private val codec = FullBackupJsonCodec()
 
     @Test
+    fun javaWriterMatchesOriginalJsonIncludingUnicodeAndLegacyEscapes() {
+        val base = completeSnapshot()
+        val snapshot = base.copy(accounts = listOf(base.accounts.single().copy(
+            name = "Ação <>& \" \\u2028 \u2028\u2029 \u0000\b\n", openingBalanceMinor = Long.MIN_VALUE)),
+            receiptAttachments = listOf(com.northstar.money.core.database.ReceiptAttachmentEntity(
+                "r", "transaction", byteArrayOf(-1, 0, 127), "recibo", "image/png", 3, 4)),
+            accountExchangeRates = listOf(com.northstar.money.core.database.AccountExchangeRateEntity(
+                "account", "EUR", "JPY", 100, 170, 170000000, "2026-08-01")),
+            transactionExchangeRates = listOf(com.northstar.money.core.database.TransactionExchangeRateEntity(
+                "rate", "transaction", "entry", "EUR", "JPY", null, null, "2026-08-01", "test", "PENDING", null)))
+        val document = FullBackupDocument(
+            FullBackupJsonCodec.FORMAT, FullBackupJsonCodec.FORMAT_VERSION, 10, 1234,
+            snapshot.accounts, snapshot.accountExchangeRates, null, snapshot.categories,
+            snapshot.transactions, snapshot.transactionEntries, snapshot.reconciliations,
+            snapshot.budgetAllocations, snapshot.goals, snapshot.goalContributions,
+            snapshot.recurringSchedules, snapshot.debtProfiles, snapshot.receiptAttachments,
+            snapshot.transactionExchangeRates)
+        val reference = kotlinx.serialization.json.Json { encodeDefaults = true }.encodeToString(
+            FullBackupDocument.serializer(), document)
+        val result = java.io.StringWriter().also { BackupJsonWriter.write(it, document) }.toString()
+        assertEquals(reference, result)
+        assertEquals(snapshot, codec.decode(result).toSnapshot())
+        assertEquals(snapshot, BackupJsonReader.read(reference).toSnapshot())
+        val numericReceipts = reference.replace("\"/wB/\"", "[-1,0,127]")
+        assertEquals(snapshot, BackupJsonReader.read(numericReceipts).toSnapshot())
+    }
+
+    @Test
     fun encodeAndDecode_preservesEveryDatabaseTable() {
         val snapshot = completeSnapshot()
 
-        val encoded = codec.encode(snapshot, databaseVersion = 6, createdAtEpochMillis = 1234)
+        val encoded = codec.encode(snapshot, 6, 1234, null)
         val decoded = codec.decode(encoded)
 
         assertEquals(FullBackupJsonCodec.FORMAT, decoded.format)
@@ -35,18 +63,32 @@ class FullBackupJsonCodecTest {
 
     @Test
     fun decode_rejectsForeignBackupFormat() {
-        val encoded = codec.encode(completeSnapshot(), databaseVersion = 4, createdAtEpochMillis = 1234)
+        val encoded = codec.encode(completeSnapshot(), 4, 1234, null)
             .replace(FullBackupJsonCodec.FORMAT, "some-other-backup")
 
         assertThrows(IllegalArgumentException::class.java) { codec.decode(encoded) }
     }
 
     @Test
+    fun javaReaderRejectsMissingFieldsInvalidRecordsAndTrailingDocuments() {
+        val valid = codec.encode(completeSnapshot(), 10, 1234, null)
+        for (malformed in listOf(
+            valid.replace("\"payee\":\"Shop\",", ""),
+            valid.replace("\"note\":\"Note\"", "\"note\":null"),
+            valid.replace("\"amountMinor\":-25", "\"amountMinor\":9223372036854775808"),
+            valid.replace("\"status\":\"PAUSED\"", "\"unknownField\":1,\"status\":\"PAUSED\""),
+            valid + "{}",
+        )) {
+            assertTrue(malformed != valid)
+            assertThrows(IllegalArgumentException::class.java) { codec.decode(malformed) }
+        }
+    }
+
+    @Test
     fun decode_acceptsBackupCreatedBeforeCategoryMerges() {
         val legacy = codec.encode(
             completeSnapshot().copy(goalContributions = emptyList()),
-            databaseVersion = 5,
-            createdAtEpochMillis = 1234,
+            5, 1234, null,
         )
             .replace(",\"mergedIntoCategoryId\":\"target\"", "")
             .replace(",\"mergedIntoCategoryId\":null", "")
@@ -54,6 +96,7 @@ class FullBackupJsonCodecTest {
             .replace(",\"goalContributions\":[]", "")
 
         val decoded = codec.decode(legacy)
+        assertEquals(kotlinx.serialization.json.Json.decodeFromString(FullBackupDocument.serializer(), legacy), decoded)
 
         assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
         assertTrue(decoded.recurringSchedules.all { it.deletedAt == null })

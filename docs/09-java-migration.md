@@ -14,7 +14,9 @@ continuam necessários durante esta transição.
   salt de 16 bytes, IV de 12 bytes, cabeçalho de 12 bytes autenticado como AAD.
 - Mesmos cabeçalhos CSV, sinais, neutralização de fórmulas e limites de entrada.
 - JSON, chaves de preferências, permissões, widget, traduções e FileProvider mantidos.
-- Sem novas dependências de produção nesta fase.
+- O codec Java usa Gson 2.11.0 para ler e escrever JSON por streaming. Os campos
+  são tratados explicitamente para preservar a ordem, os valores nulos e a precisão
+  dos inteiros de 64 bits, incluindo em builds minificadas.
 
 ## Sequência e critérios de passagem
 
@@ -28,7 +30,11 @@ continuam necessários durante esta transição.
 | 6 | Fragments, Material Views, ViewBinding e ViewModels por feature | Paridade de todos os formulários, privacidade, navegação, acessibilidade e estados |
 | 7 | Workers, widget e remoção do stack Kotlin | annotationProcessor; remoção de kapt e flags temporárias; release minificada verificada |
 
-As fases 4–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
+A fase 4 está em curso. O codec de backup e o SQL das nove migrações passaram
+para Java. A comparação com as implementações Kotlin abrangeu as 13 tabelas do
+backup e as 42 instruções SQL. Após a integração, passaram os 90 testes JVM
+e a compilação dos testes instrumentados de debug. As entidades e os DAOs continuam em Kotlin.
+As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
 enquanto o código que os exige ainda estiver em produção. Em particular,
 `android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a
 substituição do processamento atual de entidades Kotlin.

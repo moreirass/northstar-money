@@ -54,6 +54,7 @@ kotlin {
 }
 
 dependencies {
+    implementation(libs.gson)
     implementation(platform(libs.kotlinx.serialization.bom))
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.androidx.core.ktx)
