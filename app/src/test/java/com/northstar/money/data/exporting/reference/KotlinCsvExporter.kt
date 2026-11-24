@@ -1,9 +1,9 @@
-package com.northstar.money.data.exporting
+package com.northstar.money.data.exporting.reference
 
 import com.northstar.money.domain.model.TransactionItem
 import java.io.Writer
 
-object CsvExporter {
+object KotlinCsvExporter {
     // Only textual columns are neutralized; signed numeric amounts stay numeric.
     fun textCell(value: String): String {
         val safe = if (value.trimStart().firstOrNull() in listOf('=', '+', '-', '@') ||

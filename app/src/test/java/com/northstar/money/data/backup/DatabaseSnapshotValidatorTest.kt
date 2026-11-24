@@ -21,7 +21,7 @@ class DatabaseSnapshotValidatorTest {
     @Test
     fun validate_rejectsMissingForeignKeyBeforeDatabaseMutation() {
         val invalid = validSnapshot().copy(
-            transactionEntries = validSnapshot().transactionEntries.map { it.copy(accountId = "missing") },
+            transactionEntries = validSnapshot().transactionEntries.map { it.entryWith(accountId = "missing") },
         )
 
         assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
@@ -30,10 +30,10 @@ class DatabaseSnapshotValidatorTest {
     @Test
     fun validate_rejectsUnbalancedTransfer() {
         val invalid = validSnapshot().copy(
-            transactions = listOf(validSnapshot().transactions.single().copy(kind = "TRANSFER")),
+            transactions = listOf(validSnapshot().transactions.single().asTransfer()),
             transactionEntries = listOf(
-                validSnapshot().transactionEntries.single().copy(categoryId = null, amountMinor = -100),
-                validSnapshot().transactionEntries.single().copy(
+                validSnapshot().transactionEntries.single().entryWith(categoryId = null, amountMinor = -100),
+                validSnapshot().transactionEntries.single().entryWith(
                     id = "entry-2",
                     accountId = "account-2",
                     categoryId = null,
@@ -53,10 +53,10 @@ class DatabaseSnapshotValidatorTest {
         val transfer = base.copy(
             accounts = base.accounts +
                 AccountEntity("usd", "USD account", "CHECKING", "USD", 0, null, 1, 1),
-            transactions = listOf(base.transactions.single().copy(kind = "TRANSFER")),
+            transactions = listOf(base.transactions.single().asTransfer()),
             transactionEntries = listOf(
-                base.transactionEntries.single().copy(categoryId = null, amountMinor = -100),
-                base.transactionEntries.single().copy(
+                base.transactionEntries.single().entryWith(categoryId = null, amountMinor = -100),
+                base.transactionEntries.single().entryWith(
                     id = "usd-entry",
                     accountId = "usd",
                     categoryId = null,
@@ -72,7 +72,7 @@ class DatabaseSnapshotValidatorTest {
     @Test
     fun validate_rejectsEntryCurrencyThatDoesNotMatchAccount() {
         val invalid = validSnapshot().copy(
-            transactionEntries = validSnapshot().transactionEntries.map { it.copy(currencyCode = "USD") },
+            transactionEntries = validSnapshot().transactionEntries.map { it.entryWith(currencyCode = "USD") },
         )
 
         assertThrows(IllegalArgumentException::class.java) { validator.validate(invalid) }
@@ -96,13 +96,13 @@ class DatabaseSnapshotValidatorTest {
     fun validate_rejectsMergeIntoMissingOrArchivedCategory() {
         val missingTarget = validSnapshot().copy(
             categories = listOf(
-                CategoryEntity("category", "Food", "EXPENSE", 0, archivedAt = 1, mergedIntoCategoryId = "missing"),
+                CategoryEntity("category", "Food", "EXPENSE", 0, 1, "missing"),
             ),
         )
         val archivedTarget = validSnapshot().copy(
             categories = listOf(
-                CategoryEntity("category", "Food", "EXPENSE", 0, archivedAt = 1, mergedIntoCategoryId = "target"),
-                CategoryEntity("target", "Living", "EXPENSE", 1, archivedAt = 2),
+                CategoryEntity("category", "Food", "EXPENSE", 0, 1, "target"),
+                CategoryEntity("target", "Living", "EXPENSE", 1, 2, null),
             ),
         )
 
@@ -157,17 +157,20 @@ class DatabaseSnapshotValidatorTest {
     @Test fun rejectsUnsupportedCurrencyAndMultipleExpenseEntries() {
         val base = validSnapshot()
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(accounts = base.accounts.map { it.copy(currencyCode = "ZZZ") }))
+            validator.validate(base.copy(accounts = base.accounts.map { it.withDetails(it.name, it.type, "ZZZ", it.openingBalanceMinor, it.updatedAt) }))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(transactionEntries = base.transactionEntries + base.transactionEntries.single().copy(id = "second")))
+            validator.validate(base.copy(transactionEntries = base.transactionEntries + base.transactionEntries.single().entryWith(id = "second")))
         }
     }
 
     @Test fun rejectsExpenseAssignedToAnIncomeCategory() {
         val base = validSnapshot()
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(categories = base.categories.map { it.copy(kind = "INCOME") }))
+            val incomeCategories = base.categories.map {
+                CategoryEntity(it.id, it.name, "INCOME", it.sortOrder, it.archivedAt, it.mergedIntoCategoryId)
+            }
+            validator.validate(base.copy(categories = incomeCategories))
         }
     }
 
@@ -187,11 +190,22 @@ class DatabaseSnapshotValidatorTest {
     @Test fun rejectsTransferBetweenTheSameAccount() {
         val base = validSnapshot()
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(transactions = base.transactions.map { it.copy(kind = "TRANSFER") },
-                transactionEntries = listOf(base.transactionEntries.single().copy(categoryId = null),
-                    base.transactionEntries.single().copy(id = "destination", categoryId = null, amountMinor = 100))))
+            validator.validate(base.copy(transactions = base.transactions.map { it.asTransfer() },
+                transactionEntries = listOf(base.transactionEntries.single().entryWith(categoryId = null),
+                    base.transactionEntries.single().entryWith(id = "destination", categoryId = null, amountMinor = 100))))
         }
     }
+
+    private fun TransactionEntity.asTransfer() =
+        TransactionEntity(id, "TRANSFER", localDate, payee, note, createdAt, updatedAt, deletedAt)
+
+    private fun TransactionEntryEntity.entryWith(
+        id: String = this.id,
+        accountId: String = this.accountId,
+        categoryId: String? = this.categoryId,
+        amountMinor: Long = this.amountMinor,
+        currencyCode: String = this.currencyCode,
+    ) = TransactionEntryEntity(id, transactionId, accountId, categoryId, amountMinor, currencyCode, cleared)
 
     private fun validSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),

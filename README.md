@@ -344,6 +344,7 @@ O workflow não configura assinatura nem publicação na loja.
 
 | Documento | Conteúdo |
 |---|---|
+| [Índice da documentação](docs/01-documentation-index.md) | Ordem de leitura e estado dos documentos |
 | [Requisitos funcionais](docs/02-functional-requirements.md) | Funcionalidades e regras previstas |
 | [Especificação UX/UI](docs/03-ux-ui-specification.md) | Organização e comportamento da interface |
 | [Arquitetura e stack](docs/04-architecture-and-stack.md) | Decisões técnicas |

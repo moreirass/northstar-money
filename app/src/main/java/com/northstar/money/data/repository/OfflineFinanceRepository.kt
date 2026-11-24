@@ -247,7 +247,7 @@ class OfflineFinanceRepository(
         } + CategoryEntity("income-salary", "Salary", "INCOME", 0)
         dao.seedIfEmpty(
             defaultAccounts = listOf(
-                AccountEntity(INITIAL_ACCOUNT_ID, "Conta Principal", "CHECKING", currencyCode, 0, createdAt = now, updatedAt = now),
+                AccountEntity(INITIAL_ACCOUNT_ID, "Conta Principal", "CHECKING", currencyCode, 0, null, now, now),
             ),
             defaultCategories = categories,
         )
@@ -338,13 +338,13 @@ class OfflineFinanceRepository(
         require(transaction.amount.minor > 0) { "Amount must be positive" }
         val localDate = LocalDate.parse(transaction.localDate).toString()
         val updatedAt = System.currentTimeMillis()
-        val updatedTransaction = stored.transaction.copy(
-            localDate = localDate,
-            payee = transaction.payee.trim().ifBlank {
+        val updatedTransaction = stored.transaction.withDetails(
+            localDate,
+            transaction.payee.trim().ifBlank {
                 if (transaction.kind == TransactionKind.TRANSFER) "Transfer" else transaction.kind.name.lowercase().replaceFirstChar(Char::uppercase)
             },
-            note = transaction.note.trim(),
-            updatedAt = updatedAt,
+            transaction.note.trim(),
+            updatedAt,
         )
         val updatedEntries = if (transaction.kind == TransactionKind.TRANSFER) {
             require(stored.entries.size == 2) { "Transfer must contain exactly two entries" }
@@ -362,17 +362,17 @@ class OfflineFinanceRepository(
             val source = requireNotNull(stored.entries.singleOrNull { it.amountMinor < 0 }) { "Transfer source is invalid" }
             val destination = requireNotNull(stored.entries.singleOrNull { it.amountMinor > 0 }) { "Transfer destination is invalid" }
             listOf(
-                source.copy(
-                    accountId = transaction.accountId,
-                    categoryId = null,
-                    amountMinor = Math.negateExact(transaction.amount.minor),
-                    currencyCode = transaction.amount.currencyCode,
+                source.withDetails(
+                    transaction.accountId,
+                    null,
+                    Math.negateExact(transaction.amount.minor),
+                    transaction.amount.currencyCode,
                 ),
-                destination.copy(
-                    accountId = destinationAccountId,
-                    categoryId = null,
-                    amountMinor = effectiveDestinationAmount.minor,
-                    currencyCode = effectiveDestinationAmount.currencyCode,
+                destination.withDetails(
+                    destinationAccountId,
+                    null,
+                    effectiveDestinationAmount.minor,
+                    effectiveDestinationAmount.currencyCode,
                 ),
             )
         } else {
@@ -383,15 +383,15 @@ class OfflineFinanceRepository(
                 "Category does not match the transaction type"
             }
             listOf(
-                stored.entries.single().copy(
-                    accountId = transaction.accountId,
-                    categoryId = categoryId,
-                    amountMinor = if (transaction.kind == TransactionKind.EXPENSE) {
+                stored.entries.single().withDetails(
+                    transaction.accountId,
+                    categoryId,
+                    if (transaction.kind == TransactionKind.EXPENSE) {
                         Math.negateExact(transaction.amount.minor)
                     } else {
                         transaction.amount.minor
                     },
-                    currencyCode = transaction.amount.currencyCode,
+                    transaction.amount.currencyCode,
                 ),
             )
         }
@@ -497,13 +497,8 @@ class OfflineFinanceRepository(
         val now = System.currentTimeMillis()
         dao.insertAccount(
             AccountEntity(
-                id = UUID.randomUUID().toString(),
-                name = name.trim(),
-                type = type.name,
-                currencyCode = openingBalance.currencyCode,
-                openingBalanceMinor = openingBalance.minor,
-                createdAt = now,
-                updatedAt = now,
+                UUID.randomUUID().toString(), name.trim(), type.name, openingBalance.currencyCode,
+                openingBalance.minor, null, now, now,
             )
         )
         scheduleRateRefresh?.invoke()
@@ -515,11 +510,9 @@ class OfflineFinanceRepository(
         val seededAccount = dao.getActiveAccount(INITIAL_ACCOUNT_ID)
         if (seededAccount != null && dao.countEntriesForAccount(INITIAL_ACCOUNT_ID) == 0) {
             dao.updateAccount(
-                seededAccount.copy(
-                    name = name.trim(),
-                    currencyCode = openingBalance.currencyCode,
-                    openingBalanceMinor = openingBalance.minor,
-                    updatedAt = System.currentTimeMillis(),
+                seededAccount.withDetails(
+                    name.trim(), seededAccount.type, openingBalance.currencyCode,
+                    openingBalance.minor, System.currentTimeMillis(),
                 ),
             )
         } else {
@@ -542,11 +535,9 @@ class OfflineFinanceRepository(
         val stored = requireNotNull(dao.getActiveAccount(account.id)) { "Account is missing or archived" }
         require(account.openingBalance.currencyCode == stored.currencyCode) { "Account currency cannot be changed" }
         dao.updateAccount(
-            stored.copy(
-                name = account.name.trim(),
-                type = account.type.name,
-                openingBalanceMinor = account.openingBalance.minor,
-                updatedAt = System.currentTimeMillis(),
+            stored.withDetails(
+                account.name.trim(), account.type.name, stored.currencyCode,
+                account.openingBalance.minor, System.currentTimeMillis(),
             ),
         )
         scheduleRateRefresh?.invoke()
@@ -987,9 +978,7 @@ class OfflineFinanceRepository(
     }
 
     override suspend fun createFullBackup(): String = backupCodec.encode(
-        snapshot = dao.exportSnapshot(),
-        databaseVersion = NorthstarDatabase.VERSION,
-        baseCurrencyCode = baseCurrencyCode.first(),
+        dao.exportSnapshot(), NorthstarDatabase.VERSION, System.currentTimeMillis(), baseCurrencyCode.first(),
     )
 
     override suspend fun writeFullBackup(output: java.io.OutputStream, password: CharArray) {
@@ -1082,7 +1071,7 @@ class OfflineFinanceRepository(
                     }
                     target = next.mergedIntoCategoryId
                 }
-                category.copy(mergedIntoCategoryId = target)
+                category.withMergeTarget(target)
             },
             transactionExchangeRates = snapshot.transactionExchangeRates.map { rate ->
                 val entry = entries[rate.entryId]

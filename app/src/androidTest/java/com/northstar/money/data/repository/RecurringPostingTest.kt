@@ -42,7 +42,7 @@ class RecurringPostingTest {
                 CategoryEntity("expense", "Bills", "EXPENSE", 0),
                 CategoryEntity("expense-target", "Living", "EXPENSE", 1),
                 CategoryEntity("income", "Salary", "INCOME", 0),
-                CategoryEntity("archived-category", "Old bills", "EXPENSE", 2, archivedAt = 2),
+                CategoryEntity("archived-category", "Old bills", "EXPENSE", 2, 2, null),
             ),
         )
         repository = OfflineFinanceRepository(dao)

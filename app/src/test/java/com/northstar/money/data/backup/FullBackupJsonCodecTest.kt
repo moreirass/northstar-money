@@ -20,10 +20,66 @@ class FullBackupJsonCodecTest {
     private val codec = FullBackupJsonCodec()
 
     @Test
+    fun javaWriterMatchesOriginalJsonIncludingUnicodeAndLegacyEscapes() {
+        val base = completeSnapshot()
+        val account = base.accounts.single()
+        val snapshot = base.copy(accounts = listOf(account.withDetails(
+            "Ação <>& \" \\u2028 \u2028\u2029 \u0000\b\n", account.type, account.currencyCode, Long.MIN_VALUE, account.updatedAt)),
+            receiptAttachments = listOf(com.northstar.money.core.database.ReceiptAttachmentEntity(
+                "r", "transaction", byteArrayOf(-1, 0, 127), "recibo", "image/png", 3, 4)),
+            accountExchangeRates = listOf(com.northstar.money.core.database.AccountExchangeRateEntity(
+                "account", "EUR", "JPY", 100, 170, 170000000, "2026-08-01")),
+            transactionExchangeRates = listOf(com.northstar.money.core.database.TransactionExchangeRateEntity(
+                "rate", "transaction", "entry", "EUR", "JPY", null, null, "2026-08-01", "test", "PENDING", null)))
+        val reference = requireNotNull(javaClass.getResourceAsStream("/backup/full-v3-kotlin.json"))
+            .use { it.readBytes() }
+        val result = codec.encode(snapshot, 10, 1234, null)
+        org.junit.Assert.assertArrayEquals(reference, result.toByteArray(Charsets.UTF_8))
+        assertEquals(snapshot, codec.decode(result).toSnapshot())
+        assertEquals(snapshot, BackupJsonReader.read(reference.toString(Charsets.UTF_8)).toSnapshot())
+        val numericReceipts = reference.toString(Charsets.UTF_8).replace("\"/wB/\"", "[-1,0,127]")
+        assertEquals(snapshot, BackupJsonReader.read(numericReceipts).toSnapshot())
+    }
+
+    @Test
+    fun activeAccountFromLegacyBackupKeepsItsIdentityAndTimestampsWhenEdited() {
+        val json = codec.encode(completeSnapshot(), 10, 1234, null)
+            .replaceFirst(",\"archivedAt\":9", "")
+        val original = codec.decode(json).accounts.single()
+        assertEquals(AccountEntity("account", "Account", "CHECKING", "EUR", 100, null, 1, 2), original)
+        val edited = original.withDetails("Savings", "SAVINGS", "JPY", 250, 3)
+        assertEquals(AccountEntity("account", "Savings", "SAVINGS", "JPY", 250, null, 1, 3), edited)
+        assertEquals(2L, original.updatedAt)
+    }
+
+    @Test
+    fun editedTransferKeepsBothPostingsAndExactMinorUnitsAcrossBackup() {
+        val base = completeSnapshot()
+        val transfer = TransactionEntity("transfer", "TRANSFER", "2026-08-01", "Transfer", "", 1, 1)
+        val source = TransactionEntryEntity("debit", "transfer", "account", null, -100, "EUR", true)
+        val destination = TransactionEntryEntity("credit", "transfer", "usd", null, 125, "USD", false)
+        val snapshot = base.copy(
+            accounts = base.accounts + AccountEntity("usd", "Savings", "SAVINGS", "USD", 0, null, 1, 1),
+            transactions = listOf(transfer.withDetails("2026-08-02", "Transfer", "Edited", 2)),
+            transactionEntries = listOf(
+                source.withDetails("account", null, -9_007_199_254_740_993L, "EUR"),
+                destination.withDetails("usd", null, 9_007_199_254_740_995L, "USD"),
+            ),
+        )
+        val restored = codec.decode(codec.encode(snapshot, 10, 2, "EUR")).toSnapshot()
+        assertEquals(listOf(TransactionEntity("transfer", "TRANSFER", "2026-08-02", "Transfer", "Edited", 1, 2)),
+            restored.transactions)
+        assertEquals(listOf(
+            TransactionEntryEntity("debit", "transfer", "account", null, -9_007_199_254_740_993L, "EUR", true),
+            TransactionEntryEntity("credit", "transfer", "usd", null, 9_007_199_254_740_995L, "USD", false),
+        ), restored.transactionEntries)
+    }
+
+    @Test
     fun encodeAndDecode_preservesEveryDatabaseTable() {
         val snapshot = completeSnapshot()
 
-        val encoded = codec.encode(snapshot, databaseVersion = 6, createdAtEpochMillis = 1234)
+        val encoded = codec.encode(snapshot, 6, 1234, null)
         val decoded = codec.decode(encoded)
 
         assertEquals(FullBackupJsonCodec.FORMAT, decoded.format)
@@ -35,18 +91,33 @@ class FullBackupJsonCodecTest {
 
     @Test
     fun decode_rejectsForeignBackupFormat() {
-        val encoded = codec.encode(completeSnapshot(), databaseVersion = 4, createdAtEpochMillis = 1234)
+        val encoded = codec.encode(completeSnapshot(), 4, 1234, null)
             .replace(FullBackupJsonCodec.FORMAT, "some-other-backup")
 
         assertThrows(IllegalArgumentException::class.java) { codec.decode(encoded) }
     }
 
     @Test
+    fun javaReaderRejectsMissingFieldsInvalidRecordsAndTrailingDocuments() {
+        val valid = codec.encode(completeSnapshot(), 10, 1234, null)
+        for (malformed in listOf(
+            valid.replace("\"payee\":\"Shop\",", ""),
+            valid.replace("\"note\":\"Note\"", "\"note\":null"),
+            valid.replace("\"amountMinor\":-25", "\"amountMinor\":9223372036854775808"),
+            valid.replace("\"status\":\"PAUSED\"", "\"unknownField\":1,\"status\":\"PAUSED\""),
+            valid + "{}",
+        )) {
+            assertTrue(malformed != valid)
+            assertThrows(IllegalArgumentException::class.java) { codec.decode(malformed) }
+        }
+    }
+
+    @Test
     fun decode_acceptsBackupCreatedBeforeCategoryMerges() {
+        val original = completeSnapshot()
         val legacy = codec.encode(
-            completeSnapshot().copy(goalContributions = emptyList()),
-            databaseVersion = 5,
-            createdAtEpochMillis = 1234,
+            original.copy(goalContributions = emptyList()),
+            5, 1234, null,
         )
             .replace(",\"mergedIntoCategoryId\":\"target\"", "")
             .replace(",\"mergedIntoCategoryId\":null", "")
@@ -54,6 +125,10 @@ class FullBackupJsonCodecTest {
             .replace(",\"goalContributions\":[]", "")
 
         val decoded = codec.decode(legacy)
+        assertEquals(original.copy(
+            categories = original.categories.map { it.withMergeTarget(null) },
+            goalContributions = emptyList(),
+        ), decoded.toSnapshot())
 
         assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
         assertTrue(decoded.recurringSchedules.all { it.deletedAt == null })

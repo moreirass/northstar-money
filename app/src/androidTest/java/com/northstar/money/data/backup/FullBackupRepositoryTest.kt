@@ -45,9 +45,9 @@ class FullBackupRepositoryTest {
     fun createFullBackup_includesAllTablesAndHiddenRecords() = runBlocking {
         val dao = database.financeDao()
         dao.insertAccount(AccountEntity("account", "Archived", "CHECKING", "EUR", 100, 99, 1, 2))
-        dao.insertCategory(CategoryEntity("category", "Archived", "EXPENSE", 1, 99))
+        dao.insertCategory(CategoryEntity("category", "Archived", "EXPENSE", 1, 99, null))
         dao.insertTransaction(
-            TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 3, 4, deletedAt = 98),
+            TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 3, 4, 98),
             TransactionEntryEntity("entry", "transaction", "account", "category", -25, "EUR", false),
         )
         dao.insertReconciliationWithAdjustment(
@@ -189,7 +189,7 @@ class FullBackupRepositoryTest {
         val password = "correct horse battery staple".toCharArray()
         try {
             repository.restoreFullBackup(
-                FullBackupJsonCodec().encode(legacy, databaseVersion = 7),
+                FullBackupJsonCodec().encode(legacy, 7),
                 password,
             )
 
@@ -205,7 +205,7 @@ class FullBackupRepositoryTest {
 
     private fun completeRestoreSnapshot() = DatabaseSnapshot(
         accounts = listOf(AccountEntity("restored-account", "Restored", "CHECKING", "EUR", 100, 99, 10, 11)),
-        categories = listOf(CategoryEntity("restored-category", "Restored", "EXPENSE", 0, 99)),
+        categories = listOf(CategoryEntity("restored-category", "Restored", "EXPENSE", 0, 99, null)),
         transactions = listOf(TransactionEntity("restored-transaction", "EXPENSE", "2026-08-01", "Shop", "Note", 12, 13)),
         transactionEntries = listOf(
             TransactionEntryEntity(

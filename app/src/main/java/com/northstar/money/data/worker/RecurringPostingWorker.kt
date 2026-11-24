@@ -17,14 +17,24 @@ class RecurringPostingWorker(context: Context, params: WorkerParameters) : Corou
             Result.success(workDataOf("posted" to posted))
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Throwable) {
-            android.util.Log.e(TAG, "Automatic recurring posting failed", error)
-            if (runAttemptCount < MAX_RETRIES) {
-                Result.retry()
-            } else {
-                Result.failure(workDataOf("error" to "recurring_posting_failed"))
-            }
+        } catch (_: android.database.sqlite.SQLiteException) {
+            retryStorageFailure()
+        } catch (_: java.io.IOException) {
+            retryStorageFailure()
+        } catch (_: IllegalArgumentException) {
+            android.util.Log.e(TAG, "Recurring posting validation failed")
+            Result.failure(workDataOf("error" to "recurring_posting_failed"))
+        } catch (_: ArithmeticException) {
+            android.util.Log.e(TAG, "Recurring posting arithmetic failed")
+            Result.failure(workDataOf("error" to "recurring_posting_failed"))
         }
+    }
+
+    private fun retryStorageFailure(): Result {
+        // As mensagens e causas das exceções podem conter dados financeiros.
+        android.util.Log.e(TAG, "Automatic recurring posting storage failed")
+        return if (runAttemptCount < MAX_RETRIES) Result.retry()
+        else Result.failure(workDataOf("error" to "recurring_posting_failed"))
     }
 
     companion object {

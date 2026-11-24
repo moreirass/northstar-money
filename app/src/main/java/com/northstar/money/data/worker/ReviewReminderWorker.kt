@@ -25,7 +25,7 @@ class ReviewReminderWorker(context: Context, params: WorkerParameters) : Corouti
                     )
             ) {
                 val notification = NotificationCompat.Builder(applicationContext, "upcoming")
-                    .setSmallIcon(com.northstar.money.R.drawable.ic_launcher_foreground)
+                    .setSmallIcon(com.northstar.money.R.drawable.ic_review_notification)
                     .setContentTitle(applicationContext.getString(R.string.notification_review_title))
                     .setContentText(applicationContext.getString(R.string.notification_review_text))
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -36,13 +36,16 @@ class ReviewReminderWorker(context: Context, params: WorkerParameters) : Corouti
             Result.success()
         } catch (error: CancellationException) {
             throw error
-        } catch (error: Throwable) {
-            android.util.Log.e(TAG, "Financial review reminder failed", error)
+        } catch (_: java.io.IOException) {
+            android.util.Log.e(TAG, "Financial review reminder settings failed")
             if (runAttemptCount < MAX_RETRIES) {
                 Result.retry()
             } else {
                 Result.failure(workDataOf("error" to "review_reminder_failed"))
             }
+        } catch (_: SecurityException) {
+            android.util.Log.e(TAG, "Financial review reminder permission denied")
+            Result.failure(workDataOf("error" to "review_reminder_failed"))
         }
     }
 
