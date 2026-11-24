@@ -96,13 +96,13 @@ class DatabaseSnapshotValidatorTest {
     fun validate_rejectsMergeIntoMissingOrArchivedCategory() {
         val missingTarget = validSnapshot().copy(
             categories = listOf(
-                CategoryEntity("category", "Food", "EXPENSE", 0, archivedAt = 1, mergedIntoCategoryId = "missing"),
+                CategoryEntity("category", "Food", "EXPENSE", 0, 1, "missing"),
             ),
         )
         val archivedTarget = validSnapshot().copy(
             categories = listOf(
-                CategoryEntity("category", "Food", "EXPENSE", 0, archivedAt = 1, mergedIntoCategoryId = "target"),
-                CategoryEntity("target", "Living", "EXPENSE", 1, archivedAt = 2),
+                CategoryEntity("category", "Food", "EXPENSE", 0, 1, "target"),
+                CategoryEntity("target", "Living", "EXPENSE", 1, 2, null),
             ),
         )
 
@@ -167,7 +167,10 @@ class DatabaseSnapshotValidatorTest {
     @Test fun rejectsExpenseAssignedToAnIncomeCategory() {
         val base = validSnapshot()
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(categories = base.categories.map { it.copy(kind = "INCOME") }))
+            val incomeCategories = base.categories.map {
+                CategoryEntity(it.id, it.name, "INCOME", it.sortOrder, it.archivedAt, it.mergedIntoCategoryId)
+            }
+            validator.validate(base.copy(categories = incomeCategories))
         }
     }
 

@@ -1071,7 +1071,7 @@ class OfflineFinanceRepository(
                     }
                     target = next.mergedIntoCategoryId
                 }
-                category.copy(mergedIntoCategoryId = target)
+                category.withMergeTarget(target)
             },
             transactionExchangeRates = snapshot.transactionExchangeRates.map { rate ->
                 val entry = entries[rate.entryId]

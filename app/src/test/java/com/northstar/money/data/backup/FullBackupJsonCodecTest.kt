@@ -103,7 +103,7 @@ class FullBackupJsonCodecTest {
 
         val decoded = codec.decode(legacy)
         assertEquals(original.copy(
-            categories = original.categories.map { it.copy(mergedIntoCategoryId = null) },
+            categories = original.categories.map { it.withMergeTarget(null) },
             goalContributions = emptyList(),
         ), decoded.toSnapshot())
 

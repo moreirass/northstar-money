@@ -41,7 +41,12 @@ Kotlin antes da substituição da entidade. A amostra contém as 13 tabelas e pe
 comparar os bytes originais mesmo depois de migrar as restantes entidades.
 O Room regenerou o esquema v10 completo com a entidade Java e o conteúdo coincidiu
 com a versão em Git. Passaram os 91 testes JVM e a compilação dos testes instrumentados de debug.
-As outras 12 entidades e os DAOs continuam em Kotlin.
+
+`CategoryEntity` também passou para Java. A verificação em SQLite com o SQL
+exportado pelo Room confirmou que uma fusão pode referenciar uma categoria
+inserida mais tarde na mesma transação, que o par tipo/nome é único e que apagar
+o destino da fusão limpa a referência na categoria de origem.
+As restantes 11 entidades e os DAOs continuam em Kotlin.
 As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
 enquanto o código que os exige ainda estiver em produção. Em particular,
 `android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a

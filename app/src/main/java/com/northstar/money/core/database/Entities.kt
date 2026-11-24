@@ -7,27 +7,6 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
-@Serializable
-@Entity(
-    tableName = "categories",
-    foreignKeys = [ForeignKey(
-        entity = CategoryEntity::class,
-        parentColumns = ["id"],
-        childColumns = ["mergedIntoCategoryId"],
-        onDelete = ForeignKey.SET_NULL,
-        deferred = true,
-    )],
-    indices = [Index(value = ["kind", "name"], unique = true), Index("mergedIntoCategoryId")],
-)
-data class CategoryEntity(
-    @PrimaryKey val id: String,
-    val name: String,
-    val kind: String,
-    val sortOrder: Int,
-    val archivedAt: Long? = null,
-    val mergedIntoCategoryId: String? = null,
-)
-
 data class ArchivedCategoryRow(
     val id: String,
     val name: String,
