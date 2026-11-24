@@ -24,7 +24,7 @@ jobs:
       - uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
       - name: Build, test and lint
         run: bash ./gradlew assembleDebug testDebugUnitTest lintDebug assembleRelease --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: verification-reports
@@ -58,7 +58,7 @@ jobs:
           script: |
             bash ./gradlew connectedDebugAndroidTest --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
             bash ./gradlew connectedReleaseAndroidTest -PreleaseSmoke=true -Pandroid.testInstrumentationRunnerArguments.class=com.northstar.money.release.ReleaseSmokeTest,com.northstar.money.data.backup.FullBackupRepositoryTest,com.northstar.money.data.repository.TransactionEditingTest,com.northstar.money.data.repository.CsvImportAtomicityTest,com.northstar.money.core.database.AsyncCurrencyMigrationTest --max-workers=1 -Pkotlin.compiler.execution.strategy=in-process --console=plain
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: instrumentation-${{ matrix.api }}
