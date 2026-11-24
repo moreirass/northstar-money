@@ -8,19 +8,6 @@ import androidx.room.PrimaryKey
 import kotlinx.serialization.Serializable
 
 @Serializable
-@Entity(tableName = "accounts", indices = [Index("archivedAt")])
-data class AccountEntity(
-    @PrimaryKey val id: String,
-    val name: String,
-    val type: String,
-    val currencyCode: String,
-    val openingBalanceMinor: Long,
-    val archivedAt: Long? = null,
-    val createdAt: Long,
-    val updatedAt: Long,
-)
-
-@Serializable
 @Entity(
     tableName = "categories",
     foreignKeys = [ForeignKey(

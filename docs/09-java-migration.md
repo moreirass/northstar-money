@@ -33,7 +33,15 @@ continuam necessários durante esta transição.
 A fase 4 está em curso. O codec de backup e o SQL das nove migrações passaram
 para Java. A comparação com as implementações Kotlin abrangeu as 13 tabelas do
 backup e as 42 instruções SQL. Após a integração, passaram os 90 testes JVM
-e a compilação dos testes instrumentados de debug. As entidades e os DAOs continuam em Kotlin.
+e a compilação dos testes instrumentados de debug.
+
+`AccountEntity` é a primeira entidade Room em Java. O teste do backup usa
+`app/src/test/resources/backup/full-v3-kotlin.json`, produzido pelo serializador
+Kotlin antes da substituição da entidade. A amostra contém as 13 tabelas e permite
+comparar os bytes originais mesmo depois de migrar as restantes entidades.
+O Room regenerou o esquema v10 completo com a entidade Java e o conteúdo coincidiu
+com a versão em Git. Passaram os 91 testes JVM e a compilação dos testes instrumentados de debug.
+As outras 12 entidades e os DAOs continuam em Kotlin.
 As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
 enquanto o código que os exige ainda estiver em produção. Em particular,
 `android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a

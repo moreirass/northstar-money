@@ -14,9 +14,7 @@ import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import com.northstar.money.core.database.ReceiptAttachmentEntity
 import com.northstar.money.core.database.TransactionExchangeRateEntity
-import kotlinx.serialization.Serializable
 
-@Serializable
 data class FullBackupDocument(
     val format: String,
     val formatVersion: Int,

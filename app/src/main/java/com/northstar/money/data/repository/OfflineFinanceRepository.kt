@@ -247,7 +247,7 @@ class OfflineFinanceRepository(
         } + CategoryEntity("income-salary", "Salary", "INCOME", 0)
         dao.seedIfEmpty(
             defaultAccounts = listOf(
-                AccountEntity(INITIAL_ACCOUNT_ID, "Conta Principal", "CHECKING", currencyCode, 0, createdAt = now, updatedAt = now),
+                AccountEntity(INITIAL_ACCOUNT_ID, "Conta Principal", "CHECKING", currencyCode, 0, null, now, now),
             ),
             defaultCategories = categories,
         )
@@ -497,13 +497,8 @@ class OfflineFinanceRepository(
         val now = System.currentTimeMillis()
         dao.insertAccount(
             AccountEntity(
-                id = UUID.randomUUID().toString(),
-                name = name.trim(),
-                type = type.name,
-                currencyCode = openingBalance.currencyCode,
-                openingBalanceMinor = openingBalance.minor,
-                createdAt = now,
-                updatedAt = now,
+                UUID.randomUUID().toString(), name.trim(), type.name, openingBalance.currencyCode,
+                openingBalance.minor, null, now, now,
             )
         )
         scheduleRateRefresh?.invoke()
@@ -515,11 +510,9 @@ class OfflineFinanceRepository(
         val seededAccount = dao.getActiveAccount(INITIAL_ACCOUNT_ID)
         if (seededAccount != null && dao.countEntriesForAccount(INITIAL_ACCOUNT_ID) == 0) {
             dao.updateAccount(
-                seededAccount.copy(
-                    name = name.trim(),
-                    currencyCode = openingBalance.currencyCode,
-                    openingBalanceMinor = openingBalance.minor,
-                    updatedAt = System.currentTimeMillis(),
+                seededAccount.withDetails(
+                    name.trim(), seededAccount.type, openingBalance.currencyCode,
+                    openingBalance.minor, System.currentTimeMillis(),
                 ),
             )
         } else {
@@ -542,11 +535,9 @@ class OfflineFinanceRepository(
         val stored = requireNotNull(dao.getActiveAccount(account.id)) { "Account is missing or archived" }
         require(account.openingBalance.currencyCode == stored.currencyCode) { "Account currency cannot be changed" }
         dao.updateAccount(
-            stored.copy(
-                name = account.name.trim(),
-                type = account.type.name,
-                openingBalanceMinor = account.openingBalance.minor,
-                updatedAt = System.currentTimeMillis(),
+            stored.withDetails(
+                account.name.trim(), account.type.name, stored.currencyCode,
+                account.openingBalance.minor, System.currentTimeMillis(),
             ),
         )
         scheduleRateRefresh?.invoke()

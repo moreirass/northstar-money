@@ -157,7 +157,7 @@ class DatabaseSnapshotValidatorTest {
     @Test fun rejectsUnsupportedCurrencyAndMultipleExpenseEntries() {
         val base = validSnapshot()
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(accounts = base.accounts.map { it.copy(currencyCode = "ZZZ") }))
+            validator.validate(base.copy(accounts = base.accounts.map { it.withDetails(it.name, it.type, "ZZZ", it.openingBalanceMinor, it.updatedAt) }))
         }
         assertThrows(IllegalArgumentException::class.java) {
             validator.validate(base.copy(transactionEntries = base.transactionEntries + base.transactionEntries.single().copy(id = "second")))

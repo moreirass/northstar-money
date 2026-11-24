@@ -22,29 +22,34 @@ class FullBackupJsonCodecTest {
     @Test
     fun javaWriterMatchesOriginalJsonIncludingUnicodeAndLegacyEscapes() {
         val base = completeSnapshot()
-        val snapshot = base.copy(accounts = listOf(base.accounts.single().copy(
-            name = "Ação <>& \" \\u2028 \u2028\u2029 \u0000\b\n", openingBalanceMinor = Long.MIN_VALUE)),
+        val account = base.accounts.single()
+        val snapshot = base.copy(accounts = listOf(account.withDetails(
+            "Ação <>& \" \\u2028 \u2028\u2029 \u0000\b\n", account.type, account.currencyCode, Long.MIN_VALUE, account.updatedAt)),
             receiptAttachments = listOf(com.northstar.money.core.database.ReceiptAttachmentEntity(
                 "r", "transaction", byteArrayOf(-1, 0, 127), "recibo", "image/png", 3, 4)),
             accountExchangeRates = listOf(com.northstar.money.core.database.AccountExchangeRateEntity(
                 "account", "EUR", "JPY", 100, 170, 170000000, "2026-08-01")),
             transactionExchangeRates = listOf(com.northstar.money.core.database.TransactionExchangeRateEntity(
                 "rate", "transaction", "entry", "EUR", "JPY", null, null, "2026-08-01", "test", "PENDING", null)))
-        val document = FullBackupDocument(
-            FullBackupJsonCodec.FORMAT, FullBackupJsonCodec.FORMAT_VERSION, 10, 1234,
-            snapshot.accounts, snapshot.accountExchangeRates, null, snapshot.categories,
-            snapshot.transactions, snapshot.transactionEntries, snapshot.reconciliations,
-            snapshot.budgetAllocations, snapshot.goals, snapshot.goalContributions,
-            snapshot.recurringSchedules, snapshot.debtProfiles, snapshot.receiptAttachments,
-            snapshot.transactionExchangeRates)
-        val reference = kotlinx.serialization.json.Json { encodeDefaults = true }.encodeToString(
-            FullBackupDocument.serializer(), document)
-        val result = java.io.StringWriter().also { BackupJsonWriter.write(it, document) }.toString()
-        assertEquals(reference, result)
+        val reference = requireNotNull(javaClass.getResourceAsStream("/backup/full-v3-kotlin.json"))
+            .use { it.readBytes() }
+        val result = codec.encode(snapshot, 10, 1234, null)
+        org.junit.Assert.assertArrayEquals(reference, result.toByteArray(Charsets.UTF_8))
         assertEquals(snapshot, codec.decode(result).toSnapshot())
-        assertEquals(snapshot, BackupJsonReader.read(reference).toSnapshot())
-        val numericReceipts = reference.replace("\"/wB/\"", "[-1,0,127]")
+        assertEquals(snapshot, BackupJsonReader.read(reference.toString(Charsets.UTF_8)).toSnapshot())
+        val numericReceipts = reference.toString(Charsets.UTF_8).replace("\"/wB/\"", "[-1,0,127]")
         assertEquals(snapshot, BackupJsonReader.read(numericReceipts).toSnapshot())
+    }
+
+    @Test
+    fun activeAccountFromLegacyBackupKeepsItsIdentityAndTimestampsWhenEdited() {
+        val json = codec.encode(completeSnapshot(), 10, 1234, null)
+            .replaceFirst(",\"archivedAt\":9", "")
+        val original = codec.decode(json).accounts.single()
+        assertEquals(AccountEntity("account", "Account", "CHECKING", "EUR", 100, null, 1, 2), original)
+        val edited = original.withDetails("Savings", "SAVINGS", "JPY", 250, 3)
+        assertEquals(AccountEntity("account", "Savings", "SAVINGS", "JPY", 250, null, 1, 3), edited)
+        assertEquals(2L, original.updatedAt)
     }
 
     @Test
@@ -86,8 +91,9 @@ class FullBackupJsonCodecTest {
 
     @Test
     fun decode_acceptsBackupCreatedBeforeCategoryMerges() {
+        val original = completeSnapshot()
         val legacy = codec.encode(
-            completeSnapshot().copy(goalContributions = emptyList()),
+            original.copy(goalContributions = emptyList()),
             5, 1234, null,
         )
             .replace(",\"mergedIntoCategoryId\":\"target\"", "")
@@ -96,7 +102,10 @@ class FullBackupJsonCodecTest {
             .replace(",\"goalContributions\":[]", "")
 
         val decoded = codec.decode(legacy)
-        assertEquals(kotlinx.serialization.json.Json.decodeFromString(FullBackupDocument.serializer(), legacy), decoded)
+        assertEquals(original.copy(
+            categories = original.categories.map { it.copy(mergedIntoCategoryId = null) },
+            goalContributions = emptyList(),
+        ), decoded.toSnapshot())
 
         assertTrue(decoded.categories.all { it.mergedIntoCategoryId == null })
         assertTrue(decoded.recurringSchedules.all { it.deletedAt == null })
