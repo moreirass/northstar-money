@@ -25,7 +25,7 @@ class ReviewReminderWorker(context: Context, params: WorkerParameters) : Corouti
                     )
             ) {
                 val notification = NotificationCompat.Builder(applicationContext, "upcoming")
-                    .setSmallIcon(com.northstar.money.R.drawable.ic_launcher_foreground)
+                    .setSmallIcon(com.northstar.money.R.drawable.ic_review_notification)
                     .setContentTitle(applicationContext.getString(R.string.notification_review_title))
                     .setContentText(applicationContext.getString(R.string.notification_review_text))
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT)
