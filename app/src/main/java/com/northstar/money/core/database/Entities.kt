@@ -16,54 +16,6 @@ data class ArchivedCategoryRow(
 )
 
 @Serializable
-@Entity(tableName = "transactions", indices = [Index("localDate"), Index("createdAt"), Index("deletedAt")])
-data class TransactionEntity(
-    @PrimaryKey val id: String,
-    val kind: String,
-    val localDate: String,
-    val payee: String,
-    val note: String,
-    val createdAt: Long,
-    val updatedAt: Long,
-    val deletedAt: Long? = null,
-)
-
-@Serializable
-@Entity(
-    tableName = "transaction_entries",
-    foreignKeys = [
-        ForeignKey(
-            entity = TransactionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["transactionId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = AccountEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["accountId"],
-            onDelete = ForeignKey.RESTRICT,
-        ),
-        ForeignKey(
-            entity = CategoryEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["categoryId"],
-            onDelete = ForeignKey.SET_NULL,
-        ),
-    ],
-    indices = [Index("transactionId"), Index("accountId"), Index("categoryId")],
-)
-data class TransactionEntryEntity(
-    @PrimaryKey val id: String,
-    val transactionId: String,
-    val accountId: String,
-    val categoryId: String?,
-    val amountMinor: Long,
-    val currencyCode: String,
-    val cleared: Boolean,
-)
-
-@Serializable
 @Entity(
     tableName = "receipt_attachments",
     foreignKeys = [ForeignKey(

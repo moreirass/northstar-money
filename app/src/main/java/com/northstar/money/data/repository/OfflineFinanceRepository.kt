@@ -338,13 +338,13 @@ class OfflineFinanceRepository(
         require(transaction.amount.minor > 0) { "Amount must be positive" }
         val localDate = LocalDate.parse(transaction.localDate).toString()
         val updatedAt = System.currentTimeMillis()
-        val updatedTransaction = stored.transaction.copy(
-            localDate = localDate,
-            payee = transaction.payee.trim().ifBlank {
+        val updatedTransaction = stored.transaction.withDetails(
+            localDate,
+            transaction.payee.trim().ifBlank {
                 if (transaction.kind == TransactionKind.TRANSFER) "Transfer" else transaction.kind.name.lowercase().replaceFirstChar(Char::uppercase)
             },
-            note = transaction.note.trim(),
-            updatedAt = updatedAt,
+            transaction.note.trim(),
+            updatedAt,
         )
         val updatedEntries = if (transaction.kind == TransactionKind.TRANSFER) {
             require(stored.entries.size == 2) { "Transfer must contain exactly two entries" }
@@ -362,17 +362,17 @@ class OfflineFinanceRepository(
             val source = requireNotNull(stored.entries.singleOrNull { it.amountMinor < 0 }) { "Transfer source is invalid" }
             val destination = requireNotNull(stored.entries.singleOrNull { it.amountMinor > 0 }) { "Transfer destination is invalid" }
             listOf(
-                source.copy(
-                    accountId = transaction.accountId,
-                    categoryId = null,
-                    amountMinor = Math.negateExact(transaction.amount.minor),
-                    currencyCode = transaction.amount.currencyCode,
+                source.withDetails(
+                    transaction.accountId,
+                    null,
+                    Math.negateExact(transaction.amount.minor),
+                    transaction.amount.currencyCode,
                 ),
-                destination.copy(
-                    accountId = destinationAccountId,
-                    categoryId = null,
-                    amountMinor = effectiveDestinationAmount.minor,
-                    currencyCode = effectiveDestinationAmount.currencyCode,
+                destination.withDetails(
+                    destinationAccountId,
+                    null,
+                    effectiveDestinationAmount.minor,
+                    effectiveDestinationAmount.currencyCode,
                 ),
             )
         } else {
@@ -383,15 +383,15 @@ class OfflineFinanceRepository(
                 "Category does not match the transaction type"
             }
             listOf(
-                stored.entries.single().copy(
-                    accountId = transaction.accountId,
-                    categoryId = categoryId,
-                    amountMinor = if (transaction.kind == TransactionKind.EXPENSE) {
+                stored.entries.single().withDetails(
+                    transaction.accountId,
+                    categoryId,
+                    if (transaction.kind == TransactionKind.EXPENSE) {
                         Math.negateExact(transaction.amount.minor)
                     } else {
                         transaction.amount.minor
                     },
-                    currencyCode = transaction.amount.currencyCode,
+                    transaction.amount.currencyCode,
                 ),
             )
         }

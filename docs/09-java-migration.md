@@ -46,7 +46,13 @@ com a versão em Git. Passaram os 91 testes JVM e a compilação dos testes inst
 exportado pelo Room confirmou que uma fusão pode referenciar uma categoria
 inserida mais tarde na mesma transação, que o par tipo/nome é único e que apagar
 o destino da fusão limpa a referência na categoria de origem.
-As restantes 11 entidades e os DAOs continuam em Kotlin.
+
+`TransactionEntity` e `TransactionEntryEntity` passaram juntas para Java. O
+teste de backup de uma transferência editada compara os dois lançamentos após a
+leitura, incluindo contas, moedas, sinais, montantes de 64 bits e conciliação.
+No SQLite, o esquema exportado preservou os valores da transferência EUR→USD,
+bloqueou a eliminação de uma conta com lançamentos e eliminou os lançamentos
+quando o movimento foi apagado. As restantes nove entidades e os DAOs continuam em Kotlin.
 As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
 enquanto o código que os exige ainda estiver em produção. Em particular,
 `android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a

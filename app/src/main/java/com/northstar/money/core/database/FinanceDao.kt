@@ -783,24 +783,24 @@ abstract class FinanceDao {
 
         insertTransactionEntity(
             TransactionEntity(
-                id = transactionId,
-                kind = recurring.kind,
-                localDate = occurrenceLocalDate,
-                payee = recurring.name,
-                note = "Automatically posted recurring transaction",
-                createdAt = createdAt,
-                updatedAt = createdAt,
+                transactionId,
+                recurring.kind,
+                occurrenceLocalDate,
+                recurring.name,
+                "Automatically posted recurring transaction",
+                createdAt,
+                createdAt,
             ),
         )
         insertEntry(
             TransactionEntryEntity(
-                id = entryId,
-                transactionId = transactionId,
-                accountId = recurring.accountId,
-                categoryId = categoryId,
-                amountMinor = if (recurring.kind == "INCOME") recurring.amountMinor else -recurring.amountMinor,
-                currencyCode = recurring.currencyCode,
-                cleared = false,
+                entryId,
+                transactionId,
+                recurring.accountId,
+                categoryId,
+                if (recurring.kind == "INCOME") recurring.amountMinor else -recurring.amountMinor,
+                recurring.currencyCode,
+                false,
             ),
         )
         return true

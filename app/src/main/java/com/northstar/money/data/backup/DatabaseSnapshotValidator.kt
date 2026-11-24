@@ -63,8 +63,9 @@ class DatabaseSnapshotValidator {
             }
         }
         snapshot.transactions.forEach {
+            val deletedAt = it.deletedAt
             require(it.kind in TRANSACTION_KINDS) { "Backup contains an invalid transaction type" }
-            require(it.deletedAt == null || it.deletedAt >= 0) { "Backup contains an invalid deletion timestamp" }
+            require(deletedAt == null || deletedAt >= 0) { "Backup contains an invalid deletion timestamp" }
             require(it.payee.length <= 4096 && it.note.length <= 4096) { "Backup transaction text is too long" }
             requireDate(it.localDate, "transaction")
         }
@@ -72,10 +73,11 @@ class DatabaseSnapshotValidator {
             require(it.transactionId in transactionIds && it.accountId in accountIds) {
                 "Backup contains a transaction entry with a missing parent"
             }
-            require(it.categoryId == null || it.categoryId in categoryIds) {
+            val categoryId = it.categoryId
+            require(categoryId == null || categoryId in categoryIds) {
                 "Backup contains a transaction entry with a missing category"
             }
-            require(it.categoryId == null || categoriesById.getValue(it.categoryId).kind == transactionsById.getValue(it.transactionId).kind) {
+            require(categoryId == null || categoriesById.getValue(categoryId).kind == transactionsById.getValue(it.transactionId).kind) {
                 "Backup transaction category does not match its type"
             }
             require(it.currencyCode.isCurrencyCode()) { "Backup contains an invalid transaction currency" }

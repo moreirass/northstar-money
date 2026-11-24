@@ -53,6 +53,29 @@ class FullBackupJsonCodecTest {
     }
 
     @Test
+    fun editedTransferKeepsBothPostingsAndExactMinorUnitsAcrossBackup() {
+        val base = completeSnapshot()
+        val transfer = TransactionEntity("transfer", "TRANSFER", "2026-08-01", "Transfer", "", 1, 1)
+        val source = TransactionEntryEntity("debit", "transfer", "account", null, -100, "EUR", true)
+        val destination = TransactionEntryEntity("credit", "transfer", "usd", null, 125, "USD", false)
+        val snapshot = base.copy(
+            accounts = base.accounts + AccountEntity("usd", "Savings", "SAVINGS", "USD", 0, null, 1, 1),
+            transactions = listOf(transfer.withDetails("2026-08-02", "Transfer", "Edited", 2)),
+            transactionEntries = listOf(
+                source.withDetails("account", null, -9_007_199_254_740_993L, "EUR"),
+                destination.withDetails("usd", null, 9_007_199_254_740_995L, "USD"),
+            ),
+        )
+        val restored = codec.decode(codec.encode(snapshot, 10, 2, "EUR")).toSnapshot()
+        assertEquals(listOf(TransactionEntity("transfer", "TRANSFER", "2026-08-02", "Transfer", "Edited", 1, 2)),
+            restored.transactions)
+        assertEquals(listOf(
+            TransactionEntryEntity("debit", "transfer", "account", null, -9_007_199_254_740_993L, "EUR", true),
+            TransactionEntryEntity("credit", "transfer", "usd", null, 9_007_199_254_740_995L, "USD", false),
+        ), restored.transactionEntries)
+    }
+
+    @Test
     fun encodeAndDecode_preservesEveryDatabaseTable() {
         val snapshot = completeSnapshot()
 
