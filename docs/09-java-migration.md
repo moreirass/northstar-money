@@ -52,7 +52,13 @@ teste de backup de uma transferência editada compara os dois lançamentos após
 leitura, incluindo contas, moedas, sinais, montantes de 64 bits e conciliação.
 No SQLite, o esquema exportado preservou os valores da transferência EUR→USD,
 bloqueou a eliminação de uma conta com lançamentos e eliminou os lançamentos
-quando o movimento foi apagado. As restantes nove entidades e os DAOs continuam em Kotlin.
+quando o movimento foi apagado.
+
+`TransactionExchangeRateEntity` guarda em Java a taxa histórica de cada lançamento.
+O teste de backup cobre uma cotação pendente, com taxa e montante nulos, e uma
+cotação disponível de 1 000 001 milionésimos. A validação recalcula um montante
+convertido superior, em valor absoluto, a 2⁵³ unidades mínimas.
+As restantes oito entidades e os DAOs continuam em Kotlin.
 As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
 enquanto o código que os exige ainda estiver em produção. Em particular,
 `android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a

@@ -945,7 +945,7 @@ abstract class FinanceDao {
         val preservedRates = entries.mapNotNull { entry ->
             getTransactionExchangeRate(entry.id)?.takeIf { it.status == "AVAILABLE" && it.rateMicros != null &&
                 it.rateLocalDate == transaction.localDate && it.baseCurrencyCode == entry.currencyCode }?.let { rate ->
-                rate.copy(convertedAmountMinor = com.northstar.money.domain.model.convertCurrencyMinor(
+                rate.withConvertedAmount(com.northstar.money.domain.model.convertCurrencyMinor(
                     entry.amountMinor, entry.currencyCode, rate.quoteCurrencyCode, requireNotNull(rate.rateMicros)))
             }
         }

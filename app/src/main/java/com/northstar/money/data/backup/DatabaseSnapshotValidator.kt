@@ -186,18 +186,19 @@ class DatabaseSnapshotValidator {
             "Backup contains duplicate exchange rates for an entry"
         }
         snapshot.transactionExchangeRates.forEach {
+            val rateMicros = it.rateMicros
             require(
                 it.transactionId in transactionIds && it.entryId in entryIds &&
                     it.baseCurrencyCode.isCurrencyCode() && it.quoteCurrencyCode.isCurrencyCode() &&
                     it.status in setOf("PENDING", "AVAILABLE", "FAILED") &&
-                    (it.rateMicros == null || it.rateMicros > 0) &&
-                    (it.status != "AVAILABLE" || (it.rateMicros != null && it.convertedAmountMinor != null)),
+                    (rateMicros == null || rateMicros > 0) &&
+                    (it.status != "AVAILABLE" || (rateMicros != null && it.convertedAmountMinor != null)),
             ) { "Backup contains an invalid historical exchange rate" }
             val entry = entriesById.getValue(it.entryId)
             require(entry.transactionId == it.transactionId && entry.currencyCode == it.baseCurrencyCode) { "Exchange rate does not match its entry" }
             require(it.rateLocalDate == transactionsById.getValue(it.transactionId).localDate) { "Exchange rate date does not match its transaction" }
             if (it.status == "AVAILABLE") require(it.convertedAmountMinor == HistoricalRateClient.convertMinor(
-                entry.amountMinor, it.baseCurrencyCode, it.quoteCurrencyCode, requireNotNull(it.rateMicros))) { "Exchange conversion is inconsistent" }
+                entry.amountMinor, it.baseCurrencyCode, it.quoteCurrencyCode, requireNotNull(rateMicros))) { "Exchange conversion is inconsistent" }
             requireDate(it.rateLocalDate, "exchange rate")
         }
         require(snapshot.accountExchangeRates.distinctBy { it.accountId }.size == snapshot.accountExchangeRates.size) { "Duplicate opening balance rates" }

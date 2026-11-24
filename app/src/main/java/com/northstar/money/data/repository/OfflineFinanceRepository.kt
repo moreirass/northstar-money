@@ -1078,9 +1078,7 @@ class OfflineFinanceRepository(
                 val transaction = entry?.let { transactions[it.transactionId] }
                 if (entry != null && transaction != null && (rate.transactionId != transaction.id ||
                     rate.rateLocalDate != transaction.localDate || rate.baseCurrencyCode != entry.currencyCode)) {
-                    rate.copy(transactionId = transaction.id, rateLocalDate = transaction.localDate,
-                        baseCurrencyCode = entry.currencyCode, rateMicros = null, convertedAmountMinor = null,
-                        status = "PENDING", fetchedAt = null)
+                    rate.asPending(transaction.id, entry.currencyCode, transaction.localDate)
                 } else rate
             },
         )
@@ -1158,15 +1156,16 @@ class OfflineFinanceRepository(
         val pending = TransactionExchangeRateEntity("rate-${entry.id}", transactionId, entry.id,
             entry.currencyCode, currency, null, null, localDate, HistoricalRateClient.SOURCE, "PENDING", null)
         val result = suspendResult {
-            val quote = if (existing?.status == "AVAILABLE" && existing.rateMicros != null &&
+            val storedRateMicros = existing?.rateMicros
+            val quote = if (existing?.status == "AVAILABLE" && storedRateMicros != null &&
                 existing.baseCurrencyCode == entry.currencyCode && existing.quoteCurrencyCode == currency &&
                 existing.rateLocalDate == localDate) {
-                com.northstar.money.data.exchange.RateQuote(localDate, existing.rateMicros, existing.source)
+                com.northstar.money.data.exchange.RateQuote(localDate, storedRateMicros, existing.source)
             } else historicalRateProvider.getRate(entry.currencyCode, currency, localDate)
-            pending.copy(rateMicros = quote.rateMicros, convertedAmountMinor = HistoricalRateClient.convertMinor(
+            pending.withQuote(quote.rateMicros, HistoricalRateClient.convertMinor(
                 entry.amountMinor, entry.currencyCode, currency, quote.rateMicros),
-                source = if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
-                status = "AVAILABLE", fetchedAt = System.currentTimeMillis())
+                if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
+                System.currentTimeMillis())
         }
         if (baseCurrencyCode.first() != currency) return false
         val rate = result.getOrElse {

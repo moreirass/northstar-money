@@ -51,39 +51,6 @@ data class ReceiptAttachmentEntity(
     override fun hashCode(): Int = 31 * id.hashCode() + content.contentHashCode()
 }
 
-@Serializable
-@Entity(
-    tableName = "transaction_exchange_rates",
-    foreignKeys = [
-        ForeignKey(
-            entity = TransactionEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["transactionId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-        ForeignKey(
-            entity = TransactionEntryEntity::class,
-            parentColumns = ["id"],
-            childColumns = ["entryId"],
-            onDelete = ForeignKey.CASCADE,
-        ),
-    ],
-    indices = [Index("transactionId"), Index(value = ["entryId"], unique = true), Index("rateLocalDate")],
-)
-data class TransactionExchangeRateEntity(
-    @PrimaryKey val id: String,
-    val transactionId: String,
-    val entryId: String,
-    val baseCurrencyCode: String,
-    val quoteCurrencyCode: String,
-    val rateMicros: Long?,
-    val convertedAmountMinor: Long?,
-    val rateLocalDate: String,
-    val source: String,
-    val status: String,
-    val fetchedAt: Long?,
-)
-
 data class EntryRateCandidate(
     val transactionId: String,
     val localDate: String,
