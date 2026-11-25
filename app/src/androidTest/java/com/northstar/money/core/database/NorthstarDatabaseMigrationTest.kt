@@ -24,7 +24,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_1_2, 2, true, MIGRATION_1_2).apply {
+        helper.runMigrationsAndValidate(DB_1_2, 2, true, SchemaMigrations.V1_TO_2).apply {
             assertBaseDataPreserved()
             execSQL(
                 """
@@ -54,7 +54,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_2_3, 3, true, MIGRATION_2_3).apply {
+        helper.runMigrationsAndValidate(DB_2_3, 3, true, SchemaMigrations.V2_TO_3).apply {
             assertBaseDataPreserved()
             assertRowCount("reconciliations", 1)
             execSQL(
@@ -96,7 +96,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_3_4, 4, true, MIGRATION_3_4).apply {
+        helper.runMigrationsAndValidate(DB_3_4, 4, true, SchemaMigrations.V3_TO_4).apply {
             assertBaseDataPreserved()
             assertRowCount("budget_allocations", 1)
             assertRowCount("goals", 1)
@@ -135,9 +135,9 @@ class NorthstarDatabaseMigrationTest {
             DB_1_4,
             4,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
         ).apply {
             assertBaseDataPreserved()
             listOf(
@@ -158,7 +158,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_4_5, 5, true, MIGRATION_4_5).apply {
+        helper.runMigrationsAndValidate(DB_4_5, 5, true, SchemaMigrations.V4_TO_5).apply {
             assertBaseDataPreserved()
             query("SELECT deletedAt FROM transactions WHERE id = 'transaction-1'").use { cursor ->
                 cursor.moveToFirst()
@@ -184,10 +184,10 @@ class NorthstarDatabaseMigrationTest {
             DB_1_5,
             5,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
-            MIGRATION_4_5,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
+            SchemaMigrations.V4_TO_5,
         ).apply {
             assertBaseDataPreserved()
             query("SELECT deletedAt FROM transactions WHERE id = 'transaction-1'").use { cursor ->
@@ -205,7 +205,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_5_6, 6, true, MIGRATION_5_6).apply {
+        helper.runMigrationsAndValidate(DB_5_6, 6, true, SchemaMigrations.V5_TO_6).apply {
             assertBaseDataPreserved()
             query("SELECT mergedIntoCategoryId FROM categories WHERE id = 'category-1'").use { cursor ->
                 cursor.moveToFirst()
@@ -226,11 +226,11 @@ class NorthstarDatabaseMigrationTest {
             DB_1_6,
             6,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
-            MIGRATION_4_5,
-            MIGRATION_5_6,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
+            SchemaMigrations.V4_TO_5,
+            SchemaMigrations.V5_TO_6,
         ).apply {
             assertBaseDataPreserved()
             query("SELECT mergedIntoCategoryId FROM categories WHERE id = 'category-1'").use { cursor ->
@@ -259,7 +259,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_6_7, 7, true, MIGRATION_6_7).apply {
+        helper.runMigrationsAndValidate(DB_6_7, 7, true, SchemaMigrations.V6_TO_7).apply {
             assertBaseDataPreserved()
             query("SELECT deletedAt FROM recurring_schedules WHERE id = 'recurring-1'").use { cursor ->
                 cursor.moveToFirst()
@@ -285,12 +285,12 @@ class NorthstarDatabaseMigrationTest {
             DB_1_7,
             7,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
-            MIGRATION_4_5,
-            MIGRATION_5_6,
-            MIGRATION_6_7,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
+            SchemaMigrations.V4_TO_5,
+            SchemaMigrations.V5_TO_6,
+            SchemaMigrations.V6_TO_7,
         ).apply {
             assertBaseDataPreserved()
             close()
@@ -311,7 +311,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_7_8, 8, true, MIGRATION_7_8).apply {
+        helper.runMigrationsAndValidate(DB_7_8, 8, true, SchemaMigrations.V7_TO_8).apply {
             assertBaseDataPreserved()
             query("SELECT savedMinor FROM goals WHERE id = 'goal-1'").use { cursor ->
                 cursor.moveToFirst()
@@ -338,13 +338,13 @@ class NorthstarDatabaseMigrationTest {
             DB_1_8,
             8,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
-            MIGRATION_4_5,
-            MIGRATION_5_6,
-            MIGRATION_6_7,
-            MIGRATION_7_8,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
+            SchemaMigrations.V4_TO_5,
+            SchemaMigrations.V5_TO_6,
+            SchemaMigrations.V6_TO_7,
+            SchemaMigrations.V7_TO_8,
         ).apply {
             assertBaseDataPreserved()
             assertRowCount("goal_contributions", 0)
@@ -359,7 +359,7 @@ class NorthstarDatabaseMigrationTest {
             close()
         }
 
-        helper.runMigrationsAndValidate(DB_8_9, 9, true, MIGRATION_8_9).apply {
+        helper.runMigrationsAndValidate(DB_8_9, 9, true, SchemaMigrations.V8_TO_9).apply {
             assertBaseDataPreserved()
             execSQL(
                 """
@@ -401,14 +401,14 @@ class NorthstarDatabaseMigrationTest {
             DB_1_9,
             9,
             true,
-            MIGRATION_1_2,
-            MIGRATION_2_3,
-            MIGRATION_3_4,
-            MIGRATION_4_5,
-            MIGRATION_5_6,
-            MIGRATION_6_7,
-            MIGRATION_7_8,
-            MIGRATION_8_9,
+            SchemaMigrations.V1_TO_2,
+            SchemaMigrations.V2_TO_3,
+            SchemaMigrations.V3_TO_4,
+            SchemaMigrations.V4_TO_5,
+            SchemaMigrations.V5_TO_6,
+            SchemaMigrations.V6_TO_7,
+            SchemaMigrations.V7_TO_8,
+            SchemaMigrations.V8_TO_9,
         ).apply {
             assertBaseDataPreserved()
             assertRowCount("receipt_attachments", 0)

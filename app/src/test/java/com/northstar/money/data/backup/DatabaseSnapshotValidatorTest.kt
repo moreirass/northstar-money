@@ -1,8 +1,9 @@
 package com.northstar.money.data.backup
 
 import com.northstar.money.core.database.AccountEntity
+import com.northstar.money.core.database.copy
+import com.northstar.money.core.database.databaseSnapshot
 import com.northstar.money.core.database.CategoryEntity
-import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.GoalEntity
 import com.northstar.money.core.database.TransactionEntity
@@ -119,7 +120,7 @@ class DatabaseSnapshotValidatorTest {
             recurringSchedules = listOf(
                 com.northstar.money.core.database.RecurringScheduleEntity(
                     "recurring", "Rent", "EXPENSE", 100, "EUR", "account", "category",
-                    "MONTHLY", 1, "2026-09-01", true, 1, deletedAt = -1,
+                    "MONTHLY", 1, "2026-09-01", true, 1, -1,
                 ),
             ),
         )
@@ -227,7 +228,7 @@ class DatabaseSnapshotValidatorTest {
         currencyCode: String = this.currencyCode,
     ) = TransactionEntryEntity(id, transactionId, accountId, categoryId, amountMinor, currencyCode, cleared)
 
-    private fun validSnapshot() = DatabaseSnapshot(
+    private fun validSnapshot() = databaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),
         categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 0)),
         transactions = listOf(TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 1, 1)),

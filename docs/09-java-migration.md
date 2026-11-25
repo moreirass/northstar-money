@@ -2,9 +2,10 @@
 
 Branch: `migrate-to-java`. Início: 23 de novembro de 2026.
 
-**Estado: em curso; a aplicação ainda não está integralmente migrada para Java.**
-Compose, Room com entidades/DAOs Kotlin, DataStore, coroutines e serialização Kotlin
-continuam necessários durante esta transição.
+**Estado: fases 1 a 4 implementadas. Fases 5 a 7 pendentes.**
+Room usa entidades, projeções e DAO em Java. Os repositórios ainda usam coroutines
+e Flow através de uma ponte Kotlin que encaminha as operações para os executores
+do Room. Compose e DataStore continuam em uso.
 
 ## Contratos preservados
 
@@ -30,7 +31,7 @@ continuam necessários durante esta transição.
 | 6 | Fragments, Material Views, ViewBinding e ViewModels por feature | Paridade de todos os formulários, privacidade, navegação, acessibilidade e estados |
 | 7 | Workers, widget e remoção do stack Kotlin | annotationProcessor; remoção de kapt e flags temporárias; release minificada verificada |
 
-A fase 4 está em curso. O codec de backup e o SQL das nove migrações passaram
+A implementação da fase 4 está concluída. O codec de backup e o SQL das nove migrações passaram
 para Java. A comparação com as implementações Kotlin abrangeu as 13 tabelas do
 backup e as 42 instruções SQL. Após a integração, passaram os 90 testes JVM
 e a compilação dos testes instrumentados de debug.
@@ -58,11 +59,23 @@ quando o movimento foi apagado.
 O teste de backup cobre uma cotação pendente, com taxa e montante nulos, e uma
 cotação disponível de 1 000 001 milionésimos. A validação recalcula um montante
 convertido superior, em valor absoluto, a 2⁵³ unidades mínimas.
-As restantes oito entidades e os DAOs continuam em Kotlin.
-As fases 5–7 estão pendentes. Não remover kapt ou os plugins Compose/serialization
-enquanto o código que os exige ainda estiver em produção. Em particular,
-`android.builtInKotlin=false` e `android.newDsl=false` só podem ser removidas com a
-substituição do processamento atual de entidades Kotlin.
+
+As 13 entidades, as projeções, `NorthstarDatabase`, `FinanceDao`, os modelos do backup
+e o validador do restauro estão em Java. As 94 consultas do DAO mantêm o SQL
+anterior. A ponte Kotlin usa uma transação de escrita do Room para guardar a
+cópia de recuperação antes de substituir os dados. Foram removidas as definições
+Kotlin substituídas e o serializador antigo dos recibos.
+
+O esquema Room v10 exportado coincide com a versão em Git. Em SQLite, os nove
+caminhos de atualização das versões 1 a 9 chegaram ao mesmo esquema v10. O cenário
+9→10 preservou o orçamento em JPY e a âncora de 31 de outubro. Os testes cobrem
+o arredondamento para o inteiro par em ambas as direções e o saldo em JPY após
+exportar e restaurar. Passaram os 93 testes JVM, incluindo a comparação com o JSON
+Kotlin byte a byte. A execução instrumentada do restauro, da recuperação em
+transação e das migrações continua pendente num dispositivo ou emulador.
+
+A passagem de kapt para `annotationProcessor` e a remoção dos plugins e das flags
+temporárias de Kotlin pertencem à fase 7.
 
 ## Verificação de equivalência
 

@@ -1,9 +1,9 @@
 package com.northstar.money.data.backup
 
 import com.northstar.money.core.database.AccountEntity
+import com.northstar.money.core.database.AccountExchangeRateEntity
 import com.northstar.money.core.database.BudgetAllocationEntity
 import com.northstar.money.core.database.CategoryEntity
-import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.DebtProfileEntity
 import com.northstar.money.core.database.GoalEntity
 import com.northstar.money.core.database.GoalContributionEntity
@@ -11,6 +11,9 @@ import com.northstar.money.core.database.ReconciliationEntity
 import com.northstar.money.core.database.RecurringScheduleEntity
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
+import com.northstar.money.core.database.copy
+import com.northstar.money.core.database.databaseSnapshot
+import com.northstar.money.domain.model.CurrencyMath
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -39,6 +42,45 @@ class FullBackupJsonCodecTest {
         assertEquals(snapshot, BackupJsonReader.read(reference.toString(Charsets.UTF_8)).toSnapshot())
         val numericReceipts = reference.toString(Charsets.UTF_8).replace("\"/wB/\"", "[-1,0,127]")
         assertEquals(snapshot, BackupJsonReader.read(numericReceipts).toSnapshot())
+        assertThrows(IllegalArgumentException::class.java) {
+            codec.decode(numericReceipts.replace("[-1,0,127]", "[256]"))
+        }
+    }
+
+    @Test
+    fun openingRatesKeepBothHalfEvenTiesAcrossJsonRoundTrip() {
+        val base = completeSnapshot()
+        val accounts = listOf(
+            AccountEntity("down", "Down", "CHECKING", "EUR", 50, null, 1, 1),
+            AccountEntity("up", "Up", "CHECKING", "EUR", 150, null, 1, 1),
+        )
+        val rates = accounts.map { account ->
+            AccountExchangeRateEntity(
+                account.id, "EUR", "JPY", account.openingBalanceMinor,
+                CurrencyMath.convertCurrencyMinor(account.openingBalanceMinor, "EUR", "JPY", 101_000_000),
+                101_000_000, "2026-08-01",
+            )
+        }
+        val snapshot = base.copy(
+            accounts = accounts,
+            accountExchangeRates = rates,
+            transactions = emptyList(),
+            transactionEntries = emptyList(),
+            reconciliations = emptyList(),
+            budgetAllocations = emptyList(),
+            goals = emptyList(),
+            goalContributions = emptyList(),
+            recurringSchedules = emptyList(),
+            debtProfiles = emptyList(),
+        )
+
+        val document = codec.decode(codec.encode(snapshot, 10, 1234, "JPY"))
+        val restored = document.toSnapshot()
+        assertEquals("JPY", document.baseCurrencyCode)
+        assertEquals(accounts, restored.accounts)
+        assertEquals(rates, restored.accountExchangeRates)
+        assertEquals(listOf(50L, 152L), restored.accountExchangeRates.map { it.convertedAmountMinor })
+        DatabaseSnapshotValidator().validate(restored)
     }
 
     @Test
@@ -135,7 +177,7 @@ class FullBackupJsonCodecTest {
         assertTrue(decoded.goalContributions.isEmpty())
     }
 
-    private fun completeSnapshot() = DatabaseSnapshot(
+    private fun completeSnapshot() = databaseSnapshot(
         accounts = listOf(AccountEntity("account", "Account", "CHECKING", "EUR", 100, 9, 1, 2)),
         categories = listOf(
             CategoryEntity("category", "Food", "EXPENSE", 1, 9, "target"),

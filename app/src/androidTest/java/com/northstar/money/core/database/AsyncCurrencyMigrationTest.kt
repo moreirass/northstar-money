@@ -35,7 +35,7 @@ class AsyncCurrencyMigrationTest {
             }
             InstrumentationRegistry.getInstrumentation().runOnMainSync {
                 room = Room.databaseBuilder(context, NorthstarDatabase::class.java, name)
-                    .addMigrations(CurrencyAwareMigration(currency) { migration9To10(it) })
+                    .addMigrations(CurrencyAwareMigration(currency) { SchemaMigrations.currencyUpgrade(it) })
                     .build()
             }
             assertFalse(currency.isDone)
@@ -62,7 +62,7 @@ class AsyncCurrencyMigrationTest {
         helper.createDatabase(name, 9).close()
         val currency = CompletableFuture<String>().apply { completeExceptionally(java.io.IOException("synthetic failure")) }
         assertThrows(IllegalStateException::class.java) {
-            helper.runMigrationsAndValidate(name, 10, true, CurrencyAwareMigration(currency) { migration9To10(it) })
+            helper.runMigrationsAndValidate(name, 10, true, CurrencyAwareMigration(currency) { SchemaMigrations.currencyUpgrade(it) })
         }
     }
 }

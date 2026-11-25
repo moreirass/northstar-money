@@ -3,6 +3,7 @@ package com.northstar.money
 import android.app.Application
 import androidx.room.Room
 import com.northstar.money.core.database.NorthstarDatabase
+import com.northstar.money.core.database.SchemaMigrations
 import com.northstar.money.data.repository.OfflineFinanceRepository
 import com.northstar.money.data.backup.FileRestoreRecoveryStore
 import android.app.NotificationChannel
@@ -45,16 +46,9 @@ class NorthstarApplication : Application() {
             if (error != null) migrationCurrency.completeExceptionally(error)
         }
         Room.databaseBuilder(this, NorthstarDatabase::class.java, "northstar.db")
-            .addMigrations(com.northstar.money.core.database.MIGRATION_1_2)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_2_3)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_3_4)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_4_5)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_5_6)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_6_7)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_7_8)
-            .addMigrations(com.northstar.money.core.database.MIGRATION_8_9)
+            .addMigrations(*SchemaMigrations.beforeCurrencyUpgrade())
             .addMigrations(com.northstar.money.core.database.CurrencyAwareMigration(migrationCurrency) {
-                com.northstar.money.core.database.migration9To10(it)
+                SchemaMigrations.currencyUpgrade(it)
             })
             .build()
     }
