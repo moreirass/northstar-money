@@ -1,10 +1,11 @@
 package com.northstar.money.data.repository
 
 import com.northstar.money.core.database.AccountEntity
+import com.northstar.money.core.database.copy
 import com.northstar.money.core.database.CategoryEntity
 import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.GoalContributionEntity
-import com.northstar.money.core.database.FinanceDao
+import com.northstar.money.core.database.SuspendingFinanceDao
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
 import com.northstar.money.core.database.TransactionImportItem
@@ -63,7 +64,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class OfflineFinanceRepository(
-    private val dao: FinanceDao,
+    private val dao: SuspendingFinanceDao,
     private val backupCodec: FullBackupJsonCodec = FullBackupJsonCodec(),
     private val restoreRecoveryStore: RestoreRecoveryStore? = null,
     private val portableBackupCodec: PortableBackupCodec = PortableBackupCodec(),
@@ -410,13 +411,13 @@ class OfflineFinanceRepository(
         val stored = dao.getTransactionForEdit(transactionId)
         val normalizedContent = withContext(Dispatchers.Default) { ReceiptImageNormalizer.normalize(content) }
         val attachment = ReceiptAttachmentEntity(
-            id = UUID.randomUUID().toString(),
-            transactionId = transactionId,
-            content = normalizedContent,
-            originalName = originalName.trim().ifBlank { "receipt" },
-            mimeType = "image/jpeg",
-            byteSize = normalizedContent.size.toLong(),
-            createdAt = System.currentTimeMillis(),
+            UUID.randomUUID().toString(),
+            transactionId,
+            normalizedContent,
+            originalName.trim().ifBlank { "receipt" },
+            "image/jpeg",
+            normalizedContent.size.toLong(),
+            System.currentTimeMillis(),
         )
         dao.insertReceiptAttachment(attachment)
         processReceiptOcr(attachment, stored.entries.first().currencyCode)
@@ -665,11 +666,11 @@ class OfflineFinanceRepository(
         val stored = requireNotNull(dao.getGoal(goal.id)) { "Savings goal is missing" }
         require(goal.target.currencyCode == stored.currencyCode) { "Goal currency cannot be changed" }
         dao.updateGoal(
-            stored.copy(
-                name = goal.name.trim(),
-                targetMinor = goal.target.minor,
-                targetLocalDate = targetDate,
-                status = goal.status,
+            stored.withDetails(
+                goal.name.trim(),
+                goal.target.minor,
+                targetDate,
+                goal.status,
             ),
         )
     }
@@ -711,12 +712,12 @@ class OfflineFinanceRepository(
         val goal = requireNotNull(dao.getGoal(contribution.goalId)) { "Savings goal is missing" }
         require(contribution.amount.currencyCode == goal.currencyCode) { "Contribution currency must match the goal" }
         dao.updateGoalContribution(
-            stored.copy(
-                goalId = contribution.goalId,
-                amountMinor = contribution.amount.minor,
-                localDate = date,
-                note = contribution.note.trim(),
-                updatedAt = System.currentTimeMillis(),
+            stored.withDetails(
+                contribution.goalId,
+                contribution.amount.minor,
+                date,
+                contribution.note.trim(),
+                System.currentTimeMillis(),
             ),
         )
     }
@@ -790,17 +791,17 @@ class OfflineFinanceRepository(
             "Category does not match the recurring type"
         }
         dao.updateRecurring(
-            stored.copy(
-                name = recurring.name.trim(),
-                kind = recurring.kind.name,
-                amountMinor = recurring.amount.minor,
-                accountId = recurring.accountId,
-                categoryId = categoryId,
-                frequency = recurring.frequency,
-                intervalCount = recurring.intervalCount,
-                nextLocalDate = recurring.nextLocalDate,
-                anchorDay = if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).dayOfMonth else stored.anchorDay,
-                anchorMonth = if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).monthValue else stored.anchorMonth,
+            stored.withDetails(
+                recurring.name.trim(),
+                recurring.kind.name,
+                recurring.amount.minor,
+                recurring.accountId,
+                categoryId,
+                recurring.frequency,
+                recurring.intervalCount,
+                recurring.nextLocalDate,
+                if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).dayOfMonth else stored.anchorDay,
+                if (stored.nextLocalDate != recurring.nextLocalDate) LocalDate.parse(recurring.nextLocalDate).monthValue else stored.anchorMonth,
             ),
         )
     }
@@ -816,7 +817,7 @@ class OfflineFinanceRepository(
             "Choose an active category before resuming"
         }
         require(dao.getActiveCategoryKind(categoryId) == recurring.kind) { "Category does not match the recurring type" }
-        if (categoryId != recurring.categoryId) dao.updateRecurring(recurring.copy(categoryId = categoryId))
+        if (categoryId != recurring.categoryId) dao.updateRecurring(recurring.withCategory(categoryId))
         dao.resumeRecurring(id)
     }
 
@@ -894,10 +895,10 @@ class OfflineFinanceRepository(
         require(debt.accountId == stored.accountId) { "Debt account cannot be changed" }
         requireAccountCurrency(stored.accountId, debt.minimumPayment.currencyCode)
         dao.updateDebtProfile(
-            stored.copy(
-                annualRateBasisPoints = debt.annualRateBasisPoints,
-                minimumPaymentMinor = debt.minimumPayment.minor,
-                dueDay = debt.dueDay,
+            stored.withTerms(
+                debt.annualRateBasisPoints,
+                debt.minimumPayment.minor,
+                debt.dueDay,
             ),
         )
     }
@@ -913,7 +914,7 @@ class OfflineFinanceRepository(
         val items = validation.transactions.map { row ->
             val transactionId = UUID.randomUUID().toString()
             TransactionImportItem(
-                transaction = TransactionEntity(
+                TransactionEntity(
                     transactionId,
                     row.kind.name,
                     row.localDate,
@@ -922,7 +923,7 @@ class OfflineFinanceRepository(
                     now,
                     now,
                 ),
-                entry = TransactionEntryEntity(
+                TransactionEntryEntity(
                     UUID.randomUUID().toString(),
                     transactionId,
                     row.accountId,
@@ -1009,7 +1010,7 @@ class OfflineFinanceRepository(
         }
         val rawSnapshot = if (document.databaseVersion < 10) normalizeLegacySnapshot(document.toSnapshot()) else document.toSnapshot()
         val snapshot = normalizeLegacyGoalSavings(if (document.databaseVersion < 10) rawSnapshot.copy(
-            budgetAllocations = rawSnapshot.budgetAllocations.map { it.copy(currencyCode = document.baseCurrencyCode ?: baseCurrencyCode.first()) },
+            budgetAllocations = rawSnapshot.budgetAllocations.map { it.withCurrency(document.baseCurrencyCode ?: baseCurrencyCode.first()) },
         ) else rawSnapshot)
         snapshotValidator.validate(snapshot)
 
@@ -1036,17 +1037,17 @@ class OfflineFinanceRepository(
                 "Backup contains a conflicting legacy goal contribution"
             }
             GoalContributionEntity(
-                id = contributionId,
-                goalId = goal.id,
-                amountMinor = goal.savedMinor,
-                localDate = Instant.ofEpochMilli(goal.createdAt).atZone(ZoneOffset.UTC).toLocalDate().toString(),
-                note = "Opening saved amount",
-                createdAt = goal.createdAt,
-                updatedAt = goal.createdAt,
+                contributionId,
+                goal.id,
+                goal.savedMinor,
+                Instant.ofEpochMilli(goal.createdAt).atZone(ZoneOffset.UTC).toLocalDate().toString(),
+                "Opening saved amount",
+                goal.createdAt,
+                goal.createdAt,
             )
         }
         return snapshot.copy(
-            goals = snapshot.goals.map { it.copy(savedMinor = 0) },
+            goals = snapshot.goals.map { it.withSavedMinor(0) },
             goalContributions = snapshot.goalContributions + migratedContributions,
         )
     }
@@ -1078,9 +1079,7 @@ class OfflineFinanceRepository(
                 val transaction = entry?.let { transactions[it.transactionId] }
                 if (entry != null && transaction != null && (rate.transactionId != transaction.id ||
                     rate.rateLocalDate != transaction.localDate || rate.baseCurrencyCode != entry.currencyCode)) {
-                    rate.copy(transactionId = transaction.id, rateLocalDate = transaction.localDate,
-                        baseCurrencyCode = entry.currencyCode, rateMicros = null, convertedAmountMinor = null,
-                        status = "PENDING", fetchedAt = null)
+                    rate.asPending(transaction.id, entry.currencyCode, transaction.localDate)
                 } else rate
             },
         )
@@ -1128,22 +1127,22 @@ class OfflineFinanceRepository(
     )
 
     private suspend fun processReceiptOcr(attachment: ReceiptAttachmentEntity, currencyCode: String) {
-        dao.updateReceiptAttachment(attachment.copy(ocrStatus = "PROCESSING"))
+        dao.updateReceiptAttachment(attachment.withOcrStatus("PROCESSING"))
         suspendResult { receiptOcrEngine.recognize(attachment.content, currencyCode) }
             .onSuccess { parsed ->
                 dao.updateReceiptAttachment(
-                    attachment.copy(
-                        ocrStatus = "COMPLETE",
-                        ocrText = parsed.rawText,
-                        detectedAmountMinor = parsed.amount?.minor,
-                        detectedCurrencyCode = parsed.amount?.currencyCode,
-                        detectedLocalDate = parsed.localDate,
-                        detectedMerchant = parsed.merchant,
+                    attachment.withOcrResult(
+                        "COMPLETE",
+                        parsed.rawText,
+                        parsed.amount?.minor,
+                        parsed.amount?.currencyCode,
+                        parsed.localDate,
+                        parsed.merchant,
                     ),
                 )
             }
             .onFailure {
-                dao.updateReceiptAttachment(attachment.copy(ocrStatus = "FAILED"))
+                dao.updateReceiptAttachment(attachment.withOcrStatus("FAILED"))
             }
     }
 
@@ -1158,15 +1157,16 @@ class OfflineFinanceRepository(
         val pending = TransactionExchangeRateEntity("rate-${entry.id}", transactionId, entry.id,
             entry.currencyCode, currency, null, null, localDate, HistoricalRateClient.SOURCE, "PENDING", null)
         val result = suspendResult {
-            val quote = if (existing?.status == "AVAILABLE" && existing.rateMicros != null &&
+            val storedRateMicros = existing?.rateMicros
+            val quote = if (existing?.status == "AVAILABLE" && storedRateMicros != null &&
                 existing.baseCurrencyCode == entry.currencyCode && existing.quoteCurrencyCode == currency &&
                 existing.rateLocalDate == localDate) {
-                com.northstar.money.data.exchange.RateQuote(localDate, existing.rateMicros, existing.source)
+                com.northstar.money.data.exchange.RateQuote(localDate, storedRateMicros, existing.source)
             } else historicalRateProvider.getRate(entry.currencyCode, currency, localDate)
-            pending.copy(rateMicros = quote.rateMicros, convertedAmountMinor = HistoricalRateClient.convertMinor(
+            pending.withQuote(quote.rateMicros, HistoricalRateClient.convertMinor(
                 entry.amountMinor, entry.currencyCode, currency, quote.rateMicros),
-                source = if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
-                status = "AVAILABLE", fetchedAt = System.currentTimeMillis())
+                if (quote.date == localDate) quote.source else "${quote.source} (${quote.date})",
+                System.currentTimeMillis())
         }
         if (baseCurrencyCode.first() != currency) return false
         val rate = result.getOrElse {

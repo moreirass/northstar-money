@@ -20,7 +20,7 @@ class CurrencyMigrationTest {
             execSQL("INSERT INTO recurring_schedules VALUES ('r', 'Bill', 'EXPENSE', 100, 'JPY', 'a', 'c', 'MONTHLY', 1, '2026-10-31', 1, 1, NULL)")
             close()
         }
-        helper.runMigrationsAndValidate(name, 10, true, migration9To10("JPY")).apply {
+        helper.runMigrationsAndValidate(name, 10, true, SchemaMigrations.currencyUpgrade("JPY")).apply {
             query("SELECT currencyCode, plannedMinor FROM budget_allocations").use {
                 it.moveToFirst(); assertEquals("JPY", it.getString(0)); assertEquals(10000L, it.getLong(1))
             }

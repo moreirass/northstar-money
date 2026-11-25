@@ -5,8 +5,13 @@ import androidx.room.migration.Migration;
 import androidx.sqlite.db.SupportSQLiteDatabase;
 import com.northstar.money.domain.model.CurrencyMath;
 
-final class SchemaMigrations {
+public final class SchemaMigrations {
     private SchemaMigrations() {}
+
+    @NonNull
+    public static Migration[] beforeCurrencyUpgrade() {
+        return new Migration[] {V1_TO_2, V2_TO_3, V3_TO_4, V4_TO_5, V5_TO_6, V6_TO_7, V7_TO_8, V8_TO_9};
+    }
 
     static final Migration V1_TO_2 = new Migration(1, 2) {
         @Override public void migrate(@NonNull SupportSQLiteDatabase db) {
@@ -173,7 +178,8 @@ final class SchemaMigrations {
         }
     };
 
-    static Migration currencyUpgrade(String legacyCurrency) {
+    @NonNull
+    public static Migration currencyUpgrade(@NonNull String legacyCurrency) {
         return new Migration(9, 10) {
             @Override public void migrate(@NonNull SupportSQLiteDatabase db) {
                 if (!CurrencyMath.validCurrency(legacyCurrency)) throw new IllegalArgumentException("Invalid migration currency");

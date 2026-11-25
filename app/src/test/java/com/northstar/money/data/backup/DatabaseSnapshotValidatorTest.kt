@@ -1,12 +1,15 @@
 package com.northstar.money.data.backup
 
 import com.northstar.money.core.database.AccountEntity
+import com.northstar.money.core.database.copy
+import com.northstar.money.core.database.databaseSnapshot
 import com.northstar.money.core.database.CategoryEntity
-import com.northstar.money.core.database.DatabaseSnapshot
 import com.northstar.money.core.database.GoalContributionEntity
 import com.northstar.money.core.database.GoalEntity
 import com.northstar.money.core.database.TransactionEntity
 import com.northstar.money.core.database.TransactionEntryEntity
+import com.northstar.money.core.database.TransactionExchangeRateEntity
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
 
@@ -117,7 +120,7 @@ class DatabaseSnapshotValidatorTest {
             recurringSchedules = listOf(
                 com.northstar.money.core.database.RecurringScheduleEntity(
                     "recurring", "Rent", "EXPENSE", 100, "EUR", "account", "category",
-                    "MONTHLY", 1, "2026-09-01", true, 1, deletedAt = -1,
+                    "MONTHLY", 1, "2026-09-01", true, 1, -1,
                 ),
             ),
         )
@@ -176,14 +179,32 @@ class DatabaseSnapshotValidatorTest {
 
     @Test fun rejectsInconsistentExchangeConversionAndWrongTransactionDate() {
         val base = validSnapshot()
-        val rate = com.northstar.money.core.database.TransactionExchangeRateEntity(
+        val rate = TransactionExchangeRateEntity(
             "rate", "transaction", "entry", "EUR", "USD", 2_000_000, -200, "2026-08-01", "Test", "AVAILABLE", 1)
         validator.validate(base.copy(transactionExchangeRates = listOf(rate)))
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(transactionExchangeRates = listOf(rate.copy(convertedAmountMinor = -999))))
+            validator.validate(base.copy(transactionExchangeRates = listOf(rate.withConvertedAmount(-999))))
         }
         assertThrows(IllegalArgumentException::class.java) {
-            validator.validate(base.copy(transactionExchangeRates = listOf(rate.copy(rateLocalDate = "2026-08-02"))))
+            validator.validate(base.copy(transactionExchangeRates = listOf(rate.asPending(rate.transactionId, rate.baseCurrencyCode, "2026-08-02").withQuote(2_000_000, -200, "Test", 1))))
+        }
+    }
+
+    @Test fun historicalQuotePreservesMicrosAndSignedMinorUnitsAcrossBackup() {
+        val base = validSnapshot()
+        val entry = base.transactionEntries.single().entryWith(amountMinor = -9_007_199_254_740_993L)
+        val pending = TransactionExchangeRateEntity(
+            "rate", entry.transactionId, entry.id, "EUR", "USD", null, null, "2026-08-01", "Test", "PENDING", null)
+        val available = pending.withQuote(1_000_001L, -9_007_208_261_940_248L, "Test", 123L)
+        assertEquals(TransactionExchangeRateEntity("rate", "transaction", "entry", "EUR", "USD",
+            1_000_001L, -9_007_208_261_940_248L, "2026-08-01", "Test", "AVAILABLE", 123L), available)
+        assertEquals(pending, available.asPending(entry.transactionId, "EUR", "2026-08-01"))
+        val codec = FullBackupJsonCodec()
+        for (rate in listOf(pending, available)) {
+            val snapshot = base.copy(transactionEntries = listOf(entry), transactionExchangeRates = listOf(rate))
+            val restored = codec.decode(codec.encode(snapshot, 10, 123L, "USD")).toSnapshot()
+            validator.validate(restored)
+            assertEquals(rate, restored.transactionExchangeRates.single())
         }
     }
 
@@ -207,7 +228,7 @@ class DatabaseSnapshotValidatorTest {
         currencyCode: String = this.currencyCode,
     ) = TransactionEntryEntity(id, transactionId, accountId, categoryId, amountMinor, currencyCode, cleared)
 
-    private fun validSnapshot() = DatabaseSnapshot(
+    private fun validSnapshot() = databaseSnapshot(
         accounts = listOf(AccountEntity("account", "Current", "CHECKING", "EUR", 0, null, 1, 1)),
         categories = listOf(CategoryEntity("category", "Food", "EXPENSE", 0)),
         transactions = listOf(TransactionEntity("transaction", "EXPENSE", "2026-08-01", "Shop", "", 1, 1)),

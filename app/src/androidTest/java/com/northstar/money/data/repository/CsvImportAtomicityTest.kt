@@ -84,8 +84,8 @@ class CsvImportAtomicityTest {
     }
 
     private fun importItem(transactionId: String, entryId: String, accountId: String) = TransactionImportItem(
-        transaction = TransactionEntity(transactionId, "EXPENSE", "2026-08-01", transactionId, "", 1, 1),
-        entry = TransactionEntryEntity(entryId, transactionId, accountId, "food", -100, "EUR", true),
+        TransactionEntity(transactionId, "EXPENSE", "2026-08-01", transactionId, "", 1, 1),
+        TransactionEntryEntity(entryId, transactionId, accountId, "food", -100, "EUR", true),
     )
 
     companion object {
