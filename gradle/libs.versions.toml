@@ -14,7 +14,7 @@ work = "2.11.2"
 biometric = "1.1.0"
 fragment = "1.8.9"
 androidxTestExtJunit = "1.1.5"
-kotlinxSerialization = "1.8.1"
+kotlinxSerialization = "1.13.0"
 mlKitTextRecognition = "16.0.1"
 
 [libraries]
