@@ -35,6 +35,28 @@ class GoalManagementTest {
     }
 
     @Test
+    fun goalCreatedFromMainThreadIsPublishedByLiveData() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val goals = repository.domains.goals
+        val observed = java.util.concurrent.CountDownLatch(1)
+        val source = goals.observeGoals()
+        val observer = androidx.lifecycle.Observer<List<com.northstar.money.domain.model.SavingsGoal>> { rows ->
+            if (rows.any { it.name == "Main thread" && it.saved.minor == 125L }) observed.countDown()
+        }
+        lateinit var write: com.google.common.util.concurrent.ListenableFuture<Void>
+        try {
+            instrumentation.runOnMainSync {
+                source.observeForever(observer)
+                write = goals.createGoal("Main thread", Money(1000), Money(125), null)
+            }
+            write.get(15, java.util.concurrent.TimeUnit.SECONDS)
+            assertTrue(observed.await(15, java.util.concurrent.TimeUnit.SECONDS))
+        } finally {
+            instrumentation.runOnMainSync { source.removeObserver(observer) }
+        }
+    }
+
+    @Test
     fun createGoal_normalizesOpeningSavedAmountAsAuditableContribution() = runBlocking {
         repository.createGoal("Emergency fund", Money(10_000), Money(2_500), "2027-01-31")
 
