@@ -20,7 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.first
+import com.northstar.money.core.datastore.SettingsRepository
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -38,13 +38,7 @@ class NorthstarApplication : Application() {
     }
 
     val database by lazy {
-        val migrationCurrency = java.util.concurrent.CompletableFuture<String>()
-        val currencyRead = applicationScope.launch(Dispatchers.IO) {
-            migrationCurrency.complete(userPreferences.settings.first().baseCurrencyCode)
-        }
-        currencyRead.invokeOnCompletion { error ->
-            if (error != null) migrationCurrency.completeExceptionally(error)
-        }
+        val migrationCurrency = SettingsRepository.get(this).readBaseCurrency()
         Room.databaseBuilder(this, NorthstarDatabase::class.java, "northstar.db")
             .addMigrations(*SchemaMigrations.beforeCurrencyUpgrade())
             .addMigrations(com.northstar.money.core.database.CurrencyAwareMigration(migrationCurrency) {

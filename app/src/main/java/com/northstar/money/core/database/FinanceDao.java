@@ -47,6 +47,9 @@ public abstract class FinanceDao {
     )
     public abstract @NonNull Flow<List<AccountBalanceRow>> observeArchivedAccounts();
 
+    @Query("SELECT COUNT(*) FROM categories WHERE archivedAt IS NULL AND kind = :kind")
+    public abstract int countActiveCategories(@NonNull String kind);
+
     @Query("SELECT * FROM categories WHERE archivedAt IS NULL ORDER BY kind, sortOrder, name")
     public abstract @NonNull Flow<List<CategoryEntity>> observeCategories();
 

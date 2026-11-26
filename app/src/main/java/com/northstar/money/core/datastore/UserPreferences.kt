@@ -1,16 +1,15 @@
 package com.northstar.money.core.datastore
 
 import android.content.Context
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.core.longPreferencesKey
-import java.time.LocalDate
-import androidx.datastore.preferences.preferencesDataStore
+import io.reactivex.rxjava3.core.Completable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
-
-private val Context.settingsDataStore by preferencesDataStore("northstar_settings")
+import kotlinx.coroutines.flow.buffer
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 data class AppSettings(
     val appLockEnabled: Boolean = false,
@@ -31,88 +30,27 @@ data class SpendingLimit(
     val endDate: String,
 )
 
-class UserPreferences(private val context: Context) {
-    private val lockKey = booleanPreferencesKey("app_lock")
-    private val remindersKey = booleanPreferencesKey("reminders")
-    private val onboardingCompletedKey = booleanPreferencesKey("onboarding_completed")
-    private val moneyValuesHiddenKey = booleanPreferencesKey("money_values_hidden")
-    private val baseCurrencyCodeKey = stringPreferencesKey("base_currency_code")
-    private val spendingLimitMinorKey = longPreferencesKey("spending_limit_minor")
-    private val spendingLimitCurrencyKey = stringPreferencesKey("spending_limit_currency")
-    private val spendingLimitPeriodKey = stringPreferencesKey("spending_limit_period")
-    private val spendingLimitStartKey = stringPreferencesKey("spending_limit_start")
-    private val spendingLimitEndKey = stringPreferencesKey("spending_limit_end")
+class UserPreferences(context: Context) {
+    private val repository = SettingsRepository.get(context)
+    val settings: Flow<AppSettings> = callbackFlow {
+        val subscription = repository.settings().subscribe({ trySend(it) }, { close(it) })
+        awaitClose { subscription.dispose() }
+    }.buffer(Channel.CONFLATED)
 
-    val settings: Flow<AppSettings> = context.settingsDataStore.data.map {
-        val spendingLimit = it[spendingLimitMinorKey]?.let { amountMinor ->
-            SpendingLimit(
-                amountMinor = amountMinor,
-                currencyCode = it[spendingLimitCurrencyKey] ?: "EUR",
-                period = runCatching { BudgetPeriod.valueOf(it[spendingLimitPeriodKey].orEmpty()) }
-                    .getOrDefault(BudgetPeriod.MONTH),
-                startDate = it[spendingLimitStartKey].orEmpty(),
-                endDate = it[spendingLimitEndKey].orEmpty(),
-            )
-        }
-        AppSettings(
-            appLockEnabled = it[lockKey] ?: false,
-            remindersEnabled = it[remindersKey] ?: true,
-            onboardingCompleted = it[onboardingCompletedKey] ?: false,
-            moneyValuesHidden = it[moneyValuesHiddenKey] ?: false,
-            baseCurrencyCode = it[baseCurrencyCodeKey] ?: "EUR",
-            spendingLimit = spendingLimit,
-        )
-    }
-
-    suspend fun setAppLock(enabled: Boolean) {
-        require(!enabled || com.northstar.money.core.security.AppAuthentication.available(context)) { "Set up a screen lock or biometrics before enabling app lock" }
-        context.settingsDataStore.edit { it[lockKey] = enabled }
-    }
-
-    suspend fun setReminders(enabled: Boolean) {
-        context.settingsDataStore.edit { it[remindersKey] = enabled }
-    }
-
-    suspend fun setOnboardingCompleted(completed: Boolean) {
-        context.settingsDataStore.edit { it[onboardingCompletedKey] = completed }
-    }
-
-    suspend fun setMoneyValuesHidden(hidden: Boolean) {
-        context.settingsDataStore.edit { it[moneyValuesHiddenKey] = hidden }
-    }
-
-    suspend fun setBaseCurrencyCode(currencyCode: String) {
-        val normalized = currencyCode.trim().uppercase()
-        require(normalized in SUPPORTED_CURRENCY_CODES) { "Unsupported base currency: $currencyCode" }
-        context.settingsDataStore.edit { it[baseCurrencyCodeKey] = normalized }
-    }
-
-    suspend fun setSpendingLimit(limit: SpendingLimit) {
-        require(limit.amountMinor > 0) { "Spending limit must be positive" }
-        require(limit.currencyCode in SUPPORTED_CURRENCY_CODES) { "Unsupported spending limit currency" }
-        val start = LocalDate.parse(limit.startDate)
-        val end = LocalDate.parse(limit.endDate)
-        require(!end.isBefore(start)) { "Spending limit end date must not precede its start date" }
-        context.settingsDataStore.edit {
-            it[spendingLimitMinorKey] = limit.amountMinor
-            it[spendingLimitCurrencyKey] = limit.currencyCode
-            it[spendingLimitPeriodKey] = limit.period.name
-            it[spendingLimitStartKey] = limit.startDate
-            it[spendingLimitEndKey] = limit.endDate
-        }
-    }
-
-    suspend fun clearSpendingLimit() {
-        context.settingsDataStore.edit {
-            it.remove(spendingLimitMinorKey)
-            it.remove(spendingLimitCurrencyKey)
-            it.remove(spendingLimitPeriodKey)
-            it.remove(spendingLimitStartKey)
-            it.remove(spendingLimitEndKey)
-        }
-    }
+    suspend fun setAppLock(enabled: Boolean) = repository.setAppLock(enabled).awaitWrite()
+    suspend fun setReminders(enabled: Boolean) = repository.setReminders(enabled).awaitWrite()
+    suspend fun setOnboardingCompleted(enabled: Boolean) = repository.setOnboardingCompleted(enabled).awaitWrite()
+    suspend fun setMoneyValuesHidden(enabled: Boolean) = repository.setMoneyValuesHidden(enabled).awaitWrite()
+    suspend fun setBaseCurrencyCode(currencyCode: String) = repository.setBaseCurrencyCode(currencyCode).awaitWrite()
+    suspend fun setSpendingLimit(limit: SpendingLimit) = repository.setSpendingLimit(limit).awaitWrite()
+    suspend fun clearSpendingLimit() = repository.clearSpendingLimit().awaitWrite()
 
     companion object {
-        val SUPPORTED_CURRENCY_CODES = setOf("EUR", "USD", "GBP", "BRL", "CHF", "JPY")
+        val SUPPORTED_CURRENCY_CODES: Set<String> = SettingsRepository.SUPPORTED_CURRENCIES
     }
+}
+
+private suspend fun Completable.awaitWrite(): Unit = suspendCancellableCoroutine { continuation ->
+    val subscription = subscribe({ continuation.resume(Unit) }, { continuation.resumeWithException(it) })
+    continuation.invokeOnCancellation { subscription.dispose() }
 }

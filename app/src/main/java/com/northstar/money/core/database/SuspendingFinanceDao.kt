@@ -9,6 +9,7 @@ class SuspendingFinanceDao internal constructor(
     private val database: NorthstarDatabase,
     private val dao: FinanceDao,
 ) {
+    val executor = FinanceDatabaseExecutor(database, dao)
     private val queryDispatcher = database.queryExecutor.asCoroutineDispatcher()
     private val transactionDispatcher = database.transactionExecutor.asCoroutineDispatcher()
 
